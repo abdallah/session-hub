@@ -22,6 +22,10 @@ type StartIn struct {
 	Dir string `json:"dir"`
 	// Prompt is an optional first prompt, submitted once Claude is up.
 	Prompt string `json:"prompt,omitempty"`
+	// Trust marks Dir, and only Dir, as trusted in Claude's config before
+	// starting. Without it, a directory Claude doesn't trust fails the
+	// request.
+	Trust bool `json:"trust,omitempty"`
 }
 
 // StartRequest is a request to start a new Claude session on a machine,
@@ -32,6 +36,7 @@ type StartRequest struct {
 	Machine     string     `json:"machine"`
 	Dir         string     `json:"dir"`
 	Prompt      string     `json:"prompt,omitempty"`
+	Trust       bool       `json:"trust,omitempty"`
 	State       string     `json:"state"`
 	RequestedBy string     `json:"requested_by"`
 	CreatedAt   time.Time  `json:"created_at"`

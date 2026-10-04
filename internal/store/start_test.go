@@ -77,7 +77,7 @@ func TestStartClaimFinish(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.clock.Advance(1)
-	second, err := e.s.CreateStart(ctx, "tower", api.StartIn{Dir: "/b", Prompt: "hi"}, "web:phone")
+	second, err := e.s.CreateStart(ctx, "tower", api.StartIn{Dir: "/b", Prompt: "hi", Trust: true}, "web:phone")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,11 +91,11 @@ func TestStartClaimFinish(t *testing.T) {
 		t.Fatalf("claim: ok %v, %v", ok, err)
 	}
 	if c.Request.ID != first.ID || c.Request.Action != api.ActionStart || c.Request.State != api.ControlClaimed ||
-		c.Start == nil || c.Start.Dir != "/a" || c.Session.ID != "" {
+		c.Start == nil || c.Start.Dir != "/a" || c.Start.Trust || c.Session.ID != "" {
 		t.Fatalf("first claim %+v start %+v", c.Request, c.Start)
 	}
 	c2, ok, err := e.s.ClaimStart(ctx, e.tower.ID)
-	if err != nil || !ok || c2.Start.ID != second.ID || c2.Start.Prompt != "hi" {
+	if err != nil || !ok || c2.Start.ID != second.ID || c2.Start.Prompt != "hi" || !c2.Start.Trust {
 		t.Fatalf("second claim: %+v ok %v %v", c2.Start, ok, err)
 	}
 	if _, ok, _ := e.s.ClaimStart(ctx, e.tower.ID); ok {
@@ -210,5 +210,35 @@ func TestMigrateV9ToV10(t *testing.T) {
 	}
 	if _, err := s2.CreateStart(ctx, "tower", api.StartIn{Dir: "/a"}, "machine:tower"); err != nil {
 		t.Errorf("CreateStart after upgrade: %v", err)
+	}
+}
+
+func TestMigrateV10ToV11(t *testing.T) {
+	s, path := openTemp(t)
+	ctx := context.Background()
+	if _, _, err := s.AddMachine(ctx, "tower", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("ALTER TABLE start_requests DROP COLUMN trust"); err != nil {
+		t.Fatal(err)
+	}
+	// A request stored by a v10 server.
+	if _, err := s.db.Exec(`INSERT INTO start_requests (id, machine_id, dir, prompt, state, requested_by, created_at, expires_at)
+		SELECT 'st_AAAAAAAAAAAAAAAAAAAAAA', id, '/a', '', 'done', 'web:phone', '2026-10-04T08:00:00.000000000Z',
+		'2026-10-04T08:02:00.000000000Z' FROM machines WHERE name = 'tower'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("PRAGMA user_version = 10"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s2, err := Open(path, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	r, err := s2.GetStart(ctx, "st_AAAAAAAAAAAAAAAAAAAAAA")
+	if err != nil || r.Trust || r.Dir != "/a" {
+		t.Fatalf("old request after upgrade: %+v %v", r, err)
 	}
 }

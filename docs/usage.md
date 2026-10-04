@@ -52,10 +52,13 @@
   To keep a machine out of this, add `remote_permissions = false` to
   `~/.config/sessionhub/config.toml`.
 - **New session** on the dashboard's Sessions tab, or
-  `sessionhub start <machine> --dir <dir> [-m "<first prompt>"]`, starts a new
-  Claude session on any machine whose watcher runs, with Remote Control on, in
-  a new herdr workspace, and gives you its **Open in Claude** link. The
-  directory must be inside that machine's home directory. To keep a machine
+  `sessionhub start <machine> --dir <dir> [--trust] [-m "<first prompt>"]`,
+  starts a new Claude session on any machine whose watcher runs, with Remote
+  Control on, in a new herdr workspace, and gives you its **Open in Claude**
+  link. The directory must be inside that machine's home directory, and
+  Claude there must already trust it; if it doesn't, the start fails and
+  says so. To trust that one folder as part of the start, pass `--trust` or
+  tick **Trust this folder** on the dashboard. To keep a machine
   out of this, add `remote_start = false` to its
   `~/.config/sessionhub/config.toml`.
 - `sessionhub move <id-prefix> tower` moves a session to `tower`: its conversation,

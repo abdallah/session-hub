@@ -205,6 +205,7 @@ details.snooze .menu button { justify-content: flex-start; text-align: left; wid
 .startbar[hidden] { display: none; }
 .startbar h2 { font-size: 1rem; margin: 4px 0 0; }
 .startbar label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); }
+.startbar label.check { flex-direction: row; align-items: center; gap: 8px; }
 .startbar select, .startbar input, .startbar textarea {
   width: 100%; box-sizing: border-box; min-height: 44px; padding: 0 8px; font: inherit; color: var(--fg);
   background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
@@ -286,6 +287,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   <label>Directory <input id="start-dir" type="text" list="start-dirs" placeholder="~/Code/project" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
   <datalist id="start-dirs"></datalist>
   <label>First prompt (optional) <textarea id="start-prompt" rows="2" maxlength="4000"></textarea></label>
+  <label class="check"><input id="start-trust" type="checkbox"> Trust this folder (only this folder) in Claude first</label>
   <div class="actions">
     <button id="start-go" type="button">Start</button>
     <button id="start-close" class="textbtn" type="button">Close</button>
@@ -359,6 +361,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   var startDir = document.getElementById("start-dir");
   var startDirs = document.getElementById("start-dirs");
   var startPrompt = document.getElementById("start-prompt");
+  var startTrust = document.getElementById("start-trust");
   var startGo = document.getElementById("start-go");
   var startClose = document.getElementById("start-close");
   var startStatus = document.getElementById("start-status");
@@ -1029,19 +1032,21 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
 
   // startProblem is why the form can't start yet, or "". The server and
   // the machine check again.
-  function startProblem(machine, dir, prompt) {
+  function startProblem(machine, dir, prompt, trust) {
     if (!machine) return "Pick a machine.";
     var d = String(dir || "").trim();
     if (!d) return "Enter a directory.";
     if (d.charAt(0) !== "/" && d !== "~" && d.indexOf("~/") !== 0) return "Use an absolute directory, or one starting with ~/.";
+    if (trust && (d === "~" || d === "~/")) return "Trusting the home directory would trust every folder under it; pick a folder inside it.";
     if (String(prompt || "").length > 4000) return "The first prompt is over 4,000 characters.";
     return "";
   }
 
   // startRequest is the start write.
-  function startRequest(machine, dir, prompt) {
+  function startRequest(machine, dir, prompt, trust) {
     var body = { dir: String(dir).trim() };
     if (String(prompt || "").trim()) body.prompt = prompt;
+    if (trust) body.trust = true;
     return {
       url: "/v1/machines/" + encodeURIComponent(machine) + "/start",
       init: {
@@ -1070,7 +1075,8 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
         return { kind: "note", text: "Started on " + m + ", but the link wasn't seen; the session shows here once it reports." + extra, url: "" };
       case "expired": return { kind: "error", text: "The watcher on " + m + " didn't finish in time.", url: "" };
     }
-    return { kind: "error", text: "Start on " + m + " failed: " + (r.detail || r.state), url: "" };
+    var hint = /is not trusted by Claude/.test(r.detail || "") ? ". Tick Trust this folder to start there anyway." : "";
+    return { kind: "error", text: "Start on " + m + " failed: " + (r.detail || r.state) + hint, url: "" };
   }
   // start-state:end
 
@@ -1684,9 +1690,9 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
 
   // startSession sends the panel's start request and follows it.
   function startSession() {
-    var why = startProblem(startMachine.value, startDir.value, startPrompt.value);
+    var why = startProblem(startMachine.value, startDir.value, startPrompt.value, startTrust.checked);
     if (why) { startCur = { phase: "error", error: why }; renderStartBar(); return; }
-    var req = startRequest(startMachine.value, startDir.value, startPrompt.value);
+    var req = startRequest(startMachine.value, startDir.value, startPrompt.value, startTrust.checked);
     startCur = { phase: "sending" };
     renderStartBar();
     fetch(req.url, req.init)
@@ -1704,6 +1710,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
         }
         startCur = { phase: "following", req: r.body };
         startPrompt.value = "";
+        startTrust.checked = false;
         renderStartBar();
         var until = Date.now() + START_FOLLOW_MS;
         setTimeout(function () { pollStart(r.body.id, until); }, START_POLL_MS);

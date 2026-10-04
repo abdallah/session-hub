@@ -1207,15 +1207,18 @@ process.stdout.write(JSON.stringify({
   none: startDirsFor(sessions, "pi"),
   problems: [startProblem("", "~", ""), startProblem("tower", "  ", ""), startProblem("tower", "Code/x", ""),
     startProblem("tower", "~bob", ""), startProblem("tower", "~", ""), startProblem("tower", " ~/Code/x ", ""),
-    startProblem("tower", "/srv", "x".repeat(4001)), startProblem("tower", "/srv", "x".repeat(4000))],
+    startProblem("tower", "/srv", "x".repeat(4001)), startProblem("tower", "/srv", "x".repeat(4000)),
+    startProblem("tower", "~", "", true), startProblem("tower", " ~/ ", "", true), startProblem("tower", "~/Code/x", "", true)],
   req: startRequest("tower/x", " ~/Code/app ", "fix it"),
   reqNoPrompt: startRequest("tower", "/srv", "   "),
+  reqTrust: startRequest("tower", "~/Code/new", "", true),
   open: [startOpen(req("pending")), startOpen(req("claimed")), startOpen(req("done")), startOpen(null)],
   views: [startView(null), startView(req("pending")), startView(req("claimed")),
     startView(req("done", { url: "https://claude.ai/code/session_01Ab", detail: "started in a new herdr workspace" })),
     startView(req("done", { url: "https://claude.ai/code/session_01Ab", detail: "started in a new herdr workspace; the first prompt was not sent: x" })),
     startView(req("done", { url: "javascript:alert(1)" })),
     startView(req("failed", { detail: "the directory doesn't exist on this machine" })),
+    startView(req("failed", { detail: "/home/me/new is not trusted by Claude on tower; open it once or pass --trust" })),
     startView(req("failed")), startView(req("expired"))]
 }));`
 	out := runBlocks(t, []string{"start-state"}, script, map[string]any{})
@@ -1225,13 +1228,18 @@ process.stdout.write(JSON.stringify({
   "dirs": ["/home/me/Code/a", "/home/me/Code/b"],
   "none": [],
   "problems": ["Pick a machine.", "Enter a directory.", "Use an absolute directory, or one starting with ~/.",
-    "Use an absolute directory, or one starting with ~/.", "", "", "The first prompt is over 4,000 characters.", ""],
+    "Use an absolute directory, or one starting with ~/.", "", "", "The first prompt is over 4,000 characters.", "",
+    "Trusting the home directory would trust every folder under it; pick a folder inside it.",
+    "Trusting the home directory would trust every folder under it; pick a folder inside it.", ""],
   "req": {"url": "/v1/machines/tower%2Fx/start", "init": {"method": "POST",
     "headers": {"Content-Type": "application/json", "X-Hub-Action": "start"},
     "body": "{\"dir\":\"~/Code/app\",\"prompt\":\"fix it\"}", "cache": "no-store"}},
   "reqNoPrompt": {"url": "/v1/machines/tower/start", "init": {"method": "POST",
     "headers": {"Content-Type": "application/json", "X-Hub-Action": "start"},
     "body": "{\"dir\":\"/srv\"}", "cache": "no-store"}},
+  "reqTrust": {"url": "/v1/machines/tower/start", "init": {"method": "POST",
+    "headers": {"Content-Type": "application/json", "X-Hub-Action": "start"},
+    "body": "{\"dir\":\"~/Code/new\",\"trust\":true}", "cache": "no-store"}},
   "open": [true, true, false, false],
   "views": [null,
     {"kind": "note", "text": "Waiting for the watcher on tower\u2026", "url": ""},
@@ -1240,6 +1248,7 @@ process.stdout.write(JSON.stringify({
     {"kind": "link", "text": "Started on tower. started in a new herdr workspace; the first prompt was not sent: x.", "url": "https://claude.ai/code/session_01Ab"},
     {"kind": "note", "text": "Started on tower, but the link wasn't seen; the session shows here once it reports.", "url": ""},
     {"kind": "error", "text": "Start on tower failed: the directory doesn't exist on this machine", "url": ""},
+    {"kind": "error", "text": "Start on tower failed: /home/me/new is not trusted by Claude on tower; open it once or pass --trust. Tick Trust this folder to start there anyway.", "url": ""},
     {"kind": "error", "text": "Start on tower failed: failed", "url": ""},
     {"kind": "error", "text": "The watcher on tower didn't finish in time.", "url": ""}]
 }`
@@ -1259,7 +1268,8 @@ process.stdout.write(JSON.stringify({
 	}
 	page := string(dashboardHTML)
 	for _, want := range []string{`<button id="new" class="textbtn" type="button" aria-expanded="false" aria-controls="startbar" hidden>New session</button>`,
-		`fetch("/v1/starts/" + encodeURIComponent(id)`, "var why = startProblem(startMachine.value, startDir.value, startPrompt.value);",
+		`fetch("/v1/starts/" + encodeURIComponent(id)`, "var why = startProblem(startMachine.value, startDir.value, startPrompt.value, startTrust.checked);",
+		`<input id="start-trust" type="checkbox">`,
 		"o.disabled = !c.ok;", "newBtn.hidden = tab === \"inbox\" || tab === \"rules\" || signedOut;", ".startbar[hidden] { display: none; }"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q", want)
