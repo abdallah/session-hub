@@ -29,7 +29,7 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub move <id-or-prefix> <machine\|cloud>` | Move a session to another machine, or hand it to a Claude Code cloud session, and print its progress for up to 3 minutes. See below. |
 | `sessionhub move --status <move-id>` | Print where a move is. |
 | `sessionhub move-key` | Print this machine's move key fingerprint (16 hex characters), creating the key if there is none. |
-| `sessionhub start <machine> [--dir D] [-m "<prompt>"]` | Start a new Claude session on `<machine>`, with Remote Control on, in a new herdr workspace, and print its link. See below. |
+| `sessionhub start <machine> [--dir D] [--trust] [-m "<prompt>"]` | Start a new Claude session on `<machine>`, with Remote Control on, in a new herdr workspace, and print its link. See below. |
 | `sessionhub resume [--force] [--remote-control] <id-prefix>` | Get back into a session. See below. `--force` starts a session the server reports `live` or `blocked` even though no pane runs it to focus. `--remote-control` starts Claude with Remote Control on. Flags go before the prefix. |
 | `sessionhub resume --pick [--force] [--remote-control]` | Numbered list of this machine's sessions (live first, then newest; at most 30). Type a number, then the same logic as `sessionhub resume`. Empty input cancels. |
 | `sessionhub remote-control <id-prefix>` | Turn on Claude Code Remote Control for a session. See below. `-h` or `--help` prints the usage. |
@@ -386,7 +386,7 @@ server: don't move sessions until you find out why.
 ## `sessionhub start`
 
 ```
-sessionhub start <machine> [--dir DIR] [-m "first prompt"]
+sessionhub start <machine> [--dir DIR] [--trust] [-m "first prompt"]
 ```
 
 Asks `<machine>`'s watcher to start a new Claude session with Remote Control
@@ -404,9 +404,25 @@ started on tower: https://claude.ai/code/session_01... (started in a new herdr w
   and to `~` (that machine's home directory) otherwise. It must be absolute or
   start with `~/`, and on the machine it must exist and be inside the home
   directory.
-- `-m` is a first prompt, submitted once Claude is idle. A folder Claude
-  hasn't seen first asks whether to trust it; the prompt is then not sent, and
-  the result says so. Answer the trust prompt in the pane.
+- Claude must already trust `DIR`, or a folder above it, on that machine.
+  Otherwise the watcher starts nothing and the request fails:
+
+  ```
+  failed: /home/me/Code/new is not trusted by Claude on tower; open it once or pass --trust
+  ```
+
+  To trust it, run `claude` in that folder once and accept the prompt, or
+  pass `--trust`.
+- `--trust` marks `DIR`, and only `DIR`, as trusted in Claude's config on
+  that machine (`projects["DIR"].hasTrustDialogAccepted` in `~/.claude.json`,
+  or `$CLAUDE_CONFIG_DIR/.claude.json`) before starting. It never trusts a
+  folder above `DIR`. It refuses a relative `--dir` and the home directory,
+  including the `~` default on another machine, because trusting home
+  trusts every folder under it. The watcher rewrites the config atomically
+  and keeps every other setting.
+- `-m` is a first prompt, submitted once Claude is idle. If Claude is still
+  waiting on a prompt in the pane, the prompt is not sent, and the result
+  says so.
 - It exits 0 once the session started, 1 when the request failed or expired,
   and 130 when you press Ctrl+C, which stops following but not the start.
 - A machine whose watcher is offline, an unknown machine, or a machine with

@@ -4,6 +4,19 @@ The general upgrade steps and how to roll back are in
 [`self-hosting.md`](self-hosting.md#upgrade). This page lists the releases
 that need more than that. Newest first.
 
+## Upgrade to start trust checks
+
+This release moves the database to schema version 11. Deploy the server
+first, then install the new binary on every machine and run
+`sessionhub install-plugin` to restart the watcher. Until a machine's
+watcher runs the new binary, it ignores `--trust` and starts Claude in an
+untrusted folder as before, where Claude stops at its trust prompt.
+
+To roll back, stop the server, restore the database backup as described in
+[self-hosting.md](self-hosting.md#upgrade), install the previous binary
+everywhere, and start the server. The version 10 binary refuses a version 11
+database.
+
 ## Upgrade to new sessions
 
 This release moves the database to schema version 10. Deploy the server

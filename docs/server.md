@@ -303,7 +303,8 @@ that reads `GET /v1/machines`. **Machine** lists every machine, the ones
 whose watcher is online first; an offline one is listed but can't be picked.
 **Directory** suggests the 10 directories that machine's sessions used most
 recently and must be absolute or start with `~/`. **First prompt** is
-optional. **Start** sends `POST /v1/machines/{name}/start` with
+optional. **Trust this folder** sends `trust` (see
+[Starting sessions](#starting-sessions)); it refuses `~` itself. **Start** sends `POST /v1/machines/{name}/start` with
 `X-Hub-Action: start`, then reads `GET /v1/starts/{id}` every 2 seconds
 until the request ends: **Open in Claude** with the new session's link, a
 note when the link wasn't seen, or the machine's reason. A refused request
@@ -778,6 +779,9 @@ on, in a new herdr workspace. The dashboard's **New session** panel and
 - `prompt` is optional, at most 4,000 characters; newlines and tabs are
   allowed, other control characters are not. The watcher submits it once
   Claude is idle.
+- `trust` is optional, `false` by default. With `true`, the watcher marks
+  the resolved directory, and only it, as trusted in Claude's config before
+  starting, and refuses the home directory or a folder above it.
 - The machine's watcher must have polled in the last 2 minutes (`409`
   otherwise), and the machine can have at most 5 pending start requests
   (`429`). An unknown machine is `404`.
@@ -795,10 +799,12 @@ machine token. A machine can turn this off with `remote_start = false` in its
 client config (see `docs/client.md`); its watcher then fails every start
 request.
 
-Starting a session in a folder Claude hasn't seen shows Claude's
-trust-this-folder prompt in the new pane. The watcher never answers it: the
-result is `done` without a link, with a detail saying the first prompt wasn't
-sent. Answer the prompt in the pane.
+Before it creates a workspace, the watcher checks that Claude trusts the
+directory: the directory or a folder above it has `hasTrustDialogAccepted`
+in Claude's config (`~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json`).
+If it doesn't and `trust` is not set, the request fails with `<dir> is not
+trusted by Claude on <machine>; open it once or pass --trust`, and nothing
+starts. The watcher never answers Claude's trust prompt in a pane.
 
 ### Inbox
 
@@ -1002,7 +1008,7 @@ keys on. The server uses one connection, and every transaction starts with
 same file, such as `sessionhub machine add`, waits instead of failing with
 `SQLITE_BUSY`. The schema version is in
 `PRAGMA user_version`; the server creates the schema on first open, upgrades an
-older one in place (version 2 adds `sessions.state_ts`; version 3 adds `control_requests`, `machines.last_poll`, and `sessions.rc_url` and `rc_at`; version 4 adds `session_digests` and `sessions.last_prompt` and `last_prompt_at`; version 5 adds `login_codes` and `web_sessions`; version 6 adds `sessions.turn_ended_at`, `sessions.blocked_at`, and `inbox_triage`; version 7 adds `inbox_alerts`; version 8 adds `instructions`, `messages`, and `permission_requests`; version 9 adds `moves` and `machines.move_key`; version 10 adds `start_requests`), and refuses
+older one in place (version 2 adds `sessions.state_ts`; version 3 adds `control_requests`, `machines.last_poll`, and `sessions.rc_url` and `rc_at`; version 4 adds `session_digests` and `sessions.last_prompt` and `last_prompt_at`; version 5 adds `login_codes` and `web_sessions`; version 6 adds `sessions.turn_ended_at`, `sessions.blocked_at`, and `inbox_triage`; version 7 adds `inbox_alerts`; version 8 adds `instructions`, `messages`, and `permission_requests`; version 9 adds `moves` and `machines.move_key`; version 10 adds `start_requests`; version 11 adds `start_requests.trust`), and refuses
 a database from a newer version. Times are stored as UTC RFC 3339 with a
 fixed nine-digit fraction, so they also sort as text. The database directory
 is created with mode `0700`.
