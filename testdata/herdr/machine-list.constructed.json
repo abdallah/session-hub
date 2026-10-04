@@ -1,0 +1,16 @@
+[
+  {
+    "id": "m_constructed1",
+    "label": "bluebox",
+    "ssh_target": "user@bluebox.example.com:22",
+    "remote_session": null,
+    "enabled": true
+  },
+  {
+    "id": "m_constructed2",
+    "label": "off",
+    "ssh_target": "tower.example.com",
+    "remote_session": "default",
+    "enabled": false
+  }
+]

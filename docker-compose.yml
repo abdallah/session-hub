@@ -1,0 +1,20 @@
+# Runs the sessionhub server. Set SESSIONHUB_PUBLIC_URL to the address your
+# machines and browsers use, for example through a reverse proxy or tunnel.
+services:
+  sessionhub:
+    build: .
+    image: sessionhub
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      SESSIONHUB_PUBLIC_URL: ${SESSIONHUB_PUBLIC_URL:-http://127.0.0.1:8787}
+      SESSIONHUB_STALE_AFTER: ${SESSIONHUB_STALE_AFTER:-5m}
+      # Optional Telegram alerts; see docs/self-hosting.md.
+      SESSIONHUB_TELEGRAM_BOT_TOKEN: ${SESSIONHUB_TELEGRAM_BOT_TOKEN:-}
+      SESSIONHUB_TELEGRAM_CHAT_ID: ${SESSIONHUB_TELEGRAM_CHAT_ID:-}
+    volumes:
+      - sessionhub-data:/data
+
+volumes:
+  sessionhub-data:

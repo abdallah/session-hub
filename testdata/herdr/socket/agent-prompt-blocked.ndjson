@@ -1,0 +1,2 @@
+{"id": "cap_1", "method": "agent.prompt", "params": {"target": "wS:p2", "text": "/remote-control"}}
+{"id":"cap_1","error":{"code":"agent_blocked","message":"agent wS:p2 is blocked and requires interactive input"}}

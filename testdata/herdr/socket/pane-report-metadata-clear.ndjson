@@ -1,0 +1,2 @@
+{"id": "req_6", "method": "pane.report_metadata", "params": {"pane_id": "w9:p1", "source": "sessionhub", "tokens": {"hub_summary": null}}}
+{"id":"req_6","result":{"type":"ok"}}

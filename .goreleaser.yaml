@@ -1,0 +1,28 @@
+# Release binaries for every tag v*: Linux and macOS. Windows is out: the
+# clients need Unix sockets, flock, and herdr.
+version: 2
+
+builds:
+  - main: ./cmd/sessionhub
+    binary: sessionhub
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    files:
+      - LICENSE
+      - README.md
+      - deploy/sessionhub.service
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github

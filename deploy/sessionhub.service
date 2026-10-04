@@ -1,0 +1,20 @@
+# systemd user unit for the sessionhub server. `make deploy` installs it to
+# ~/.config/systemd/user/sessionhub.service. Configuration is in
+# ~/.config/sessionhub/server.toml (mode 0600), not here.
+#
+# If `listen` includes an address that appears late at boot, such as a Docker
+# bridge (docker0) for a tunnel container, the first bind can fail: a user
+# unit cannot order itself after the system's docker.service.
+# Restart=on-failure with no start limit retries every 5 seconds until the
+# address exists, and never gives up.
+[Unit]
+Description=sessionhub session registry server
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=%h/.local/bin/sessionhub server
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

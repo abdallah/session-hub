@@ -1,0 +1,2 @@
+{"id": "req_7", "method": "pane.focus", "params": {"pane_id": "w99:p99"}}
+{"id":"req_7","error":{"code":"pane_not_found","message":"pane w99:p99 not found"}}

@@ -1,0 +1,2 @@
+{"id": "req_1", "method": "pane.split", "params": {"direction": "right", "cwd": "/tmp/sessionhub-probe-work", "target_pane_id": "wA:p1", "focus": false}}
+{"id":"req_1","result":{"type":"pane_info","pane":{"pane_id":"wA:p2","terminal_id":"term_65cb09fe9fbf1b","workspace_id":"wA","tab_id":"wA:t1","focused":false,"cwd":"/tmp/sessionhub-probe-work","foreground_cwd":"/tmp/sessionhub-probe-work","agent_status":"unknown","scroll":{"offset_from_bottom":0,"max_offset_from_bottom":0,"viewport_rows":89},"revision":0}}}

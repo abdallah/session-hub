@@ -1,0 +1,2518 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>sessionhub</title>
+<link rel="icon" sizes="32x32" href="/favicon.ico?v=1">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=1">
+<style>
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --fg: #1b1f24; --muted: #5b6570; --line: #d8dde3;
+  --live: #1a7f37; --blocked: #b42318; --stale: #8a6100; --ended: #6b7280;
+  --accent: #0b5cad; --code-bg: #eef1f4; --hover: #eef1f4;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .08), 0 1px 3px rgba(16, 24, 40, .06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216; --card: #1a1f26; --fg: #e6e9ed; --muted: #9aa5b1; --line: #2c343e;
+    --live: #4ac26b; --blocked: #ff8a80; --stale: #e3b341; --ended: #8b95a1;
+    --accent: #6cb6ff; --code-bg: #10141a; --hover: #232a33;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+/* One centred column: the header, the controls, and both tabs share its edges. */
+.page { padding: 0 16px; }
+@media (min-width: 900px) { .page { padding: 0 24px; } }
+header {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px;
+  padding: 12px 0 8px;
+}
+.brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+h1 { margin: 0; font-size: 1.25rem; }
+#updated { color: var(--muted); font-size: .8rem; }
+.who { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: .85rem; }
+.who[hidden] { display: none; }
+.who strong { color: var(--fg); }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#filter {
+  flex: 1 1 100%; min-width: 0; min-height: 44px; font: inherit; font-size: 1rem; padding: 0 12px;
+  background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
+}
+#filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#all { margin-left: auto; }
+#all[hidden] { display: none; }
+@media (min-width: 640px) {
+  .controls .tabs { flex: none; }
+  #filter { flex: 1 1 200px; }
+}
+.recap, .prompt { margin: 6px 0 0; max-width: 70ch; font-size: .9rem; overflow-wrap: anywhere; }
+.prompt { color: var(--muted); }
+.label { font-weight: 600; font-size: .75rem; text-transform: uppercase; color: var(--muted); }
+.summary a { color: var(--accent); }
+details.digest { margin-top: 8px; font-size: .85rem; }
+details.digest > summary { cursor: pointer; color: var(--accent); min-height: 44px; display: flex; align-items: center; }
+details.digest h3 { font-size: .85rem; margin: 8px 0 2px; }
+details.digest ul { margin: 2px 0 0; padding-left: 18px; }
+details.digest li { overflow-wrap: anywhere; }
+main { padding: 4px 0 32px; }
+h2 { font-size: 1rem; margin: 20px 0 8px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+h2 .count { color: var(--muted); font-weight: normal; font-size: .85rem; }
+h2.machine-h { font-size: 1.25rem; margin: 24px 0 6px; display: block; }
+#root > .machine:first-child h2.machine-h { margin-top: 12px; }
+button.machine-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; width: 100%; min-width: 0; padding: 4px 0;
+  background: none; border: 0; border-radius: 6px; color: var(--fg); font-size: inherit; font-weight: 700; text-align: left;
+}
+button.machine-head:disabled { color: var(--fg); cursor: default; }
+.machine-head .chev { display: inline-block; color: var(--muted); transition: transform .15s; }
+.machine-head[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.machine-head .name { min-width: 0; overflow-wrap: anywhere; }
+.machine-head .count { color: var(--muted); font-weight: normal; font-size: .85rem; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-left-width: 5px;
+  border-radius: 8px; margin: 0 0 8px; overflow-wrap: anywhere; box-shadow: var(--shadow);
+}
+.card.live { border-left-color: var(--live); }
+.card.blocked { border-left-color: var(--blocked); }
+.card.stale { border-left-color: var(--stale); }
+.card.ended { border-left-color: var(--ended); }
+button.card-head {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 8px 12px;
+  background: none; border: 0; border-radius: 6px; color: var(--fg); font-size: 1rem; text-align: left;
+}
+.card-head .title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card.open .card-head .title { white-space: normal; }
+.card-head .age { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.card-body { padding: 0 12px 10px; }
+.dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--ended); }
+.dot.live { background: var(--live); }
+.dot.blocked { background: var(--blocked); }
+.dot.stale { background: var(--stale); }
+.title { font-weight: 600; }
+.badge {
+  font-size: .75rem; font-weight: 600; white-space: nowrap; padding: 1px 8px;
+  border: 1px solid currentColor; border-radius: 999px;
+}
+.badge.live { color: var(--live); }
+.badge.blocked { color: var(--blocked); }
+.badge.stale { color: var(--stale); }
+.badge.ended { color: var(--ended); }
+.meta { color: var(--muted); font-size: .85rem; margin-top: 2px; }
+.report { margin: 8px 0 0; font-size: .9rem; }
+.report dt { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: uppercase; margin-top: 6px; }
+.report dd { margin: 0; }
+.report ul { margin: 2px 0 0; padding-left: 18px; }
+.cmd { display: flex; gap: 8px; align-items: stretch; margin-top: 10px; }
+.cmd code {
+  display: flex; align-items: center; flex: 1; min-width: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px; font: .8rem/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-x: auto; white-space: nowrap; user-select: all; -webkit-user-select: all;
+}
+button {
+  font: inherit; font-size: .85rem; min-height: 44px; min-width: 64px; padding: 0 12px;
+  background: var(--card); color: var(--accent); border: 1px solid var(--accent); border-radius: 6px; cursor: pointer;
+}
+button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+details.ended > summary { cursor: pointer; color: var(--muted); padding: 10px 0; min-height: 44px; }
+.empty, .error { color: var(--muted); padding: 24px 8px; text-align: center; }
+.error { color: var(--blocked); }
+.rc { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.rc .note { color: var(--muted); font-size: .85rem; }
+.rc .rc-error { color: var(--blocked); font-size: .85rem; }
+.rc-link { width: 100%; }
+.move { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.move .note { color: var(--muted); font-size: .85rem; }
+.move .rc-error { color: var(--blocked); font-size: .85rem; }
+.move-menu > summary { cursor: pointer; color: var(--accent); min-height: 44px; display: flex; align-items: center; }
+.move-menu[open] { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.move-menu[open] > summary { width: 100%; }
+.rc-link .cmd { margin-top: 4px; }
+a.open {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 6px;
+  background: var(--accent); color: var(--card); font-size: .85rem; font-weight: 600;
+  text-decoration: none; white-space: nowrap;
+}
+a.open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { color: var(--muted); border-color: var(--line); cursor: default; }
+.tabs { display: flex; gap: 8px; flex: 1 1 100%; }
+.tab { color: var(--muted); border-color: var(--line); }
+.tab[aria-selected="true"] { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+button.textbtn { min-width: 0; padding: 0 10px; border-color: transparent; background: none; }
+.notif {
+  background: var(--card); border: 1px solid var(--line); border-left-width: 5px;
+  border-radius: 8px; margin: 0 0 8px; overflow-wrap: anywhere; box-shadow: var(--shadow);
+}
+.notif.blocked { border-left-color: var(--blocked); }
+.notif.waiting { border-left-color: var(--stale); }
+.notif.finished { border-left-color: var(--live); }
+.notif-main {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; width: 100%; min-width: 0;
+  padding: 10px 12px 4px; background: none; border: 0; border-radius: 6px;
+  color: var(--fg); font-size: 1rem; text-align: left; text-decoration: none; cursor: pointer;
+}
+button.notif-main { min-height: 44px; }
+.notif-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.n-title { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.n-age { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.n-need {
+  grid-column: 1 / -1; font-size: .9rem; min-width: 0; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+}
+.notif.open .n-title { white-space: normal; }
+.notif.open .n-need { display: block; -webkit-line-clamp: none; line-clamp: none; }
+.n-meta { grid-column: 1 / -1; color: var(--muted); font-size: .75rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actions { display: flex; flex-wrap: wrap; gap: 0 4px; align-items: center; padding: 0 2px 4px; }
+.actions .act { margin-left: auto; font-weight: 600; }
+a.act {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 10px; border-radius: 6px;
+  color: var(--accent); font-size: .85rem; text-decoration: none; white-space: nowrap;
+}
+a.act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+details.snooze { position: relative; }
+details.snooze > summary {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 10px; cursor: pointer;
+  color: var(--accent); border-radius: 6px; font-size: .85rem; list-style: none;
+}
+details.snooze > summary::-webkit-details-marker { display: none; }
+details.snooze[open] > summary { font-weight: 600; }
+details.snooze .menu {
+  position: absolute; top: 100%; left: 0; z-index: 10; min-width: 11rem; margin-top: 2px; padding: 4px;
+  display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line);
+  border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+}
+details.snooze .menu button { justify-content: flex-start; text-align: left; width: 100%; color: var(--fg); }
+.n-body { padding: 0 12px 10px; }
+.inbox-error { color: var(--blocked); font-size: .85rem; margin: 0; padding: 0 12px 10px; }
+.pick { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; font-size: .85rem; color: var(--muted); }
+.pick input { width: 20px; height: 20px; }
+.sendbar {
+  position: sticky; bottom: 0; z-index: 5; margin: 8px 0 0; padding: 8px 12px 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow);
+}
+.sendbar[hidden] { display: none; }
+.startbar {
+  margin: 8px 0 0; padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow);
+}
+.startbar[hidden] { display: none; }
+.startbar h2 { font-size: 1rem; margin: 4px 0 0; }
+.startbar label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); }
+.startbar select, .startbar input, .startbar textarea {
+  width: 100%; box-sizing: border-box; min-height: 44px; padding: 0 8px; font: inherit; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+}
+.startbar textarea { padding: 8px; }
+.startbar .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.start-status { margin: 0; font-size: .85rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.start-status .rc-error { color: var(--blocked); }
+.sendbar h2 { font-size: 1rem; margin: 4px 0; }
+.sendbar textarea {
+  width: 100%; box-sizing: border-box; font: inherit; padding: 8px;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
+}
+.send-targets, .send-result, ul.rules { list-style: none; margin: 4px 0; padding: 0; font-size: .85rem; }
+.send-targets { max-height: 6.5em; overflow-y: auto; }
+.send-targets .muted { color: var(--muted); }
+.send-result .error { color: var(--blocked); padding: 0; text-align: left; }
+ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.rule-text { flex: 1 1 60%; overflow-wrap: anywhere; }
+.rule-by { color: var(--muted); font-size: .75rem; }
+.rule-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.rule-add input {
+  flex: 1 1 16rem; min-width: 0; min-height: 44px; padding: 0 8px; font: inherit;
+  background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
+}
+.perm { padding: 0 12px 4px; font-size: .9rem; }
+.perm-tool { font-weight: 600; margin-right: 6px; }
+.perm-main { white-space: pre-wrap; overflow-wrap: anywhere; }
+.perm code.perm-main {
+  display: block; margin-top: 4px; padding: 8px; background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px;
+  font: .8rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.perm code.perm-input { max-height: 16em; overflow-y: auto; }
+.perm-cut { margin: 4px 0 0; color: var(--blocked); font-weight: 600; }
+.perm-confirm { margin-top: 8px; padding: 8px; border: 1px solid var(--blocked); border-radius: 6px; }
+.perm-confirm p { margin: 0 0 4px; font-weight: 600; }
+.perm .actions { padding: 4px 0 0; }
+.perm .meta, .perm .inbox-error { margin: 4px 0 0; padding: 0; }
+/* A mouse or trackpad: smaller targets and hover states. Touch keeps 44px. */
+@media (hover: hover) and (pointer: fine) {
+  button, a.open, a.act, details.snooze > summary { min-height: 32px; }
+  button.card-head, button.machine-head { min-height: 0; }
+  details.digest > summary, details.ended > summary { min-height: 28px; }
+  details.ended > summary { padding: 4px 0; }
+  #filter { min-height: 36px; }
+  button:not(:disabled):hover { background: var(--hover); }
+  button.textbtn:not(:disabled):hover, a.act:hover, details.snooze > summary:hover { background: var(--hover); }
+  button.machine-head:not(:disabled):hover { background: none; }
+  button.machine-head:not(:disabled):hover .name { text-decoration: underline; }
+  button.card-head:hover, .notif-main:hover { background: var(--hover); }
+  details.digest > summary:hover, details.ended > summary:hover { text-decoration: underline; }
+  a.open:hover { filter: brightness(1.1); }
+}
+</style>
+</head>
+<body>
+<div class="page">
+<header>
+  <div class="brand">
+    <h1>sessionhub</h1>
+    <span id="updated" aria-live="polite"></span>
+  </div>
+  <span id="who" class="who" hidden>Signed in as <strong id="who-name"></strong> <button id="signout" type="button">Sign out</button></span>
+</header>
+<div class="controls">
+  <div class="tabs" role="tablist" aria-label="Views">
+    <button id="tab-inbox" class="tab" type="button" role="tab" aria-selected="false" aria-controls="inbox">Inbox</button>
+    <button id="tab-sessions" class="tab" type="button" role="tab" aria-selected="true" aria-controls="root">Sessions</button>
+    <button id="tab-rules" class="tab" type="button" role="tab" aria-selected="false" aria-controls="rules">Rules</button>
+  </div>
+  <input id="filter" type="search" placeholder="Filter sessions" aria-label="Filter sessions" autocomplete="off">
+  <button id="all" class="textbtn" type="button" hidden>Collapse all</button>
+  <button id="select" class="textbtn" type="button" aria-pressed="false" hidden>Select</button>
+  <button id="new" class="textbtn" type="button" aria-expanded="false" aria-controls="startbar" hidden>New session</button>
+</div>
+<section id="startbar" class="startbar" hidden aria-label="Start a new session">
+  <h2>Start a new session</h2>
+  <label>Machine <select id="start-machine"></select></label>
+  <label>Directory <input id="start-dir" type="text" list="start-dirs" placeholder="~/Code/project" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+  <datalist id="start-dirs"></datalist>
+  <label>First prompt (optional) <textarea id="start-prompt" rows="2" maxlength="4000"></textarea></label>
+  <div class="actions">
+    <button id="start-go" type="button">Start</button>
+    <button id="start-close" class="textbtn" type="button">Close</button>
+  </div>
+  <p id="start-status" class="start-status" aria-live="polite"></p>
+</section>
+<main id="inbox" hidden><p class="empty">Loading the inbox...</p></main>
+<main id="root"><p class="empty">Loading sessions...</p></main>
+<main id="rules" hidden><p class="empty">Loading the rules...</p></main>
+<section id="sendbar" class="sendbar" hidden aria-label="Send a message">
+  <h2>Send a message</h2>
+  <ul id="send-targets" class="send-targets"></ul>
+  <textarea id="send-text" rows="3" maxlength="4000" aria-label="Message"></textarea>
+  <div class="actions">
+    <button id="send-go" type="button">Send</button>
+    <button id="send-clear" class="textbtn" type="button">Clear selection</button>
+  </div>
+  <ul id="send-result" class="send-result" aria-live="polite"></ul>
+</section>
+</div>
+<script>
+(function () {
+  "use strict";
+  var ORDER = { blocked: 0, live: 1, stale: 2, ended: 3 };
+  var REFRESH_MS = 30000;
+  var root = document.getElementById("root");
+  var updated = document.getElementById("updated");
+  var filterEl = document.getElementById("filter");
+  var allBtn = document.getElementById("all");
+  var allNames = []; // every machine in the last session list
+  var lastSessions = [];
+  var openEnded = {}; // machine name -> true while its ended group is expanded
+  var openDetails = {};   // session id -> true while its Details section is expanded
+  var detailCache = {};   // session id -> {det, at}: the last detail read
+  var detailLoading = {}; // session id -> true while a detail read is in flight
+  var DETAIL_TTL_MS = 30000;
+  var RC_POLL_MS = 2000;
+  var RC_POLL_FOR_MS = 120000;
+  var rcState = {};      // session id -> {phase: "sending"|"waiting"|"error", req, error, until}
+  var cardEls = {};      // session id -> its card element, for in-place updates
+  var sessionsById = {}; // session id -> the latest session read
+  var whoEl = document.getElementById("who");
+  var whoName = document.getElementById("who-name");
+  var signOutBtn = document.getElementById("signout");
+  var signedOut = false;
+  var refreshTimer = null;
+  var inboxRoot = document.getElementById("inbox");
+  var tabInbox = document.getElementById("tab-inbox");
+  var tabSessions = document.getElementById("tab-sessions");
+  var tabRules = document.getElementById("tab-rules");
+  var rulesRoot = document.getElementById("rules");
+  var selectBtn = document.getElementById("select");
+  var sendBar = document.getElementById("sendbar");
+  var sendTargetsEl = document.getElementById("send-targets");
+  var sendText = document.getElementById("send-text");
+  var sendGo = document.getElementById("send-go");
+  var sendClear = document.getElementById("send-clear");
+  var sendResult = document.getElementById("send-result");
+  var lastRules = { instructions: [], version: "" };
+  var rulesError = "";  // why the last rules read or write failed
+  var ruleDraft = "";   // the add box's text, kept across rebuilds
+  var selectMode = false;
+  var selected = {};    // session id -> true while selected for a message
+  var moveState = {};   // session id -> {phase: "sending"} while a move request is out, or {phase: "error", error}
+  var openMove = {};    // session id -> true while its Move menu is open
+  var machinesError = ""; // why the last machines read failed, or ""
+  var machinesList = null; // the last GET /v1/machines, read when a Move menu opens
+  var newBtn = document.getElementById("new");
+  var startBar = document.getElementById("startbar");
+  var startMachine = document.getElementById("start-machine");
+  var startDir = document.getElementById("start-dir");
+  var startDirs = document.getElementById("start-dirs");
+  var startPrompt = document.getElementById("start-prompt");
+  var startGo = document.getElementById("start-go");
+  var startClose = document.getElementById("start-close");
+  var startStatus = document.getElementById("start-status");
+  var startCur = null; // {phase: "sending"} or {phase: "following", req} or {phase: "error", error}
+  // permState: request id -> {confirm} while Allow once waits for its
+  // second tap, {busy} while a decision is in flight, then {done, text} or
+  // {text}. Each also has session, since, and view, so a decided request
+  // keeps its outcome on the row after the inbox drops the request.
+  var permState = {};
+  var tab = null;       // "inbox", "sessions", or "rules"; null until the first inbox read picks one
+  var lastInbox = { items: [], counts: { blocked: 0, waiting: 0, finished: 0 } };
+  var pending = {};     // session id -> the since a dismiss or snooze hid, until the server agrees
+  var inboxErrors = {}; // session id -> why its last dismiss or snooze failed
+  var openSnooze = {};  // session id -> true while its Snooze menu is open
+  var inboxEls = {};    // session id -> its inbox row, for in-place updates
+  var inboxById = {};   // session id -> its inbox item
+  var openRows = {};    // session id -> true while its inbox row is expanded
+  var blockedSince = {}; // session id -> the inbox's since for a blocked session
+  var focusables = {};  // data-focus key -> the element, to restore focus after a rebuild
+  // Collapsed machines and expanded cards are remembered per browser.
+  var COLLAPSED_KEY = "sessionhub.collapsedMachines";
+  var CARDS_KEY = "sessionhub.openCards";
+  var collapsed = loadMap(COLLAPSED_KEY); // machine name -> true while collapsed
+  var openCards = loadMap(CARDS_KEY);     // session id -> true while its card is expanded
+
+  // auth-state:begin
+  var SIGNED_OUT = "You are signed out. Run sessionhub login --name <device> on a machine with sessionhub, then open the link it prints.";
+
+  // sessionAuth reads a GET /v1/sessions response: signed out on 401, else
+  // the browser session's name from X-Hub-Session-Name ("" for a machine
+  // token).
+  function sessionAuth(status, name) {
+    if (status === 401) return { signedOut: true, name: "" };
+    return { signedOut: false, name: typeof name === "string" ? name : "" };
+  }
+
+  // signOutRequest is the sign-out write: POST /logout with its header.
+  function signOutRequest() {
+    return { url: "/logout", init: { method: "POST", headers: { "X-Hub-Action": "sign-out" }, cache: "no-store" } };
+  }
+
+  // signOutDone: the session is gone after a 204, or was already gone (401).
+  function signOutDone(status) { return status === 204 || status === 401; }
+  // auth-state:end
+
+  // rc-state:begin
+  // The only link the page opens. The server checks results against the same rule.
+  var RC_URL = /^https:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]+$/;
+
+  // rcButton is the Remote Control button a card shows, or null for none.
+  // A session that is moving shows none: the move line says where it is,
+  // and the server refuses Remote Control until the move ends.
+  function rcButton(s) {
+    if (!s.controllable || moveOpen(s.move)) return null;
+    if (s.status === "blocked") return { label: "Remote Control", disabled: true, note: "waiting on a prompt in the pane" };
+    if (s.status === "live") return { label: "Remote Control", disabled: false, note: "" };
+    return { label: "Resume with Remote Control", disabled: false, note: "" };
+  }
+
+  // rcOutcome is what a card says about a request, or null.
+  function rcOutcome(req) {
+    if (!req) return null;
+    switch (req.state) {
+      case "pending":
+      case "claimed":
+        return { kind: "sending", text: "Sending…", url: "" };
+      case "done":
+        if (typeof req.url === "string" && RC_URL.test(req.url)) return { kind: "link", text: req.detail || "", url: req.url };
+        return { kind: "note", text: req.detail || "Sent, but no link appeared.", url: "" };
+      case "failed":
+        return { kind: "error", text: req.detail || "The machine could not turn on Remote Control.", url: "" };
+      case "expired":
+        return { kind: "error", text: "The machine didn't respond in time.", url: "" };
+    }
+    return null;
+  }
+
+  // rcRefusal is the text for a refused request: the server's error, or its status.
+  function rcRefusal(status, body) {
+    if (body && typeof body.error === "string" && body.error) return body.error;
+    return "The server returned " + status + ".";
+  }
+
+  var RC_RECENT_MS = 600000; // a finished request stays on the card for 10 minutes
+
+  // rcServerOutcome is what a card says about the server's latest request when
+  // the page holds no state of its own: an open request, or one that ended in
+  // the last 10 minutes (finished_at, or expires_at for an expired one).
+  // rcURL is the session's remote_control_url. A request keeps its url after
+  // the session ends, so a link outcome without rcURL is a note: no link.
+  function rcServerOutcome(req, now, rcURL) {
+    if (!req) return null;
+    var out = rcOutcome(req);
+    if (req.state === "pending" || req.state === "claimed") return out;
+    var at = Date.parse(req.state === "expired" ? req.expires_at : req.finished_at);
+    if (isNaN(at) || now - at > RC_RECENT_MS) return null;
+    if (out && out.kind === "link" && !rcURL) return { kind: "note", text: out.text, url: "" };
+    return out;
+  }
+
+  // rcStale is true when local state must go because the server knows better:
+  // its latest request is newer than the local one, or the local state is a
+  // link and the server has cleared the link (the session ended).
+  function rcStale(st, s) {
+    if (!st || !st.req) return false;
+    var sr = s.remote_control;
+    if (sr && sr.id !== st.req.id) {
+      var a = Date.parse(sr.created_at), b = Date.parse(st.req.created_at);
+      if (isNaN(a) || isNaN(b) || a > b) return true;
+    }
+    if (st.req.state === "done" && typeof st.req.url === "string" && st.req.url && !s.remote_control_url) return true;
+    return false;
+  }
+
+  // rcPollUntil is when a poller started now gives up: the request's expiry,
+  // or 2 minutes at most.
+  function rcPollUntil(req, now) {
+    var e = Date.parse(req && req.expires_at);
+    return isNaN(e) ? now + 120000 : Math.min(e, now + 120000);
+  }
+  // rc-state:end
+
+  // insight-state:begin
+  // safeLink returns url when it is an https link, else null. Only these
+  // become href values.
+  function safeLink(url) {
+    return typeof url === "string" && /^https:\/\/[^\s]+$/.test(url) ? url : null;
+  }
+
+  function humanCount(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+    if (n >= 1000) return Math.floor(n / 1000) + "k";
+    return String(n);
+  }
+
+  function linkLabel(l) {
+    if (!l.number) return "link";
+    return (/\/merge_requests\//.test(l.url) ? "!" : "#") + l.number;
+  }
+
+  // summaryParts is the card's summary line as [{text, href?}], each part
+  // present only when known and non-zero.
+  function summaryParts(sum) {
+    var out = [];
+    if (!sum) return out;
+    var g = sum.git;
+    if (g) {
+      if (g.commit_count > 0) out.push({ text: g.commit_count + (g.commit_count === 1 ? " commit" : " commits") });
+      if (g.uncommitted > 0) out.push({ text: g.uncommitted + " uncommitted" });
+      if (g.unpushed > 0) out.push({ text: g.unpushed + " unpushed" });
+    }
+    if (sum.latest_link) {
+      var part = { text: linkLabel(sum.latest_link) };
+      var href = safeLink(sum.latest_link.url);
+      if (href) part.href = href;
+      out.push(part);
+    }
+    if (typeof sum.cost_usd === "number") out.push({ text: "$" + sum.cost_usd.toFixed(2) });
+    else if (sum.output_tokens > 0) out.push({ text: humanCount(sum.output_tokens) + " tokens out" });
+    return out;
+  }
+
+  // matches: q occurs, ignoring case, in the title, recap, last prompt,
+  // branch, directory, or machine. Plain text, never a pattern.
+  function matches(s, q) {
+    if (!q) return true;
+    q = q.toLowerCase();
+    return [s.title, s.recap, s.last_prompt, s.git_branch, s.cwd, s.machine].some(function (f) {
+      return typeof f === "string" && f.toLowerCase().indexOf(q) !== -1;
+    });
+  }
+  // insight-state:end
+
+  // layout-state:begin
+  // cleanMap keeps the keys of v whose value is true. What storage hands
+  // back is never trusted as it is.
+  function cleanMap(v) {
+    var out = {};
+    if (!v || typeof v !== "object" || Array.isArray(v)) return out;
+    Object.keys(v).forEach(function (k) { if (v[k] === true) out[k] = true; });
+    return out;
+  }
+
+  // pruneMap keeps the entries of m whose key is in keys.
+  function pruneMap(m, keys) {
+    var out = {};
+    keys.forEach(function (k) { if (m[k] === true) out[k] = true; });
+    return out;
+  }
+
+  // toggleOne is m with key flipped: added when absent, else removed.
+  function toggleOne(m, key) {
+    var out = {};
+    Object.keys(m).forEach(function (k) { if (m[k] === true && k !== key) out[k] = true; });
+    if (m[key] !== true) out[key] = true;
+    return out;
+  }
+
+  // machineOpen: a machine shows its sessions unless the viewer collapsed
+  // it. While a filter is active, every machine with a match is open.
+  function machineOpen(name, collapsed, q) { return q !== "" || collapsed[name] !== true; }
+
+  // allCollapsed is true when every machine in names is collapsed.
+  function allCollapsed(names, collapsed) {
+    return names.length > 0 && names.every(function (n) { return collapsed[n] === true; });
+  }
+
+  // toggleAll is the collapsed map after Collapse all or Expand all: empty
+  // when every machine was collapsed, else every machine.
+  function toggleAll(names, collapsed) {
+    var out = {};
+    if (allCollapsed(names, collapsed)) return out;
+    names.forEach(function (n) { out[n] = true; });
+    return out;
+  }
+
+  // machineLabel is a machine header's count, such as
+  // "3 active, 2 ended · 1 needs you".
+  function machineLabel(active, ended, needs) {
+    var t = active + " active";
+    if (ended) t += ", " + ended + " ended";
+    if (needs) t += " · " + needs + (needs === 1 ? " needs you" : " need you");
+    return t;
+  }
+
+  // needsByMachine counts the inbox items per machine in inboxView's groups.
+  function needsByMachine(groups) {
+    var out = {};
+    groups.forEach(function (g) {
+      g.items.forEach(function (it) {
+        var m = it.session && it.session.machine;
+        if (m) out[m] = (out[m] || 0) + 1;
+      });
+    });
+    return out;
+  }
+
+  // shortAge is the time from iso to now as 12s, 4m, 3h, or 2d, or "" for
+  // a date it cannot read.
+  function shortAge(iso, now) {
+    var t = Date.parse(iso);
+    if (isNaN(t)) return "";
+    var s = Math.max(0, Math.round((now - t) / 1000));
+    if (s < 60) return s + "s";
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + "m";
+    var h = Math.floor(m / 60);
+    if (h < 48) return h + "h";
+    return Math.floor(h / 24) + "d";
+  }
+
+  // cardBadge is the state a card header shows: "blocked 4m" when the
+  // inbox says since when, the agent state of a live session, else the
+  // status.
+  function cardBadge(s, blockedSince, now) {
+    if (s.status === "blocked") {
+      var a = blockedSince ? shortAge(blockedSince, now) : "";
+      return a ? "blocked " + a : "blocked";
+    }
+    if (s.status === "live") return s.agent_state || "live";
+    return s.status || "";
+  }
+  // layout-state:end
+
+  // row-state:begin
+  // inboxNeed is an inbox row's one line: what the session waits on, else
+  // its recap, else the group's label.
+  function inboxNeed(it, s, label) {
+    var w = (it.waiting_on || []).filter(function (x) { return typeof x === "string" && x; });
+    if (w.length) return w.join("; ");
+    if (s && typeof s.recap === "string" && s.recap) return s.recap;
+    return label;
+  }
+
+  // inboxPrimary is what tapping an inbox row does: open the session's
+  // Remote Control link, else send a Remote Control request, else expand
+  // the row. busy is true while a request is open; the row then expands
+  // to show it.
+  function inboxPrimary(s, busy) {
+    var url = s.remote_control_url;
+    if (typeof url === "string" && RC_URL.test(url)) return { kind: "open", label: "Open in Claude", url: url };
+    if (busy) return { kind: "expand", label: "Sending…", url: "" };
+    var b = rcButton(s);
+    if (b && !b.disabled) return { kind: "rc", label: b.label, url: "" };
+    return { kind: "expand", label: s.resume_command ? "Show resume command" : "Show more", url: "" };
+  }
+  // row-state:end
+
+  // inbox-state:begin
+  var GROUPS = [
+    { key: "blocked", label: "Blocked" },
+    { key: "waiting", label: "Waiting on you" },
+    { key: "finished", label: "Finished" }
+  ];
+
+  // inboxView groups the inbox for display, in GROUPS order, without empty
+  // groups. An item is left out while pending maps its session id to its
+  // own since: the page sent a dismiss or snooze for exactly that trigger.
+  function inboxView(inbox, pending) {
+    var items = (inbox && inbox.items) || [];
+    var total = 0;
+    var groups = GROUPS.map(function (g) {
+      var list = items.filter(function (it) {
+        return it.group === g.key && !(it.session && pending[it.session.id] === it.since);
+      });
+      total += list.length;
+      return { key: g.key, label: g.label, items: list };
+    }).filter(function (g) { return g.items.length > 0; });
+    return { groups: groups, total: total };
+  }
+
+  // prunePending keeps the entries whose item the server still returns with
+  // the same since. The others are settled: the server hides the item, or a
+  // newer trigger replaced it.
+  function prunePending(inbox, pending) {
+    var out = {};
+    ((inbox && inbox.items) || []).forEach(function (it) {
+      var id = it.session && it.session.id;
+      if (id && pending[id] === it.since) out[id] = it.since;
+    });
+    return out;
+  }
+
+  // pageTitle is the document title, with the inbox count when there is one.
+  function pageTitle(n) { return n > 0 ? "(" + n + ") sessionhub" : "sessionhub"; }
+
+  // firstTab is the tab the page opens on: Inbox when it has items.
+  function firstTab(n) { return n > 0 ? "inbox" : "sessions"; }
+
+  // hashTab is the tab a URL fragment asks for: #inbox, #sessions, or
+  // #rules, else null. The Telegram alert's Open inbox button links to /#inbox.
+  function hashTab(hash) {
+    if (hash === "#inbox") return "inbox";
+    if (hash === "#sessions") return "sessions";
+    if (hash === "#rules") return "rules";
+    return null;
+  }
+
+  // snoozeUntil is when a snooze ends: 1 hour or 4 hours after now, or 9:00
+  // local time tomorrow. null for anything else.
+  function snoozeUntil(choice, now) {
+    var d = new Date(now);
+    if (choice === "1h") return new Date(d.getTime() + 3600000);
+    if (choice === "4h") return new Date(d.getTime() + 4 * 3600000);
+    if (choice === "tomorrow") return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 9, 0, 0, 0);
+    return null;
+  }
+
+  // triageRequest is the dismiss or snooze write. since is the server's
+  // string, sent back unchanged: a Date round trip would cut it to
+  // milliseconds, earlier than the stored since, and the item would never
+  // hide. A dismiss sends no until.
+  function triageRequest(kind, id, since, until) {
+    var body = { since: since };
+    if (kind === "snooze") body.until = until;
+    return {
+      url: "/v1/inbox/" + encodeURIComponent(id) + "/" + kind,
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Hub-Action": "triage" },
+        body: JSON.stringify(body),
+        cache: "no-store"
+      }
+    };
+  }
+  // inbox-state:end
+
+  // actions-state:begin
+  var RULES_MAX = 2000; // characters in all rules
+  var RULE_MAX = 300;   // characters in one rule
+
+  // ruleChars counts characters as the server does: code points.
+  function ruleChars(text) { return Array.from(text).length; }
+
+  // rulesView is the Rules tab: the rules, oldest first, and the characters
+  // used and left.
+  function rulesView(list) {
+    var rules = ((list && list.instructions) || []).filter(function (r) { return r && typeof r.text === "string"; });
+    var used = rules.reduce(function (n, r) { return n + ruleChars(r.text); }, 0);
+    return { rules: rules, used: used, left: Math.max(0, RULES_MAX - used) };
+  }
+
+  // ruleProblem is why the add box's text cannot be added, or "".
+  function ruleProblem(text, left) {
+    var t = text.trim();
+    if (!t) return "Write the rule first.";
+    if (/[\u0000-\u001f\u007f-\u009f]/.test(t)) return "Keep the rule on one line.";
+    var n = ruleChars(t);
+    if (n > RULE_MAX) return "A rule holds at most 300 characters; this one has " + n + ".";
+    if (n > left) return "The rules hold at most 2,000 characters; remove one first.";
+    return "";
+  }
+
+  function addRuleRequest(text) {
+    return {
+      url: "/v1/instructions",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Hub-Action": "instructions" },
+        body: JSON.stringify({ text: text.trim() }),
+        cache: "no-store"
+      }
+    };
+  }
+
+  function deleteRuleRequest(id) {
+    return {
+      url: "/v1/instructions/" + encodeURIComponent(String(id)),
+      init: { method: "DELETE", headers: { "X-Hub-Action": "instructions" }, cache: "no-store" }
+    };
+  }
+
+  // canMessage: sessionhub can type a message into the session.
+  function canMessage(s) { return !!s && s.controllable === true && s.status !== "ended"; }
+
+  // sendTargets lists the selected sessions, sorted by ID, with whether
+  // each can take a message and why not.
+  function sendTargets(selected, byId) {
+    return Object.keys(selected).filter(function (id) { return selected[id] === true; }).sort().map(function (id) {
+      var s = byId[id];
+      var why = "";
+      if (!s) why = "no longer listed";
+      else if (!canMessage(s)) why = "not in herdr, or its machine's watcher is offline";
+      return { id: id, title: (s && s.title) || id.slice(0, 8), machine: s ? s.machine : "", ok: canMessage(s), why: why };
+    });
+  }
+
+  // sendProblem is why the send bar cannot send, or "".
+  function sendProblem(text, targets) {
+    var ok = targets.filter(function (t) { return t.ok; }).length;
+    if (!ok) return "Select at least one session sessionhub can message.";
+    if (ok > 20) return "Send to at most 20 sessions at a time.";
+    if (!text.trim()) return "Write the message first.";
+    if (Array.from(text).length > 4000) return "A message holds at most 4,000 characters.";
+    return "";
+  }
+
+  function sendRequest(ids, text) {
+    return {
+      url: "/v1/messages",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Hub-Action": "send" },
+        body: JSON.stringify({ session_ids: ids, text: text }),
+        cache: "no-store"
+      }
+    };
+  }
+
+  // sendResultLines is one line per target of a send response.
+  function sendResultLines(out, byId) {
+    return ((out && out.results) || []).map(function (r) {
+      var s = byId[r.session_id];
+      var name = (s && s.title) || String(r.session_id).slice(0, 8);
+      if (r.state === "queued") return name + ": queued; sessionhub types it in when the session is idle.";
+      return name + ": not sent: " + (r.detail || r.state);
+    });
+  }
+
+  // PERM_FIELDS are the tool input fields that say what a tool will do,
+  // in the order the server's PermissionInputText tries them.
+  var PERM_FIELDS = ["command", "file_path", "notebook_path", "path", "url", "pattern", "query", "prompt"];
+
+  // permText is a tool name or input as the approver should read it. It
+  // keeps newlines and tabs, turns CRLF into a newline, and shows every
+  // other control character, DEL, and each Unicode bidirectional control
+  // (the set termtext.Clean drops) as U+FFFD. The tool runs with those
+  // characters, so the page marks them rather than hiding them, and a
+  // bidirectional control cannot reorder what the approver reads.
+  function permText(t) {
+    return String(t).replace(/\r\n/g, "\n")
+      .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g, "\ufffd");
+  }
+
+  // permissionView is what an inbox row shows of a request: the tool, its
+  // main field ("" for a tool other than Bash without one), whether that is
+  // a shell command (shown as code), the whole stored input (at most 8 KiB)
+  // as compact JSON for any other tool (input), and cut: the hook or the
+  // server cut the input (truncated), so the approver cannot see all of it.
+  function permissionView(p) {
+    if (!p || typeof p.tool_name !== "string") return null;
+    var input = p.tool_input;
+    var main = "";
+    if (input && typeof input === "object" && !Array.isArray(input)) {
+      for (var i = 0; i < PERM_FIELDS.length && !main; i++) {
+        var v = input[PERM_FIELDS[i]];
+        if (typeof v === "string" && v) main = v;
+      }
+    }
+    // A cut input is a string holding the start of the JSON.
+    var all = typeof input === "string" ? input : JSON.stringify(input === undefined ? {} : input);
+    var code = p.tool_name === "Bash";
+    // Without a main field, another tool shows only its input box.
+    if (!main && code) main = all;
+    return { id: p.id, tool: permText(p.tool_name), main: permText(main), code: code, input: code ? "" : permText(all),
+      cut: p.truncated === true };
+  }
+
+  // denyProblem is why a Deny reason cannot be sent, or "". The server
+  // takes at most 200 characters and no control characters.
+  function denyProblem(reason) {
+    if (/[\u0000-\u001f\u007f-\u009f]/.test(reason)) return "Keep the reason on one line.";
+    var n = Array.from(reason).length;
+    if (n > 200) return "A reason holds at most 200 characters; this one has " + n + ".";
+    return "";
+  }
+
+  // decideRequest is the Allow once or Deny write. Only a deny carries a
+  // reason.
+  function decideRequest(id, decision, reason) {
+    var body = { decision: decision };
+    if (decision === "deny" && reason) body.reason = reason;
+    return {
+      url: "/v1/permissions/" + encodeURIComponent(id) + "/decide",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Hub-Action": "approve" },
+        body: JSON.stringify(body),
+        cache: "no-store"
+      }
+    };
+  }
+
+  // cutRefusal: the server refused an allow because the hook cut the input.
+  // The request stays open, so the row keeps Deny.
+  function cutRefusal(status, body) {
+    return status === 409 && !!body && typeof body.error === "string" &&
+      body.error.indexOf("the input was cut; allow it in the terminal") !== -1;
+  }
+
+  // decisionOutcome is the line a row shows after the server answers.
+  function decisionOutcome(status, decision, body) {
+    if (status === 200) return decision === "allow" ? "Allowed once." : "Denied.";
+    if (cutRefusal(status, body)) return "Not sent: the input was cut; allow it in the terminal.";
+    if (status === 409) return "Someone already answered this request.";
+    if (status === 410) return "Too late: the prompt was answered in the terminal or expired.";
+    var msg = body && typeof body.error === "string" ? body.error : "";
+    return "Not sent: " + (msg || "the server returned " + status + ".");
+  }
+  // actions-state:end
+
+  // move-state:begin
+  var MOVE_POLL_MS = 2000;
+  var MOVE_FOLLOW_MS = 180000;
+  var MOVE_LINK = /^https:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]+$/;
+
+  // isGitHub reports whether a remote URL is on github.com: the host of a
+  // URL with a scheme, or of git@host:path, ignoring the user and case. (The
+  // page must not hold a literal scheme-and-slashes string: the CSP test
+  // looks for one.)
+  function isGitHub(u) {
+    var s = String(u || "").trim();
+    var i = s.indexOf("://");
+    if (i >= 0) {
+      s = s.slice(i + 3);
+      var at = s.indexOf("@");
+      var slash = s.indexOf("/");
+      if (at >= 0 && (slash < 0 || at < slash)) s = s.slice(at + 1);
+    } else {
+      var c = s.indexOf(":");
+      if (c <= 0 || s.slice(0, c).indexOf("/") !== -1) return false;
+      s = s.slice(s.lastIndexOf("@", c) + 1, c) + "/" + s.slice(c + 1);
+    }
+    return s.toLowerCase().replace(/^github\.com:\d+\//, "github.com/").indexOf("github.com/") === 0;
+  }
+
+  // moveOpen reports whether a move is under way.
+  function moveOpen(m) {
+    return !!m && ["requested", "packing", "uploaded", "unpacking"].indexOf(m.state) !== -1;
+  }
+
+  // moveBlocked is why the session cannot move now, or "". The server
+  // checks again and has the last word.
+  function moveBlocked(s) {
+    if (!s || s.status === "ended") return "The session has ended.";
+    if (s.controllable !== true) return "Not in herdr, or its machine's watcher is offline.";
+    if (s.agent_state !== "idle" && s.agent_state !== "done") return "Wait until the agent is idle or done.";
+    if (moveOpen(s.move)) return "A move is under way.";
+    return "";
+  }
+
+  // moveTargets is where the session can go: every other machine, ready or
+  // not with the reason, then Cloud for a GitHub remote.
+  function moveTargets(s, machines) {
+    var out = [];
+    (machines || []).forEach(function (m) {
+      if (!m || typeof m.name !== "string" || m.name === s.machine) return;
+      var ok = m.move_ready === true;
+      out.push({ target: m.name, label: m.name, ok: ok, why: ok ? "" : (m.move_key ? "its watcher is offline" : "no move key yet") });
+    });
+    if (isGitHub(s.git_repo)) out.push({ target: "cloud", label: "Cloud", ok: true, why: "" });
+    return out;
+  }
+
+  // moveConfirm is the question the page asks before a move.
+  function moveConfirm(s, t) {
+    var name = String(s.title || String(s.id).slice(0, 8))
+      .replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g, "\ufffd");
+    if (t.target === "cloud") {
+      return "Hand \"" + name + "\" to a new Claude Code cloud session? Uncommitted work goes on a sessionhub branch on GitHub, and the session ends here.";
+    }
+    return "Move \"" + name + "\" to " + t.label + "? Its conversation, branch" + (s.git_branch ? " " + s.git_branch : "") +
+      ", and uncommitted changes move; the session ends here and resumes on " + t.label + ".";
+  }
+
+  // moveRequest is the Move write.
+  function moveRequest(id, target) {
+    return {
+      url: "/v1/sessions/" + encodeURIComponent(id) + "/move",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Hub-Action": "move" },
+        body: JSON.stringify({ target: target }),
+        cache: "no-store"
+      }
+    };
+  }
+
+  // moveView is the card's line for its latest move, or null: a note while
+  // it runs, the cloud link when a cloud move is done, an error when it
+  // failed.
+  function moveView(m) {
+    if (!m || typeof m.state !== "string") return null;
+    var to = m.target === "cloud" ? "the cloud" : m.target;
+    switch (m.state) {
+      case "requested": return { kind: "note", text: "Moving to " + to + ": waiting for " + m.source + "\u2026", url: "" };
+      case "packing": return { kind: "note", text: "Moving to " + to + ": packing on " + m.source + "\u2026", url: "" };
+      case "uploaded": return { kind: "note", text: "Moving to " + to + ": waiting for " + m.target + "\u2026", url: "" };
+      case "unpacking": return { kind: "note", text: "Moving to " + to + ": unpacking on " + m.target + "\u2026", url: "" };
+      case "done":
+        if (m.target === "cloud" && MOVE_LINK.test(m.cloud_url || "")) return { kind: "link", text: "Moved to the cloud.", url: m.cloud_url };
+        return { kind: "note", text: "Moved to " + to + "." + (m.detail ? " " + m.detail : ""), url: "" };
+    }
+    return { kind: "error", text: "Move to " + to + " failed: " + (m.detail || m.state), url: "" };
+  }
+  // move-state:end
+
+  // start-state:begin
+  var START_POLL_MS = 2000;
+  var START_FOLLOW_MS = 150000;
+  var START_LINK = /^https:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]+$/;
+
+  // startMachines is the Machine choices: every machine, online ones first
+  // as the server listed them, offline ones with the reason.
+  function startMachines(machines) {
+    var on = [], off = [];
+    (machines || []).forEach(function (m) {
+      if (!m || typeof m.name !== "string") return;
+      if (m.online === true) on.push({ name: m.name, ok: true, why: "" });
+      else off.push({ name: m.name, ok: false, why: "watcher offline" });
+    });
+    return on.concat(off);
+  }
+
+  // startDirsFor is up to 10 directories the machine's sessions used, the
+  // most recently seen first, for the Directory suggestions.
+  function startDirsFor(sessions, machine) {
+    var seen = {}, out = [];
+    (sessions || []).filter(function (s) { return s && s.machine === machine && typeof s.cwd === "string" && s.cwd; })
+      .sort(function (a, b) { return String(b.last_seen_at || "").localeCompare(String(a.last_seen_at || "")); })
+      .forEach(function (s) {
+        if (seen[s.cwd] || out.length >= 10) return;
+        seen[s.cwd] = true;
+        out.push(s.cwd);
+      });
+    return out;
+  }
+
+  // startProblem is why the form can't start yet, or "". The server and
+  // the machine check again.
+  function startProblem(machine, dir, prompt) {
+    if (!machine) return "Pick a machine.";
+    var d = String(dir || "").trim();
+    if (!d) return "Enter a directory.";
+    if (d.charAt(0) !== "/" && d !== "~" && d.indexOf("~/") !== 0) return "Use an absolute directory, or one starting with ~/.";
+    if (String(prompt || "").length > 4000) return "The first prompt is over 4,000 characters.";
+    return "";
+  }
+
+  // startRequest is the start write.
+  function startRequest(machine, dir, prompt) {
+    var body = { dir: String(dir).trim() };
+    if (String(prompt || "").trim()) body.prompt = prompt;
+    return {
+      url: "/v1/machines/" + encodeURIComponent(machine) + "/start",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Hub-Action": "start" },
+        body: JSON.stringify(body),
+        cache: "no-store"
+      }
+    };
+  }
+
+  // startOpen reports whether a start request is still under way.
+  function startOpen(r) { return !!r && (r.state === "pending" || r.state === "claimed"); }
+
+  // startView is the panel's line for a start request: a note while it
+  // runs, the link when it started with one, an error when it failed.
+  function startView(r) {
+    if (!r || typeof r.state !== "string") return null;
+    var m = r.machine;
+    switch (r.state) {
+      case "pending": return { kind: "note", text: "Waiting for the watcher on " + m + "\u2026", url: "" };
+      case "claimed": return { kind: "note", text: "Starting Claude on " + m + "\u2026", url: "" };
+      case "done":
+        var extra = r.detail && r.detail !== "started in a new herdr workspace" ? " " + r.detail + "." : "";
+        if (START_LINK.test(r.url || "")) return { kind: "link", text: "Started on " + m + "." + extra, url: r.url };
+        return { kind: "note", text: "Started on " + m + ", but the link wasn't seen; the session shows here once it reports." + extra, url: "" };
+      case "expired": return { kind: "error", text: "The watcher on " + m + " didn't finish in time.", url: "" };
+    }
+    return { kind: "error", text: "Start on " + m + " failed: " + (r.detail || r.state), url: "" };
+  }
+  // start-state:end
+
+  // loadMap and saveMap read and write a remembered map. Storage can be
+  // missing or throw (private windows, blocked site data); the page then
+  // keeps the state in memory only.
+  function loadMap(key) {
+    try { return cleanMap(JSON.parse(window.localStorage.getItem(key) || "{}")); } catch (e) { return {}; }
+  }
+
+  function saveMap(key, m) {
+    try { window.localStorage.setItem(key, JSON.stringify(m)); } catch (e) { /* memory only */ }
+  }
+
+  // keyed marks e as the element for key, so a rebuild can give focus back.
+  function keyed(e, key) {
+    e.setAttribute("data-focus", key);
+    focusables[key] = e;
+    return e;
+  }
+
+  // focusKeyed focuses the current element for key, if it is on the page.
+  function focusKeyed(key) {
+    var e = key && focusables[key];
+    if (e && e.isConnected) e.focus();
+  }
+
+  // focusedKey is the data-focus key of the focused element, or null.
+  function focusedKey() {
+    var a = document.activeElement;
+    return a && a.getAttribute ? a.getAttribute("data-focus") : null;
+  }
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+
+  function age(iso, now) {
+    var s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
+    if (s < 60) return s + "s ago";
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + "m ago";
+    var h = Math.floor(m / 60);
+    if (h < 48) return h + "h ago";
+    return Math.floor(h / 24) + "d ago";
+  }
+
+  function rank(s) { return ORDER[s.status] !== undefined ? ORDER[s.status] : 9; }
+
+  function cmp(a, b) {
+    var d = rank(a) - rank(b);
+    if (d) return d;
+    return new Date(b.last_seen_at) - new Date(a.last_seen_at);
+  }
+
+  function list(label, items, max) {
+    if (!items || !items.length) return null;
+    var frag = document.createDocumentFragment();
+    frag.appendChild(el("dt", null, label));
+    var dd = el("dd");
+    var ul = el("ul");
+    items.slice(0, max).forEach(function (t) { ul.appendChild(el("li", null, t)); });
+    if (items.length > max) ul.appendChild(el("li", "meta", "+" + (items.length - max) + " more"));
+    dd.appendChild(ul);
+    frag.appendChild(dd);
+    return frag;
+  }
+
+  // copy puts text on the clipboard and shows the outcome on btn for 2 s,
+  // then label again ("Copy" when label is not given).
+  function copy(text, btn, code, label) {
+    function done(ok) {
+      btn.textContent = ok ? "Copied" : "Select";
+      setTimeout(function () { btn.textContent = label || "Copy"; }, 2000);
+    }
+    function fallback() {
+      var range = document.createRange();
+      range.selectNodeContents(code);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      done(ok); // if false the text stays selected for a manual copy
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  function rcLink(s, url, label) {
+    var box = el("div", "rc-link");
+    if (label) box.appendChild(el("div", "meta", label));
+    var row = el("div", "cmd");
+    var a = el("a", "open", "Open in Claude");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    var code = el("code", null, url);
+    var btn = el("button", null, "Copy");
+    btn.type = "button";
+    btn.setAttribute("aria-label", "Copy Remote Control link for " + (s.title || s.id));
+    btn.addEventListener("click", function () { copy(url, btn, code); });
+    row.appendChild(a);
+    row.appendChild(code);
+    row.appendChild(btn);
+    box.appendChild(row);
+    return box;
+  }
+
+  // rcRow is the card's Remote Control row: the button, what the last tap
+  // did, and the last link until the session ends. null when there is none.
+  function rcRow(s, now) {
+    var st = rcState[s.id];
+    var out = null;
+    if (st && st.phase === "sending") out = { kind: "sending", text: "Sending…", url: "" };
+    else if (st && st.phase === "error") out = { kind: "error", text: st.error, url: "" };
+    else if (st && st.req) out = rcOutcome(st.req);
+    else out = rcServerOutcome(s.remote_control, now, s.remote_control_url);
+
+    var box = el("div", "rc");
+    var b = rcButton(s);
+    if (b) {
+      var btn = el("button", null, b.label);
+      btn.type = "button";
+      btn.disabled = b.disabled || (out !== null && out.kind === "sending");
+      btn.setAttribute("aria-label", b.label + " for " + (s.title || s.id));
+      btn.addEventListener("click", function () { requestRC(s.id); });
+      box.appendChild(btn);
+      if (b.note) box.appendChild(el("span", "note", b.note));
+    }
+    if (out && out.text) box.appendChild(el("span", out.kind === "error" ? "rc-error" : "note", out.text));
+    var url = out && out.kind === "link" ? out.url : s.remote_control_url;
+    if (url && RC_URL.test(url)) {
+      var label = "Remote Control link" + (s.remote_control_at ? ", " + age(s.remote_control_at, now) : "");
+      box.appendChild(rcLink(s, url, label));
+    }
+    return box.childNodes.length ? box : null;
+  }
+
+  // refreshCard rebuilds the session's card and its inbox row, so a Remote
+  // Control tap from either one shows on both.
+  function refreshCard(id) {
+    var old = cardEls[id];
+    var s = sessionsById[id];
+    if (old && s && old.parentNode) old.replaceWith(card(s, Date.now()));
+    var row = inboxEls[id];
+    var it = inboxById[id];
+    if (row && it && row.parentNode) row.replaceWith(inboxRow(it, Date.now()));
+  }
+
+  // requestRC sends the Remote Control write request.
+  function requestRC(id) {
+    rcState[id] = { phase: "sending" };
+    refreshCard(id);
+    fetch("/v1/sessions/" + encodeURIComponent(id) + "/remote-control", {
+      method: "POST",
+      headers: { "Accept": "application/json", "X-Hub-Action": "remote-control" },
+      cache: "no-store"
+    })
+      .then(function (resp) {
+        return resp.json().then(
+          function (body) { return { resp: resp, body: body }; },
+          function () { return { resp: resp, body: null }; });
+      })
+      .then(function (r) {
+        if (!r.resp.ok || !r.body || typeof r.body.id !== "string") {
+          rcState[id] = { phase: "error", error: rcRefusal(r.resp.status, r.body) };
+          refreshCard(id);
+          return;
+        }
+        rcState[id] = { phase: "waiting", req: r.body, until: Date.now() + RC_POLL_FOR_MS };
+        refreshCard(id);
+        setTimeout(function () { pollRC(id, r.body.id); }, RC_POLL_MS);
+      })
+      .catch(function () {
+        rcState[id] = { phase: "error", error: "Could not reach the sessionhub." };
+        refreshCard(id);
+      });
+  }
+
+  // pollRC reads the session every 2 s until the request ends, for up to
+  // 2 minutes.
+  function pollRC(id, reqID) {
+    var st = rcState[id];
+    if (!st || !st.req || st.req.id !== reqID) return; // a newer tap took over
+    if (Date.now() > st.until) {
+      st.req = Object.assign({}, st.req, { state: "expired" });
+      refreshCard(id);
+      return;
+    }
+    function again() { setTimeout(function () { pollRC(id, reqID); }, RC_POLL_MS); }
+    fetch("/v1/sessions/" + encodeURIComponent(id), { headers: { "Accept": "application/json" }, cache: "no-store" })
+      .then(function (resp) {
+        if (!resp.ok) throw new Error("status " + resp.status);
+        return resp.json();
+      })
+      .then(function (d) {
+        sessionsById[id] = d;
+        if (rcStale(rcState[id], d)) delete rcState[id];
+        var req = d.remote_control;
+        if (req && req.id === reqID) st.req = req;
+        refreshCard(id);
+        if (!req || req.id !== reqID || req.state === "pending" || req.state === "claimed") again();
+      })
+      .catch(again);
+  }
+
+  // detailsFor is the expandable part of a card: commits, links, usage. Its
+  // open state and last detail outlive the card: render and refreshCard
+  // rebuild cards, so they live in openDetails and detailCache. It loads
+  // GET /v1/sessions/{id} when it opens and the cached detail is missing or
+  // older than DETAIL_TTL_MS.
+  function detailsFor(s) {
+    var d = el("details", "digest");
+    d.appendChild(el("summary", null, "Details"));
+    var cached = detailCache[s.id];
+    var body = el("div");
+    if (cached) body.appendChild(digestView(cached.det, Date.now()));
+    else body.textContent = "Loading...";
+    d.appendChild(body);
+    d.open = !!openDetails[s.id];
+    d.addEventListener("toggle", function () {
+      openDetails[s.id] = d.open;
+      if (!d.open || detailLoading[s.id]) return;
+      var c = detailCache[s.id];
+      if (c && Date.now() - c.at < DETAIL_TTL_MS) return;
+      detailLoading[s.id] = true;
+      fetch("/v1/sessions/" + encodeURIComponent(s.id), { headers: { "Accept": "application/json" }, cache: "no-store" })
+        .then(function (resp) { if (!resp.ok) throw new Error("The server returned " + resp.status + "."); return resp.json(); })
+        .then(function (det) {
+          detailLoading[s.id] = false;
+          detailCache[s.id] = { det: det, at: Date.now() };
+          if (d.isConnected) body.replaceChildren(digestView(det, Date.now()));
+          else refreshCard(s.id); // the card was rebuilt while this loaded
+        })
+        .catch(function (err) {
+          detailLoading[s.id] = false;
+          if (!detailCache[s.id]) body.textContent = err.message || "Could not load details.";
+        });
+    });
+    return d;
+  }
+
+  function digestView(det, now) {
+    var frag = document.createDocumentFragment();
+    var dg = det.digest;
+    if (!dg) {
+      frag.appendChild(el("p", "empty", "No digest yet."));
+      return frag;
+    }
+    if (dg.git && dg.git.commit_count > 0) {
+      frag.appendChild(el("h3", null, "Commits on " + (det.git_branch || "HEAD") + " during the session (" + dg.git.commit_count + ")"));
+      var ul = el("ul");
+      (dg.git.commits || []).forEach(function (c) { ul.appendChild(el("li", null, c.sha + "  " + c.subject)); });
+      frag.appendChild(ul);
+    }
+    if (dg.links && dg.links.length) {
+      frag.appendChild(el("h3", null, "Links (" + dg.links.length + ")"));
+      var ll = el("ul");
+      dg.links.forEach(function (l) {
+        var li = el("li");
+        var href = safeLink(l.url);
+        if (href) {
+          var a = el("a", null, linkLabel(l) + " " + l.url);
+          a.href = href;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          li.appendChild(a);
+        } else {
+          li.textContent = linkLabel(l) + " " + l.url;
+        }
+        ll.appendChild(li);
+      });
+      frag.appendChild(ll);
+    }
+    var t = dg.tokens || {};
+    frag.appendChild(el("p", "meta", "Tokens: input " + humanCount(t.input || 0) + " · output " + humanCount(t.output || 0) +
+      " · cache read " + humanCount(t.cache_read || 0) + " · cache write " + humanCount(t.cache_write || 0)));
+    if (typeof dg.cost_usd === "number") {
+      frag.appendChild(el("p", "meta", "Cost: $" + dg.cost_usd.toFixed(2) + (dg.cost_at ? " as of " + new Date(dg.cost_at).toLocaleString() : "")));
+    }
+    frag.appendChild(el("p", "meta", "Last transcript entry " + age(dg.as_of, now)));
+    return frag;
+  }
+
+  function recapEl(s, now) {
+    if (!s.recap) return null;
+    var rp = el("p", "recap");
+    rp.appendChild(el("span", "label", "Recap" + (s.recap_at ? ", " + age(s.recap_at, now) : "") + ": "));
+    rp.appendChild(document.createTextNode(s.recap));
+    return rp;
+  }
+
+  function promptEl(s, now) {
+    if (!s.last_prompt) return null;
+    var lp = el("p", "prompt");
+    lp.appendChild(el("span", "label", "You" + (s.last_prompt_at ? ", " + age(s.last_prompt_at, now) : "") + ": "));
+    lp.appendChild(document.createTextNode(s.last_prompt));
+    return lp;
+  }
+
+  function summaryEl(s) {
+    var parts = summaryParts(s.summary);
+    if (!parts.length) return null;
+    var sl = el("div", "meta summary");
+    parts.forEach(function (p, i) {
+      if (i) sl.appendChild(document.createTextNode(" · "));
+      if (p.href) {
+        var a = el("a", null, p.text);
+        a.href = p.href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        sl.appendChild(a);
+      } else {
+        sl.appendChild(document.createTextNode(p.text));
+      }
+    });
+    return sl;
+  }
+
+  // resumeRow is the resume command with a copy button labeled label, or
+  // null without a command. The card and the inbox row both use it.
+  function resumeRow(s, label) {
+    if (!s.resume_command) return null;
+    var row = el("div", "cmd");
+    var code = el("code", null, s.resume_command);
+    var btn = el("button", null, label);
+    btn.type = "button";
+    btn.setAttribute("aria-label", "Copy resume command for " + (s.title || s.id));
+    btn.addEventListener("click", function () { copy(s.resume_command, btn, code, label); });
+    row.appendChild(code);
+    row.appendChild(btn);
+    return row;
+  }
+
+  // card is a session's card: a header button with the status dot, title,
+  // age, and state badge, and, while openCards has the session, the body.
+  function card(s, now) {
+    var open = openCards[s.id] === true;
+    var art = el("article", "card " + s.status + (open ? " open" : ""));
+    var head = keyed(el("button", "card-head"), "card:" + s.id);
+    head.type = "button";
+    head.setAttribute("aria-expanded", open ? "true" : "false");
+    var dot = el("span", "dot " + s.status);
+    dot.setAttribute("aria-hidden", "true");
+    head.appendChild(dot);
+    head.appendChild(el("span", "title", s.title || s.id.slice(0, 8)));
+    head.appendChild(el("span", "age", shortAge(s.last_seen_at, now)));
+    head.appendChild(el("span", "badge " + s.status, cardBadge(s, blockedSince[s.id], now)));
+    head.addEventListener("click", function () {
+      openCards = toggleOne(openCards, s.id);
+      saveMap(CARDS_KEY, openCards);
+      refreshCard(s.id);
+      focusKeyed("card:" + s.id);
+    });
+    art.appendChild(head);
+    if (selectMode || open) art.appendChild(pickBox(s));
+    cardEls[s.id] = art;
+    if (!open) return art;
+
+    var c = el("div", "card-body");
+    art.appendChild(c);
+    var bits = [];
+    if (s.agent_state) bits.push(s.agent_state);
+    bits.push("seen " + age(s.last_seen_at, now));
+    c.appendChild(el("div", "meta", bits.join(" · ")));
+
+    var where = [];
+    if (s.cwd) where.push(s.cwd);
+    if (s.git_branch) where.push("on " + s.git_branch);
+    if (where.length) c.appendChild(el("div", "meta", where.join(" ")));
+
+    var rp = recapEl(s, now);
+    if (rp) c.appendChild(rp);
+
+    var r = s.latest_report;
+    if (r) {
+      var dl = el("dl", "report");
+      [list("Done", r.done, 3), list("In flight", r.in_flight, 5), list("Waiting on", r.waiting_on, 5)].forEach(function (f) {
+        if (f) dl.appendChild(f);
+      });
+      if (r.note) {
+        dl.appendChild(el("dt", null, "Note"));
+        dl.appendChild(el("dd", null, r.note));
+      }
+      if (dl.childNodes.length) c.appendChild(dl);
+    }
+
+    var lp = promptEl(s, now);
+    if (lp) c.appendChild(lp);
+    var sl = summaryEl(s);
+    if (sl) c.appendChild(sl);
+    c.appendChild(detailsFor(s));
+
+    var rr = resumeRow(s, "Copy");
+    if (rr) c.appendChild(rr);
+    var rc = rcRow(s, now);
+    if (rc) c.appendChild(rc);
+    var mr = moveRow(s);
+    if (mr) c.appendChild(mr);
+    return art;
+  }
+
+  // moveRow is the card's Move menu and its latest move's line. A session
+  // that cannot move gets a disabled button and the reason; an ended one
+  // without a move gets nothing.
+  function moveRow(s) {
+    var st = moveState[s.id];
+    // A refusal belongs to the move it followed: a newer move replaces it.
+    if (st && st.phase === "error" && st.at !== (s.move ? s.move.id : "")) st = null;
+    var line = st && st.phase === "sending" ? { kind: "note", text: "Sending\u2026", url: "" } :
+      st && st.phase === "error" ? { kind: "error", text: st.error, url: "" } : moveView(s.move);
+    if (s.status === "ended" && !line) return null;
+    var box = el("div", "move");
+    var why = moveBlocked(s);
+    var busy = !!st && st.phase === "sending";
+    if (s.status === "ended") {
+      // Nothing to offer; only the line below.
+    } else if (why) {
+      var off = el("button", null, "Move to\u2026");
+      off.type = "button";
+      off.disabled = true;
+      box.appendChild(off);
+      box.appendChild(el("span", "note", why));
+    } else {
+      var menu = keyed(el("details", "move-menu"), "move:" + s.id);
+      menu.open = !!openMove[s.id];
+      menu.appendChild(el("summary", null, "Move to\u2026"));
+      menu.addEventListener("toggle", function () {
+        var was = !!openMove[s.id];
+        openMove[s.id] = menu.open;
+        // Only a change from closed to open is a user action; a rebuilt
+        // card sets open itself, and fetching then would loop.
+        if (menu.open && !was) loadMachines(s.id);
+      });
+      if (machinesList === null) menu.appendChild(el("p", machinesError ? "rc-error" : "note", machinesError || "Reading the machines\u2026"));
+      var targets = moveTargets(s, machinesList || []);
+      if (machinesList !== null && !targets.length) menu.appendChild(el("p", "note", "No other machine, and no GitHub remote for the cloud."));
+      targets.forEach(function (t) {
+        var b = el("button", "textbtn", t.label);
+        b.type = "button";
+        b.disabled = !t.ok || busy;
+        b.addEventListener("click", function () { startMove(s, t); });
+        menu.appendChild(b);
+        if (t.why) menu.appendChild(el("span", "note", t.label + ": " + t.why));
+      });
+      box.appendChild(menu);
+    }
+    if (line && line.kind === "link") {
+      box.appendChild(el("span", "note", line.text));
+      var a = el("a", "open", "Open in Claude");
+      a.href = line.url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      box.appendChild(a);
+    } else if (line) {
+      box.appendChild(el("span", line.kind === "error" ? "rc-error" : "note", line.text));
+    }
+    return box;
+  }
+
+  // loadMachines reads the machines for an open Move menu.
+  function loadMachines(id) {
+    fetch("/v1/machines", { headers: { "Accept": "application/json" }, cache: "no-store" })
+      .then(function (resp) {
+        if (resp.status === 401) { showSignedOut(); return null; }
+        if (!resp.ok) throw new Error("status " + resp.status);
+        return resp.json();
+      })
+      .then(function (list) {
+        if (list === null) return;
+        machinesList = Array.isArray(list) ? list : [];
+        machinesError = "";
+        refreshCard(id);
+      })
+      .catch(function () {
+        machinesError = "Could not read the machines.";
+        refreshCard(id);
+      });
+  }
+
+  // startMove asks, then sends the move and follows it.
+  function startMove(s, t) {
+    if (!window.confirm(moveConfirm(s, t))) return;
+    moveState[s.id] = { phase: "sending" };
+    openMove[s.id] = false;
+    refreshCard(s.id);
+    var req = moveRequest(s.id, t.target);
+    fetch(req.url, req.init)
+      .then(function (resp) {
+        return resp.json().then(
+          function (body) { return { resp: resp, body: body }; },
+          function () { return { resp: resp, body: null }; });
+      })
+      .then(function (r) {
+        if (r.resp.status === 401) { showSignedOut(); return; }
+        if (r.resp.status !== 202 || !r.body || typeof r.body.id !== "string") {
+          moveState[s.id] = { phase: "error", error: rcRefusal(r.resp.status, r.body), at: s.move ? s.move.id : "" };
+          refreshCard(s.id);
+          return;
+        }
+        delete moveState[s.id];
+        var cur = sessionsById[s.id];
+        if (cur) cur.move = r.body;
+        refreshCard(s.id);
+        var until = Date.now() + MOVE_FOLLOW_MS;
+        setTimeout(function () { pollMove(s.id, r.body.id, until); }, MOVE_POLL_MS);
+      })
+      .catch(function () {
+        moveState[s.id] = { phase: "error", error: "Could not reach the sessionhub.", at: s.move ? s.move.id : "" };
+        refreshCard(s.id);
+      });
+  }
+
+  // pollMove reads the move every 2 seconds while it runs, for up to
+  // 3 minutes; the 30-second list refresh shows it after that.
+  function pollMove(sid, id, until) {
+    if (signedOut || Date.now() > until) return;
+    function again() { setTimeout(function () { pollMove(sid, id, until); }, MOVE_POLL_MS); }
+    fetch("/v1/moves/" + encodeURIComponent(id), { headers: { "Accept": "application/json" }, cache: "no-store" })
+      .then(function (resp) {
+        if (resp.status === 401) { showSignedOut(); return null; }
+        if (!resp.ok) throw new Error("status " + resp.status);
+        return resp.json();
+      })
+      .then(function (m) {
+        if (m === null) return;
+        var cur = sessionsById[sid];
+        if (cur && (!cur.move || cur.move.id === id)) cur.move = m;
+        refreshCard(sid);
+        if (moveOpen(m)) again();
+      })
+      .catch(again);
+  }
+
+  // openStartBar shows the New session panel and reads the machines.
+  function openStartBar() {
+    startBar.hidden = false;
+    newBtn.setAttribute("aria-expanded", "true");
+    renderStartBar();
+    fetch("/v1/machines", { headers: { "Accept": "application/json" }, cache: "no-store" })
+      .then(function (resp) {
+        if (resp.status === 401) { showSignedOut(); return null; }
+        if (!resp.ok) throw new Error("status " + resp.status);
+        return resp.json();
+      })
+      .then(function (list) {
+        if (list === null) return;
+        machinesList = Array.isArray(list) ? list : [];
+        machinesError = "";
+        renderStartBar();
+      })
+      .catch(function () {
+        machinesError = "Could not read the machines.";
+        renderStartBar();
+      });
+    startDir.focus();
+  }
+
+  function closeStartBar() {
+    startBar.hidden = true;
+    newBtn.setAttribute("aria-expanded", "false");
+    newBtn.focus();
+  }
+
+  // renderStartBar fills the Machine choices, the Directory suggestions,
+  // and the status line, keeping what the viewer picked and typed.
+  function renderStartBar() {
+    var picked = startMachine.value;
+    var choices = startMachines(machinesList || []);
+    startMachine.replaceChildren();
+    if (machinesList === null) startMachine.appendChild(el("option", null, machinesError || "Reading the machines\u2026"));
+    choices.forEach(function (c) {
+      var o = el("option", null, c.ok ? c.name : c.name + " (" + c.why + ")");
+      o.value = c.name;
+      o.disabled = !c.ok;
+      startMachine.appendChild(o);
+    });
+    var first = choices.filter(function (c) { return c.ok; })[0];
+    if (choices.some(function (c) { return c.ok && c.name === picked; })) startMachine.value = picked;
+    else if (first) startMachine.value = first.name;
+    else startMachine.value = "";
+    startDirs.replaceChildren();
+    startDirsFor(lastSessions, startMachine.value).forEach(function (d) {
+      var o = el("option");
+      o.value = d;
+      startDirs.appendChild(o);
+    });
+    var busy = !!startCur && (startCur.phase === "sending" || (startCur.phase === "following" && startOpen(startCur.req)));
+    startGo.disabled = busy || machinesList === null || !first;
+    var line = !startCur ? null : startCur.phase === "sending" ? { kind: "note", text: "Sending\u2026", url: "" } :
+      startCur.phase === "error" ? { kind: "error", text: startCur.error, url: "" } : startView(startCur.req);
+    if (machinesList !== null && !first && !line) line = { kind: "note", text: "No machine's watcher is online.", url: "" };
+    startStatus.replaceChildren();
+    if (!line) return;
+    startStatus.appendChild(el("span", line.kind === "error" ? "rc-error" : null, line.text));
+    if (line.kind === "link") {
+      var a = el("a", "open", "Open in Claude");
+      a.href = line.url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      startStatus.appendChild(a);
+    }
+  }
+
+  // startSession sends the panel's start request and follows it.
+  function startSession() {
+    var why = startProblem(startMachine.value, startDir.value, startPrompt.value);
+    if (why) { startCur = { phase: "error", error: why }; renderStartBar(); return; }
+    var req = startRequest(startMachine.value, startDir.value, startPrompt.value);
+    startCur = { phase: "sending" };
+    renderStartBar();
+    fetch(req.url, req.init)
+      .then(function (resp) {
+        return resp.json().then(
+          function (body) { return { resp: resp, body: body }; },
+          function () { return { resp: resp, body: null }; });
+      })
+      .then(function (r) {
+        if (r.resp.status === 401) { showSignedOut(); return; }
+        if (r.resp.status !== 202 || !r.body || typeof r.body.id !== "string") {
+          startCur = { phase: "error", error: rcRefusal(r.resp.status, r.body) };
+          renderStartBar();
+          return;
+        }
+        startCur = { phase: "following", req: r.body };
+        startPrompt.value = "";
+        renderStartBar();
+        var until = Date.now() + START_FOLLOW_MS;
+        setTimeout(function () { pollStart(r.body.id, until); }, START_POLL_MS);
+      })
+      .catch(function () {
+        startCur = { phase: "error", error: "Could not reach the sessionhub." };
+        renderStartBar();
+      });
+  }
+
+  // pollStart reads the start request every 2 seconds while it runs, and
+  // reloads the sessions once it ends.
+  function pollStart(id, until) {
+    if (signedOut || Date.now() > until) return;
+    function again() { setTimeout(function () { pollStart(id, until); }, START_POLL_MS); }
+    fetch("/v1/starts/" + encodeURIComponent(id), { headers: { "Accept": "application/json" }, cache: "no-store" })
+      .then(function (resp) {
+        if (resp.status === 401) { showSignedOut(); return null; }
+        if (!resp.ok) throw new Error("status " + resp.status);
+        return resp.json();
+      })
+      .then(function (r) {
+        if (r === null) return;
+        if (!startCur || startCur.phase !== "following" || startCur.req.id !== id) return;
+        startCur.req = r;
+        renderStartBar();
+        if (startOpen(r)) again();
+        else load();
+      })
+      .catch(again);
+  }
+
+  function render(sessions) {
+    cardEls = {};
+    sessionsById = {};
+    sessions.forEach(function (s) { sessionsById[s.id] = s; });
+    var now = Date.now();
+    sessions.forEach(function (s) {
+      if (rcStale(rcState[s.id], s)) delete rcState[s.id];
+      var r = s.remote_control;
+      if (!rcState[s.id] && r && (r.state === "pending" || r.state === "claimed")) {
+        // After a reload nothing polls for an open request: start a poller.
+        rcState[s.id] = { phase: "waiting", req: r, until: rcPollUntil(r, now) };
+        setTimeout(function () { pollRC(s.id, r.id); }, RC_POLL_MS);
+      }
+    });
+    var keep = focusedKey();
+    var q = filterEl.value.trim();
+    allNames = [];
+    sessions.forEach(function (s) { if (allNames.indexOf(s.machine) === -1) allNames.push(s.machine); });
+    if (sessions.length) {
+      // Forget machines and sessions the list no longer has.
+      collapsed = pruneMap(collapsed, allNames);
+      openCards = pruneMap(openCards, Object.keys(sessionsById));
+      saveMap(COLLAPSED_KEY, collapsed);
+      saveMap(CARDS_KEY, openCards);
+    }
+    blockedSince = {};
+    (lastInbox.items || []).forEach(function (it) {
+      if (it.group === "blocked" && it.session) blockedSince[it.session.id] = it.since;
+    });
+    var needs = needsByMachine(inboxView(lastInbox, pending).groups);
+    var shown = sessions.filter(function (s) { return matches(s, q); });
+    var byMachine = {};
+    shown.forEach(function (s) { (byMachine[s.machine] = byMachine[s.machine] || []).push(s); });
+    var names = Object.keys(byMachine).sort();
+    var frag = document.createDocumentFragment();
+    syncAllButton(q);
+    if (!names.length) {
+      frag.appendChild(el("p", "empty", sessions.length ? "No sessions match the filter." : "No sessions yet."));
+    }
+    names.forEach(function (name) {
+      var all = byMachine[name].sort(cmp);
+      var active = all.filter(function (s) { return s.status !== "ended"; });
+      var ended = all.filter(function (s) { return s.status === "ended"; });
+      // While a filter is active, show the matches without changing the
+      // remembered state.
+      var forced = q !== "";
+      var open = machineOpen(name, collapsed, q);
+      var sec = el("section", "machine");
+      var h = el("h2", "machine-h");
+      var mb = keyed(el("button", "machine-head"), "machine:" + name);
+      mb.type = "button";
+      mb.disabled = forced;
+      mb.setAttribute("aria-expanded", open ? "true" : "false");
+      var chev = el("span", "chev", "▸");
+      chev.setAttribute("aria-hidden", "true");
+      mb.appendChild(chev);
+      mb.appendChild(el("span", "name", name));
+      mb.appendChild(el("span", "count", machineLabel(active.length, ended.length, needs[name] || 0)));
+      mb.addEventListener("click", function () {
+        collapsed = toggleOne(collapsed, name);
+        saveMap(COLLAPSED_KEY, collapsed);
+        render(lastSessions);
+        focusKeyed("machine:" + name);
+      });
+      h.appendChild(mb);
+      sec.appendChild(h);
+      frag.appendChild(sec);
+      if (!open) return;
+      active.forEach(function (s) { sec.appendChild(card(s, now)); });
+      if (ended.length) {
+        var d = el("details", "ended");
+        d.open = forced || !!openEnded[name];
+        d.addEventListener("toggle", function () { if (!forced) openEnded[name] = d.open; });
+        d.appendChild(el("summary", null, "Ended (" + ended.length + ")"));
+        ended.forEach(function (s) { d.appendChild(card(s, now)); });
+        sec.appendChild(d);
+      }
+    });
+    root.replaceChildren(frag);
+    if (keep && focusedKey() !== keep) focusKeyed(keep);
+  }
+
+  // syncAllButton updates Collapse all and Select, which sit beside the
+  // filter and show on the Sessions tab only, and hides the filter on the
+  // Rules tab. Collapse all and Expand all change the remembered state,
+  // which a filter overrides, so the button waits for the filter to clear.
+  function syncAllButton(q) {
+    allBtn.textContent = allCollapsed(allNames, collapsed) ? "Expand all" : "Collapse all";
+    allBtn.disabled = q !== "";
+    allBtn.hidden = tab === "inbox" || tab === "rules" || signedOut || !allNames.length;
+    selectBtn.hidden = tab === "inbox" || tab === "rules" || signedOut;
+    newBtn.hidden = tab === "inbox" || tab === "rules" || signedOut;
+    if (newBtn.hidden && !startBar.hidden) { startBar.hidden = true; newBtn.setAttribute("aria-expanded", "false"); }
+    filterEl.hidden = tab === "rules";
+  }
+
+  // inboxRow is one inbox item, shown like a phone notification: the title,
+  // age, what the session needs, and the machine, all in one tap target
+  // that does inboxPrimary. Done and Later sit below it. While openRows has
+  // the session, the row also shows the recap, the last prompt, the summary,
+  // the card's Remote Control row, and the card's resume row.
+  function inboxRow(it, now) {
+    var s = sessionsById[it.session.id] || it.session;
+    var g = GROUPS.filter(function (x) { return x.key === it.group; })[0];
+    var label = g ? g.label : it.group;
+    var open = openRows[s.id] === true;
+    var st = rcState[s.id];
+    var busy = !!st && (st.phase === "sending" || (!!st.req && (st.req.state === "pending" || st.req.state === "claimed")));
+    var p = inboxPrimary(s, busy);
+    var c = el("article", "notif " + it.group + (open ? " open" : ""));
+    c.setAttribute("data-id", s.id);
+    var main;
+    if (p.kind === "open") {
+      main = el("a", "notif-main");
+      main.href = p.url;
+      main.target = "_blank";
+      main.rel = "noopener noreferrer";
+    } else {
+      main = el("button", "notif-main");
+      main.type = "button";
+      if (p.kind === "expand") main.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    keyed(main, "row:" + s.id);
+    main.appendChild(el("span", "n-title", s.title || s.id.slice(0, 8)));
+    main.appendChild(el("span", "n-age", shortAge(it.since, now)));
+    main.appendChild(el("span", "n-need", inboxNeed(it, s, label)));
+    var meta = [s.machine, label];
+    if (s.status === "stale") meta.push("stale");
+    main.appendChild(el("span", "n-meta", meta.join(" · ")));
+    // tap does the row's primary action; the row and its named button in
+    // the actions row both call it. focusKey is where focus goes back.
+    function tap(focusKey) {
+      if (p.kind === "rc") {
+        openRows[s.id] = true;
+        requestRC(s.id);
+      } else if (p.kind === "expand") {
+        openRows[s.id] = !open;
+        refreshCard(s.id);
+      } else {
+        return; // the link opens on its own
+      }
+      focusKeyed(focusKey);
+    }
+    main.addEventListener("click", function () { tap("row:" + s.id); });
+    c.appendChild(main);
+    var pv = it.group === "blocked" ? permissionView(it.permission) : null;
+    if (!pv) pv = decidedView(s.id, it.since);
+    if (pv) c.appendChild(permissionBlock(pv, s));
+    c.appendChild(triageActions(it, s, p, open, tap));
+    if (open) {
+      var body = el("div", "n-body");
+      // The need line shows the waiting_on items or the recap in full; the
+      // recap follows only when the line holds something else.
+      var w = it.waiting_on && it.waiting_on.length;
+      var rp = w ? recapEl(s, now) : null;
+      if (rp) body.appendChild(rp);
+      var lp = promptEl(s, now);
+      if (lp) body.appendChild(lp);
+      var sl = summaryEl(s);
+      if (sl) body.appendChild(sl);
+      var rc = rcRow(s, now);
+      if (rc) body.appendChild(rc);
+      var rr = resumeRow(s, "Copy resume");
+      if (rr) body.appendChild(rr);
+      if (body.childNodes.length) c.appendChild(body);
+    }
+    if (inboxErrors[s.id]) c.appendChild(el("p", "inbox-error", inboxErrors[s.id]));
+    inboxEls[s.id] = c;
+    return c;
+  }
+
+  // triageActions is a row's small text buttons: Done (dismiss), Later (a
+  // snooze menu), More or Less when a tap on the row does something other
+  // than expand it, and, last, the row's primary action p by name.
+  function triageActions(it, s, p, open, tap) {
+    var more = p.kind !== "expand";
+    var box = el("div", "actions");
+    var name = s.title || s.id;
+    var dismiss = el("button", "textbtn", "Done");
+    dismiss.type = "button";
+    dismiss.setAttribute("aria-label", "Done with " + name);
+    dismiss.addEventListener("click", function () { triage("dismiss", it, null); });
+    box.appendChild(dismiss);
+    var menu = el("details", "snooze");
+    var later = el("summary", null, "Later");
+    later.setAttribute("aria-label", "Later: snooze " + name);
+    menu.appendChild(later);
+    var opts = el("div", "menu");
+    [["1h", "1 hour"], ["4h", "4 hours"], ["tomorrow", "9:00 tomorrow"]].forEach(function (o) {
+      var b = el("button", "textbtn", o[1]);
+      b.type = "button";
+      b.setAttribute("aria-label", "Snooze " + name + " for " + o[1]);
+      b.addEventListener("click", function () { triage("snooze", it, snoozeUntil(o[0], Date.now()).toISOString()); });
+      opts.appendChild(b);
+    });
+    menu.appendChild(opts);
+    menu.open = !!openSnooze[s.id];
+    menu.addEventListener("toggle", function () { openSnooze[s.id] = menu.open; });
+    menu.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape" || !menu.open) return;
+      e.preventDefault();
+      menu.open = false;
+      later.focus();
+    });
+    box.appendChild(menu);
+    if (more) {
+      var mo = keyed(el("button", "textbtn", open ? "Less" : "More"), "more:" + s.id);
+      mo.type = "button";
+      mo.setAttribute("aria-expanded", open ? "true" : "false");
+      mo.setAttribute("aria-label", (open ? "Less" : "More") + " about " + name);
+      mo.addEventListener("click", function () {
+        openRows[s.id] = !open;
+        refreshCard(s.id);
+        focusKeyed("more:" + s.id);
+      });
+      box.appendChild(mo);
+    }
+    var act;
+    if (p.kind === "open") {
+      act = el("a", "act", p.label);
+      act.href = p.url;
+      act.target = "_blank";
+      act.rel = "noopener noreferrer";
+    } else {
+      act = el("button", "textbtn act", p.kind === "expand" && open ? "Show less" : p.label);
+      act.type = "button";
+      if (p.kind === "expand") act.setAttribute("aria-expanded", open ? "true" : "false");
+      act.addEventListener("click", function () { tap("act:" + s.id); });
+    }
+    keyed(act, "act:" + s.id);
+    box.appendChild(act);
+    return box;
+  }
+
+  // triage hides the row at once and sends the dismiss or snooze with the
+  // since the row showed. On failure the row comes back with the error.
+  function triage(kind, it, until) {
+    var id = it.session.id;
+    var row = inboxEls[id];
+    var next = row && row.nextElementSibling;
+    var nextId = next && next.tagName === "ARTICLE" ? next.getAttribute("data-id") : null;
+    pending[id] = it.since;
+    delete inboxErrors[id];
+    delete openSnooze[id];
+    delete openRows[id];
+    renderInbox();
+    focusAfterTriage(nextId, it.group);
+    function fail(msg) {
+      if (pending[id] === it.since) delete pending[id];
+      inboxErrors[id] = (kind === "dismiss" ? "Dismiss" : "Snooze") + " failed: " + msg;
+      if (!signedOut) renderInbox();
+    }
+    var req = triageRequest(kind, id, it.since, until);
+    fetch(req.url, req.init)
+      .then(function (resp) {
+        if (resp.status === 204) return;
+        if (resp.status === 401) { showSignedOut(); return; }
+        return resp.json().then(
+          function (body) { fail(rcRefusal(resp.status, body)); },
+          function () { fail(rcRefusal(resp.status, null)); });
+      })
+      .catch(function () { fail("Could not reach the sessionhub."); });
+  }
+
+  // focusAfterTriage moves focus off the removed row: to the next row,
+  // else the group heading, else the first remaining row, else the Inbox
+  // tab.
+  function focusAfterTriage(nextId, group) {
+    var target = null;
+    if (nextId && inboxEls[nextId]) target = inboxEls[nextId].querySelector(".notif-main");
+    if (!target) target = inboxRoot.querySelector('h2[data-group="' + group + '"]');
+    if (!target) target = inboxRoot.querySelector(".notif-main");
+    if (!target) target = tabInbox;
+    target.focus();
+  }
+
+  function renderInbox() {
+    var view = inboxView(lastInbox, pending);
+    tabInbox.textContent = view.total ? "Inbox (" + view.total + ")" : "Inbox";
+    document.title = pageTitle(view.total);
+    inboxEls = {};
+    inboxById = {};
+    var keep = focusedKey();
+    var q = filterEl.value.trim();
+    var now = Date.now();
+    var frag = document.createDocumentFragment();
+    var shown = 0;
+    view.groups.forEach(function (g) {
+      var items = g.items.filter(function (it) { return matches(it.session, q); });
+      if (!items.length) return;
+      shown += items.length;
+      var h = el("h2", null, g.label);
+      h.setAttribute("data-group", g.key);
+      h.tabIndex = -1;
+      h.appendChild(el("span", "count", String(items.length)));
+      frag.appendChild(h);
+      items.forEach(function (it) {
+        inboxById[it.session.id] = it;
+        frag.appendChild(inboxRow(it, now));
+      });
+    });
+    if (!shown) frag.appendChild(el("p", "empty", view.total ? "No inbox items match the filter." : "Nothing needs you."));
+    inboxRoot.replaceChildren(frag);
+    if (keep && focusedKey() !== keep) focusKeyed(keep);
+  }
+
+  function showTab(name) {
+    tab = name;
+    inboxRoot.hidden = name !== "inbox";
+    root.hidden = name !== "sessions";
+    rulesRoot.hidden = name !== "rules";
+    syncAllButton(filterEl.value.trim());
+    tabInbox.setAttribute("aria-selected", name === "inbox" ? "true" : "false");
+    tabSessions.setAttribute("aria-selected", name === "sessions" ? "true" : "false");
+    tabRules.setAttribute("aria-selected", name === "rules" ? "true" : "false");
+    renderSendBar();
+    if (name === "rules") loadRules();
+  }
+
+  // loadRules reads the rules for the Rules tab.
+  function loadRules() {
+    if (signedOut) return;
+    fetch("/v1/instructions", { headers: { "Accept": "application/json" }, cache: "no-store" })
+      .then(function (resp) {
+        if (signedOut) return null;
+        if (resp.status === 401) { showSignedOut(); return null; }
+        if (!resp.ok) throw new Error("The server returned " + resp.status + ".");
+        return resp.json();
+      })
+      .then(function (data) {
+        if (data === null || signedOut) return;
+        lastRules = data;
+        renderRules();
+      })
+      .catch(function (err) {
+        if (signedOut) return;
+        rulesError = err.message || "Could not load the rules.";
+        renderRules();
+      });
+  }
+
+  // renderRules draws the Rules tab: what the rules are for, each rule with
+  // a Delete button, and the add box.
+  function renderRules() {
+    var view = rulesView(lastRules);
+    var keep = focusedKey();
+    var frag = document.createDocumentFragment();
+    frag.appendChild(el("p", "meta", "Every session on every machine sees these rules at its start and with every prompt. " +
+      view.left + " of 2,000 characters left."));
+    if (!view.rules.length) frag.appendChild(el("p", "empty", "No standing rules yet."));
+    var ul = el("ul", "rules");
+    view.rules.forEach(function (r) {
+      var li = el("li", null);
+      li.appendChild(el("span", "rule-text", r.text));
+      li.appendChild(el("span", "rule-by", r.created_by || ""));
+      var del = keyed(el("button", "textbtn", "Delete"), "rule-del:" + r.id);
+      del.type = "button";
+      del.setAttribute("aria-label", "Delete rule: " + r.text);
+      del.addEventListener("click", function () { removeRule(r); });
+      li.appendChild(del);
+      ul.appendChild(li);
+    });
+    if (view.rules.length) frag.appendChild(ul);
+    var form = el("div", "rule-add");
+    var box = keyed(el("input", null), "rule-text");
+    box.type = "text";
+    box.maxLength = RULE_MAX;
+    box.placeholder = "Add a rule, for example: Write in British English.";
+    box.setAttribute("aria-label", "New rule");
+    box.value = ruleDraft;
+    box.addEventListener("input", function () { ruleDraft = box.value; });
+    box.addEventListener("keydown", function (e) { if (e.key === "Enter") addRule(); });
+    var add = el("button", null, "Add rule");
+    add.type = "button";
+    add.addEventListener("click", function () { addRule(); });
+    form.appendChild(box);
+    form.appendChild(add);
+    frag.appendChild(form);
+    if (rulesError) frag.appendChild(el("p", "error", rulesError));
+    rulesRoot.replaceChildren(frag);
+    if (keep && focusedKey() !== keep) focusKeyed(keep);
+  }
+
+  function addRule() {
+    var problem = ruleProblem(ruleDraft, rulesView(lastRules).left);
+    if (problem) {
+      rulesError = problem;
+      renderRules();
+      return;
+    }
+    rulesWrite(addRuleRequest(ruleDraft), function () { ruleDraft = ""; });
+  }
+
+  function removeRule(r) {
+    if (!window.confirm("Delete this rule for every session?\n\n" + r.text)) return;
+    rulesWrite(deleteRuleRequest(r.id), null);
+  }
+
+  // rulesWrite sends a rules add or delete and reads the list again.
+  function rulesWrite(req, onOK) {
+    rulesError = "";
+    fetch(req.url, req.init)
+      .then(function (resp) {
+        if (resp.status === 401) { showSignedOut(); return; }
+        if (resp.ok) {
+          if (onOK) onOK();
+          loadRules();
+          return;
+        }
+        return resp.json().then(
+          function (body) { rulesError = rcRefusal(resp.status, body); renderRules(); },
+          function () { rulesError = rcRefusal(resp.status, null); renderRules(); });
+      })
+      .catch(function () { rulesError = "Could not reach the sessionhub."; renderRules(); });
+  }
+
+  // pickBox is a card's selection checkbox for the send bar.
+  function pickBox(s) {
+    var label = el("label", "pick");
+    var box = keyed(el("input", null), "pick:" + s.id);
+    box.type = "checkbox";
+    box.checked = selected[s.id] === true;
+    box.disabled = !canMessage(s) && selected[s.id] !== true;
+    box.addEventListener("change", function () {
+      selected = toggleOne(selected, s.id);
+      renderSendBar();
+    });
+    label.appendChild(box);
+    label.appendChild(el("span", null, canMessage(s) ? "Select for a message" : "Can't message: not in herdr, or its watcher is offline"));
+    return label;
+  }
+
+  // renderSendBar shows the send bar on the Sessions tab while sessions
+  // are selected. The selection outlives a switch to another tab.
+  function renderSendBar() {
+    var targets = sendTargets(selected, sessionsById);
+    sendBar.hidden = signedOut || targets.length === 0 || tab !== "sessions";
+    sendTargetsEl.replaceChildren();
+    targets.forEach(function (t) {
+      sendTargetsEl.appendChild(el("li", t.ok ? null : "muted",
+        t.title + (t.machine ? " · " + t.machine : "") + (t.ok ? "" : " (" + t.why + ")")));
+    });
+    var n = targets.filter(function (t) { return t.ok; }).length;
+    sendGo.textContent = n === 1 ? "Send to 1 session" : "Send to " + n + " sessions";
+  }
+
+  // sendMessage sends the send bar's text to the selected sessions sessionhub can
+  // message, after a confirmation that lists them, and lists each target's
+  // result.
+  function sendMessage() {
+    var targets = sendTargets(selected, sessionsById);
+    var text = sendText.value;
+    var problem = sendProblem(text, targets);
+    if (problem) {
+      sendResult.replaceChildren(el("li", "error", problem));
+      return;
+    }
+    var ok = targets.filter(function (t) { return t.ok; });
+    var ids = ok.map(function (t) { return t.id; });
+    var names = ok.map(function (t) { return "- " + t.title + (t.machine ? " · " + t.machine : ""); });
+    if (!window.confirm("Send this message to " + ids.length + (ids.length === 1 ? " session?" : " sessions?") +
+      "\n\n" + names.join("\n"))) return;
+    sendGo.disabled = true;
+    var req = sendRequest(ids, text);
+    fetch(req.url, req.init)
+      .then(function (resp) {
+        if (resp.status === 401) { showSignedOut(); return null; }
+        return resp.json().then(
+          function (body) { return { resp: resp, body: body }; },
+          function () { return { resp: resp, body: null }; });
+      })
+      .then(function (r) {
+        sendGo.disabled = false;
+        if (!r) return;
+        if (!r.resp.ok) {
+          sendResult.replaceChildren(el("li", "error", rcRefusal(r.resp.status, r.body)));
+          return;
+        }
+        sendText.value = "";
+        sendResult.replaceChildren();
+        sendResultLines(r.body, sessionsById).forEach(function (line) { sendResult.appendChild(el("li", null, line)); });
+      })
+      .catch(function () {
+        sendGo.disabled = false;
+        sendResult.replaceChildren(el("li", "error", "Could not reach the sessionhub."));
+      });
+  }
+
+  // decidedView is the view of the session's request decided from this
+  // page during the blocked stretch that started at since, or null. The
+  // inbox carries open requests only, so this keeps the outcome showing.
+  function decidedView(id, since) {
+    var hit = null;
+    Object.keys(permState).forEach(function (k) {
+      var st = permState[k];
+      if (st.done && st.session === id && st.since === since) hit = st.view;
+    });
+    return hit;
+  }
+
+  // permInput is a request's whole input as the approver reads it: the
+  // compact JSON of a tool other than Bash, in a box that scrolls.
+  function permInput(pv) {
+    var c = el("code", "perm-main perm-input", pv.input);
+    c.tabIndex = 0;
+    c.setAttribute("aria-label", "Full input for " + pv.tool);
+    return c;
+  }
+
+  // permissionBlock is a Blocked row's request: the tool, its command (as
+  // code) or main field and whole input, and Deny and Allow once. Allow
+  // once asks once more and shows the input again; there is no lasting
+  // allow. When the approver cannot see all of the input, Allow once is
+  // off and the row says to check the terminal; Deny stays.
+  function permissionBlock(pv, s) {
+    var box = el("div", "perm");
+    box.appendChild(el("span", "perm-tool", "Asks to use " + pv.tool));
+    if (pv.main) box.appendChild(pv.code ? el("code", "perm-main", pv.main) : el("span", "perm-main", pv.main));
+    if (pv.input) box.appendChild(permInput(pv));
+    if (pv.cut) box.appendChild(el("p", "perm-cut", "Input was cut; check the terminal before allowing."));
+    var st = permState[pv.id];
+    if (st && st.done) {
+      box.appendChild(el("p", "meta", st.text));
+      return box;
+    }
+    var name = s.title || s.id;
+    var it = inboxById[s.id];
+    var since = it ? it.since : "";
+    if (st && st.confirm && !pv.cut) {
+      var cf = el("div", "perm-confirm");
+      cf.appendChild(el("p", null, pv.code ? "Allow Bash to run this command once?" : "Allow " + pv.tool + " once with this whole input?"));
+      cf.appendChild(pv.code ? el("code", "perm-main", pv.main) : permInput(pv));
+      var crow = el("div", "actions");
+      var yes = keyed(el("button", null, "Yes, allow once"), "allow-yes:" + pv.id);
+      yes.type = "button";
+      yes.setAttribute("aria-label", "Yes, allow once: " + pv.tool + " in " + name);
+      yes.addEventListener("click", function () { decide(pv, "allow", "", s, since); });
+      // Cancel sits where Allow once was, so a double tap cancels.
+      var no = keyed(el("button", "textbtn act", "Cancel"), "allow-no:" + pv.id);
+      no.type = "button";
+      no.addEventListener("click", function () {
+        delete permState[pv.id];
+        renderInbox();
+        focusKeyed("allow:" + pv.id);
+      });
+      crow.appendChild(yes);
+      crow.appendChild(no);
+      cf.appendChild(crow);
+      box.appendChild(cf);
+      return box;
+    }
+    var row = el("div", "actions");
+    var allow = keyed(el("button", "textbtn act", "Allow once"), "allow:" + pv.id);
+    allow.type = "button";
+    var busy = !!(st && st.busy);
+    allow.disabled = busy || pv.cut;
+    allow.setAttribute("aria-label", "Allow once: " + pv.tool + " in " + name);
+    allow.addEventListener("click", function () {
+      permState[pv.id] = { confirm: true, session: s.id, since: since, view: pv };
+      renderInbox();
+      focusKeyed("allow-no:" + pv.id);
+    });
+    var deny = keyed(el("button", "textbtn", "Deny"), "deny:" + pv.id);
+    deny.type = "button";
+    deny.disabled = busy;
+    deny.setAttribute("aria-label", "Deny: " + pv.tool + " in " + name);
+    deny.addEventListener("click", function () {
+      var reason = window.prompt("Deny " + pv.tool + "? Add a reason Claude will see (optional).", "");
+      if (reason === null) return;
+      var problem = denyProblem(reason.trim());
+      if (problem) {
+        permState[pv.id] = { text: "Not sent: " + problem, session: s.id, since: since, view: pv };
+        renderInbox();
+        focusKeyed("deny:" + pv.id);
+        return;
+      }
+      decide(pv, "deny", reason.trim(), s, since);
+    });
+    row.appendChild(deny);
+    row.appendChild(allow);
+    box.appendChild(row);
+    if (st && st.busy) box.appendChild(el("p", "meta", "Sending…"));
+    if (st && st.text) box.appendChild(el("p", "inbox-error", st.text));
+    return box;
+  }
+
+  // decide sends Allow once or Deny and shows the outcome on the row.
+  function decide(pv, decision, reason, s, since) {
+    var tag = { session: s.id, since: since, view: pv };
+    permState[pv.id] = Object.assign({ busy: true }, tag);
+    renderInbox();
+    var req = decideRequest(pv.id, decision, reason);
+    fetch(req.url, req.init)
+      .then(function (resp) {
+        if (resp.status === 401) {
+          delete permState[pv.id];
+          showSignedOut();
+          return null;
+        }
+        return resp.json().then(
+          function (body) { return { status: resp.status, body: body }; },
+          function () { return { status: resp.status, body: null }; });
+      })
+      .then(function (r) {
+        if (!r) return;
+        var settled = (r.status === 200 || r.status === 409 || r.status === 410) && !cutRefusal(r.status, r.body);
+        permState[pv.id] = Object.assign({ done: settled, text: decisionOutcome(r.status, decision, r.body) }, tag);
+        renderInbox();
+        if (settled) loadInbox();
+      })
+      .catch(function () {
+        permState[pv.id] = Object.assign({ text: "Not sent: could not reach the sessionhub." }, tag);
+        renderInbox();
+      });
+  }
+
+  function loadInbox() {
+    if (signedOut) return;
+    fetch("/v1/inbox", { headers: { "Accept": "application/json" }, cache: "no-store" })
+      .then(function (resp) {
+        if (signedOut) return null;
+        if (resp.status === 401) { showSignedOut(); return null; }
+        if (!resp.ok) throw new Error("The server returned " + resp.status + ".");
+        return resp.json();
+      })
+      .then(function (data) {
+        if (data === null || signedOut) return;
+        lastInbox = data;
+        pending = prunePending(data, pending);
+        Object.keys(inboxErrors).forEach(function (id) {
+          if (!data.items.some(function (it) { return it.session.id === id; })) delete inboxErrors[id];
+        });
+        Object.keys(openSnooze).forEach(function (id) {
+          if (!data.items.some(function (it) { return it.session.id === id; })) delete openSnooze[id];
+        });
+        Object.keys(openRows).forEach(function (id) {
+          if (!data.items.some(function (it) { return it.session.id === id; })) delete openRows[id];
+        });
+        // A request's state lasts as long as the blocked stretch it was in.
+        Object.keys(permState).forEach(function (k) {
+          var st = permState[k];
+          if (st.busy) return;
+          if (!data.items.some(function (it) { return it.session.id === st.session && it.since === st.since; })) delete permState[k];
+        });
+        renderInbox();
+        // The machine headers count inbox items and the badges show how
+        // long a session has been blocked.
+        if (lastSessions.length) render(lastSessions);
+        if (tab === null) showTab(firstTab(inboxView(data, pending).total));
+      })
+      .catch(function (err) {
+        if (signedOut) return;
+        // Keep the last good render on a transient network error.
+        if (!inboxRoot.querySelector(".notif, h2")) inboxRoot.replaceChildren(el("p", "error", err.message || "Could not load the inbox."));
+      });
+  }
+
+  // showSignedOut stops polling and replaces the list with the signed-out
+  // message.
+  function showSignedOut() {
+    signedOut = true;
+    if (refreshTimer !== null) clearInterval(refreshTimer);
+    refreshTimer = null;
+    whoEl.hidden = true;
+    lastSessions = [];
+    allNames = [];
+    root.replaceChildren(el("p", "empty", SIGNED_OUT));
+    lastInbox = { items: [], counts: { blocked: 0, waiting: 0, finished: 0 } };
+    showTab("sessions");
+    inboxRoot.replaceChildren();
+    rulesRoot.replaceChildren();
+    selected = {};
+    sendBar.hidden = true;
+    tabInbox.textContent = "Inbox";
+    document.title = pageTitle(0);
+    updated.textContent = "";
+  }
+
+  function load() {
+    if (signedOut) return;
+    loadInbox();
+    fetch("/v1/sessions", { headers: { "Accept": "application/json" }, cache: "no-store" })
+      .then(function (resp) {
+        if (signedOut) return null;
+        var auth = sessionAuth(resp.status, resp.headers.get("X-Hub-Session-Name"));
+        if (auth.signedOut) { showSignedOut(); return null; }
+        if (!resp.ok) throw new Error("The server returned " + resp.status + ".");
+        whoName.textContent = auth.name;
+        whoEl.hidden = auth.name === "";
+        return resp.json();
+      })
+      .then(function (data) {
+        if (data === null || signedOut) return;
+        lastSessions = data;
+        render(data);
+        renderInbox();
+        renderSendBar();
+        if (tab === "rules") loadRules();
+        updated.textContent = "Updated " + new Date().toLocaleTimeString();
+      })
+      .catch(function (err) {
+        if (signedOut) return;
+        // Keep the last good render on a transient network error.
+        if (!root.querySelector(".card, h2")) root.replaceChildren(el("p", "error", err.message || "Could not load sessions."));
+        updated.textContent = "Update failed " + new Date().toLocaleTimeString();
+      });
+  }
+
+  signOutBtn.addEventListener("click", function () {
+    var req = signOutRequest();
+    signOutBtn.disabled = true;
+    fetch(req.url, req.init)
+      .then(function (resp) {
+        if (signOutDone(resp.status)) { showSignedOut(); return; }
+        signOutBtn.disabled = false;
+        updated.textContent = "Sign out failed: the server returned " + resp.status + ".";
+      })
+      .catch(function () {
+        signOutBtn.disabled = false;
+        updated.textContent = "Sign out failed: could not reach the sessionhub.";
+      });
+  });
+
+  // A fragment picks the tab before the first inbox read, which then keeps
+  // it (tab is no longer null).
+  var askedTab = hashTab(location.hash);
+  if (askedTab) showTab(askedTab);
+  load();
+  window.addEventListener("hashchange", function () {
+    var t = hashTab(location.hash);
+    if (t && !signedOut) showTab(t);
+  });
+  filterEl.addEventListener("input", function () {
+    if (signedOut) return;
+    render(lastSessions);
+    renderInbox();
+  });
+  allBtn.addEventListener("click", function () {
+    collapsed = toggleAll(allNames, collapsed);
+    saveMap(COLLAPSED_KEY, collapsed);
+    render(lastSessions);
+  });
+  // A tap or click outside an open Later menu closes it.
+  document.addEventListener("click", function (e) {
+    inboxRoot.querySelectorAll("details.snooze[open]").forEach(function (d) {
+      if (!d.contains(e.target)) d.open = false;
+    });
+  });
+  tabInbox.addEventListener("click", function () { showTab("inbox"); });
+  tabSessions.addEventListener("click", function () { showTab("sessions"); });
+  tabRules.addEventListener("click", function () { showTab("rules"); });
+  selectBtn.addEventListener("click", function () {
+    selectMode = !selectMode;
+    selectBtn.setAttribute("aria-pressed", selectMode ? "true" : "false");
+    selectBtn.textContent = selectMode ? "Done selecting" : "Select";
+    render(lastSessions);
+  });
+  sendGo.addEventListener("click", sendMessage);
+  newBtn.addEventListener("click", function () {
+    if (startBar.hidden) openStartBar();
+    else closeStartBar();
+  });
+  startClose.addEventListener("click", closeStartBar);
+  startGo.addEventListener("click", startSession);
+  startMachine.addEventListener("change", function () {
+    if (startCur && startCur.phase === "error") startCur = null;
+    renderStartBar();
+  });
+  sendClear.addEventListener("click", function () {
+    selected = {};
+    sendResult.replaceChildren();
+    renderSendBar();
+    render(lastSessions);
+  });
+  refreshTimer = setInterval(load, REFRESH_MS);
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) load(); });
+})();
+</script>
+</body>
+</html>

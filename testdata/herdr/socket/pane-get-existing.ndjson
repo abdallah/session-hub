@@ -1,0 +1,2 @@
+{"id": "req_2", "method": "pane.get", "params": {"pane_id": "w9:p1"}}
+{"id":"req_2","result":{"type":"pane_info","pane":{"pane_id":"w9:p1","terminal_id":"term_65cb02ba67b7c8","workspace_id":"w9","tab_id":"w9:t1","focused":false,"cwd":"/tmp/sessionhub-probe-work","foreground_cwd":"/tmp/sessionhub-probe-work","agent":"claude","terminal_title":"claude","terminal_title_stripped":"claude","agent_status":"blocked","scroll":{"offset_from_bottom":0,"max_offset_from_bottom":0,"viewport_rows":89},"revision":4}}}

@@ -1,0 +1,2 @@
+{"id": "req_3", "method": "pane.get", "params": {"pane_id": "w99:p99"}}
+{"id":"req_3","error":{"code":"pane_not_found","message":"pane w99:p99 not found"}}

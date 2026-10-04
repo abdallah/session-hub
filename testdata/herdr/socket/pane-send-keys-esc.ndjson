@@ -1,0 +1,2 @@
+{"id": "cap_1", "method": "pane.send_keys", "params": {"pane_id": "wV:p1", "keys": ["esc"]}}
+{"id":"cap_1","result":{"type":"ok"}}

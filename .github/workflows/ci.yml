@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Lint and build only. The test suite runs locally before each push
+  # (docs/dev/DEFINITION-OF-DONE.md); on shared runners its timing tests
+  # flake.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Lint
+        run: make lint
+      - name: Build
+        run: make build
+      - name: Build for macOS
+        run: GOOS=darwin GOARCH=arm64 go build -o /dev/null ./cmd/sessionhub && GOOS=darwin go vet ./...
