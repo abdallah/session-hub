@@ -111,7 +111,7 @@ func (s *Store) Now() time.Time { return s.now().UTC() }
 // StaleAfter returns the configured staleness threshold.
 func (s *Store) StaleAfter() time.Duration { return s.staleAfter }
 
-const schemaVersion = 10
+const schemaVersion = 11
 
 const schemaV1 = `
 CREATE TABLE machines (
@@ -362,6 +362,10 @@ CREATE TABLE start_requests (
 CREATE INDEX start_requests_machine ON start_requests(machine_id, state, created_at);
 `
 
+// schemaV11 adds a start request's trust flag: mark its directory trusted in
+// Claude's config before starting.
+const schemaV11 = `ALTER TABLE start_requests ADD COLUMN trust INTEGER NOT NULL DEFAULT 0;`
+
 // afterVersionRead runs in migrate between the unlocked version read and the
 // transaction. Tests use it to line two opens up on the same stale version.
 var afterVersionRead = func() {}
@@ -444,6 +448,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if v < 10 {
 		if _, err := tx.ExecContext(ctx, schemaV10); err != nil {
 			return fmt.Errorf("migrate schema to v10: %w", err)
+		}
+	}
+	if v < 11 {
+		if _, err := tx.ExecContext(ctx, schemaV11); err != nil {
+			return fmt.Errorf("migrate schema to v11: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {

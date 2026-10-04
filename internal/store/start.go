@@ -52,7 +52,7 @@ func checkStartIn(in api.StartIn) error {
 }
 
 // startSelect reads a start request and the name of its machine.
-const startSelect = `SELECT r.id, m.name, r.dir, r.prompt, r.state, r.requested_by, r.created_at, r.expires_at,
+const startSelect = `SELECT r.id, m.name, r.dir, r.prompt, r.trust, r.state, r.requested_by, r.created_at, r.expires_at,
 	r.claimed_at, r.finished_at, r.url, r.detail
 FROM start_requests r JOIN machines m ON m.id = r.machine_id`
 
@@ -60,7 +60,7 @@ func scanStart(sc scanner) (api.StartRequest, error) {
 	var r api.StartRequest
 	var created, expires string
 	var claimed, finished sql.NullString
-	if err := sc.Scan(&r.ID, &r.Machine, &r.Dir, &r.Prompt, &r.State, &r.RequestedBy, &created, &expires,
+	if err := sc.Scan(&r.ID, &r.Machine, &r.Dir, &r.Prompt, &r.Trust, &r.State, &r.RequestedBy, &created, &expires,
 		&claimed, &finished, &r.URL, &r.Detail); err != nil {
 		return api.StartRequest{}, err
 	}
@@ -141,11 +141,11 @@ func (s *Store) CreateStart(ctx context.Context, machine string, in api.StartIn,
 	if err != nil {
 		return api.StartRequest{}, err
 	}
-	r := api.StartRequest{ID: id, Machine: machine, Dir: in.Dir, Prompt: in.Prompt, State: api.ControlPending,
+	r := api.StartRequest{ID: id, Machine: machine, Dir: in.Dir, Prompt: in.Prompt, Trust: in.Trust, State: api.ControlPending,
 		RequestedBy: by, CreatedAt: now, ExpiresAt: now.Add(ControlTTL)}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO start_requests (id, machine_id, dir, prompt, state, requested_by,
-		created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, machineID, r.Dir, r.Prompt, r.State, r.RequestedBy, nowS, formatTS(r.ExpiresAt)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO start_requests (id, machine_id, dir, prompt, trust, state, requested_by,
+		created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, machineID, r.Dir, r.Prompt, r.Trust, r.State, r.RequestedBy, nowS, formatTS(r.ExpiresAt)); err != nil {
 		return api.StartRequest{}, err
 	}
 	return r, tx.Commit()

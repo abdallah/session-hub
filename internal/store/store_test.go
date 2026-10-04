@@ -33,7 +33,7 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 		{"journal_mode", "wal"},
 		{"busy_timeout", "5000"},
 		{"foreign_keys", "1"},
-		{"user_version", "10"},
+		{"user_version", "11"},
 	}
 	for _, c := range checks {
 		var got string
@@ -78,7 +78,7 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 		"messages":            "created_at detail id limit_key machine_id offered_at sender session_id state text updated_at",
 		"permission_requests": "created_at decided_at decided_by decision expires_at id machine_id reason session_id state tool_input tool_name truncated updated_at",
 		"web_sessions":        "created_at expires_at id last_used_at machine_id name token_hash",
-		"start_requests":      "claimed_at created_at detail dir expires_at finished_at id machine_id prompt requested_by state url",
+		"start_requests":      "claimed_at created_at detail dir expires_at finished_at id machine_id prompt requested_by state trust url",
 	}
 	for table, w := range want {
 		if got := strings.Join(cols[table], " "); got != w {
