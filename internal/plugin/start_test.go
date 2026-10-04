@@ -88,11 +88,28 @@ func TestStartRunnerOptOut(t *testing.T) {
 	if in := run(context.Background(), req); in.State != api.ControlFailed || in.Detail != detailStartOff {
 		t.Fatalf("env opt-out: %+v", in)
 	}
-	// Opted in, it gets as far as herdr, which isn't running.
+	// Opted in, it checks Claude's trust in the home directory's config.
 	t.Setenv("SESSIONHUB_REMOTE_START", "")
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	req.Machine = "tower"
+	if in := run(context.Background(), req); in.State != api.ControlFailed ||
+		in.Detail != home+" is not trusted by Claude on tower; open it once or pass --trust" {
+		t.Fatalf("untrusted: %+v", in)
+	}
+	// Trusted, it gets as far as herdr, which isn't running.
+	trusted := `{"projects": {"` + home + `": {"hasTrustDialogAccepted": true}}}`
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(trusted), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if in := run(context.Background(), req); in.State != api.ControlFailed || !strings.Contains(in.Detail, "herdr is not running") {
 		t.Fatalf("opted in: %+v", in)
+	}
+	// CLAUDE_CONFIG_DIR moves the config Claude reads trust from.
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	if in := run(context.Background(), req); in.State != api.ControlFailed || !strings.Contains(in.Detail, "not trusted") {
+		t.Fatalf("CLAUDE_CONFIG_DIR: %+v", in)
 	}
 }
 
@@ -114,8 +131,10 @@ func TestStartResultFor(t *testing.T) {
 			api.ControlResultIn{State: api.ControlFailed, Detail: detailOutsideHome}},
 		{resume.NewSessionResult{ControlResult: resume.ControlResult{Outcome: resume.OutcomeError, Err: errors.New("boom\x1b[31m")}},
 			api.ControlResultIn{State: api.ControlFailed, Detail: "boom[31m"}},
+		{resume.NewSessionResult{ControlResult: resume.ControlResult{Outcome: resume.OutcomeUntrusted}, Dir: "/home/me/new\x1b[31m"},
+			api.ControlResultIn{State: api.ControlFailed, Detail: "/home/me/new[31m is not trusted by Claude on tower; open it once or pass --trust"}},
 	} {
-		if got := startResultFor(tc.r); got != tc.want {
+		if got := startResultFor("tower", tc.r); got != tc.want {
 			t.Errorf("%+v: got %+v, want %+v", tc.r, got, tc.want)
 		}
 	}

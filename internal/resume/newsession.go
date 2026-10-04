@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/abdallah/session-hub/internal/api"
+	"github.com/abdallah/session-hub/internal/claudetrust"
 	"github.com/abdallah/session-hub/internal/cli/termtext"
 	"github.com/abdallah/session-hub/internal/herdr"
 )
@@ -21,11 +22,17 @@ const (
 	// OutcomeOutsideHome: the directory is not inside the home directory;
 	// nothing was created.
 	OutcomeOutsideHome Outcome = "outside_home"
+	// OutcomeUntrusted: Claude doesn't trust the directory and the request
+	// didn't ask to trust it, so Claude would stop at its trust prompt;
+	// nothing was created.
+	OutcomeUntrusted Outcome = "untrusted"
 )
 
 // NewSessionResult is what StartNew did.
 type NewSessionResult struct {
 	ControlResult
+	// Dir is the resolved directory, once ResolveStartDir accepted it.
+	Dir string
 	// PromptNote is "" when there was no first prompt or it was submitted,
 	// else why it wasn't.
 	PromptNote string
@@ -72,26 +79,56 @@ func ResolveStartDir(dir, home string) (string, Outcome) {
 // request req, in a new herdr workspace in req.Dir, without focus. It waits
 // for the Remote Control link, then submits req.Prompt, if any, once Claude
 // is idle. home is the directory req.Dir must be inside.
-func StartNew(ctx context.Context, socket, home string, req api.StartRequest, o ControlOptions) NewSessionResult {
+//
+// Claude must trust the directory, or it stops at its trust prompt. When
+// req.Trust is set, StartNew first marks the directory, and only it,
+// trusted in claudeConfig (see claudetrust.Path); otherwise an untrusted
+// directory is OutcomeUntrusted.
+func StartNew(ctx context.Context, socket, home, claudeConfig string, req api.StartRequest, o ControlOptions) NewSessionResult {
 	dir, out := ResolveStartDir(req.Dir, home)
 	if out != "" {
 		return NewSessionResult{ControlResult: ControlResult{Outcome: out}}
 	}
+	if r, ok := ensureTrusted(claudeConfig, dir, home, req.Trust); !ok {
+		return r
+	}
 	h, err := herdr.Dial(socket)
 	if err != nil {
-		return NewSessionResult{ControlResult: failure(fmt.Errorf("herdr is not running: %w", err))}
+		return NewSessionResult{ControlResult: failure(fmt.Errorf("herdr is not running: %w", err)), Dir: dir}
 	}
 	r := startClaudeIn(ctx, h, dir, newSessionLabel(dir), newSessionAgentName(req.ID), o, []string{"--remote-control"})
 	if r.Outcome != OutcomeResumed {
 		return NewSessionResult{ControlResult: r}
 	}
 	r.Outcome = OutcomeStarted
-	res := NewSessionResult{ControlResult: r}
+	res := NewSessionResult{ControlResult: r, Dir: dir}
 	res.URL = waitForLink(ctx, h, r.Pane, o)
 	if req.Prompt != "" {
 		res.PromptNote = submitWhenIdle(ctx, h, r.Pane, req.Prompt, o)
 	}
 	return res
+}
+
+// ensureTrusted makes sure Claude trusts dir, marking it trusted when trust
+// is set. ok is false, with the result to return, when it doesn't.
+func ensureTrusted(config, dir, home string, trust bool) (NewSessionResult, bool) {
+	fail := func(r ControlResult) (NewSessionResult, bool) {
+		return NewSessionResult{ControlResult: r, Dir: dir}, false
+	}
+	if trust {
+		if err := claudetrust.Trust(config, dir, home); err != nil {
+			return fail(failure(fmt.Errorf("can't mark %s trusted: %w", dir, err)))
+		}
+		return NewSessionResult{}, true
+	}
+	ok, err := claudetrust.Trusted(config, dir)
+	if err != nil {
+		return fail(failure(fmt.Errorf("can't tell whether Claude trusts %s: %w", dir, err)))
+	}
+	if !ok {
+		return fail(ControlResult{Outcome: OutcomeUntrusted})
+	}
+	return NewSessionResult{}, true
 }
 
 // submitWhenIdle submits text to pane once herdr reports the agent idle, for

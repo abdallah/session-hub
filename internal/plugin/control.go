@@ -3,11 +3,13 @@ package plugin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"time"
 
 	"github.com/abdallah/session-hub/internal/api"
+	"github.com/abdallah/session-hub/internal/claudetrust"
 	"github.com/abdallah/session-hub/internal/cli/termtext"
 	"github.com/abdallah/session-hub/internal/client"
 	"github.com/abdallah/session-hub/internal/herdr"
@@ -156,14 +158,14 @@ func startRunner(socket string, every, wait time.Duration) func(ctx context.Cont
 			return api.ControlResultIn{State: api.ControlFailed, Detail: detailStartOff}
 		}
 		home, _ := os.UserHomeDir()
-		return startResultFor(resume.StartNew(ctx, socket, home, req,
+		return startResultFor(req.Machine, resume.StartNew(ctx, socket, home, claudetrust.Path(os.Getenv, home), req,
 			resume.ControlOptions{Socket: socket, PollEvery: every, PollFor: wait}))
 	}
 }
 
-// startResultFor turns what resume.StartNew did into the result the server
-// stores.
-func startResultFor(r resume.NewSessionResult) api.ControlResultIn {
+// startResultFor turns what resume.StartNew did on machine into the result
+// the server stores.
+func startResultFor(machine string, r resume.NewSessionResult) api.ControlResultIn {
 	switch r.Outcome {
 	case resume.OutcomeStarted:
 		detail := detailStarted
@@ -178,6 +180,9 @@ func startResultFor(r resume.NewSessionResult) api.ControlResultIn {
 		return api.ControlResultIn{State: api.ControlFailed, Detail: detailStartNoDir}
 	case resume.OutcomeOutsideHome:
 		return api.ControlResultIn{State: api.ControlFailed, Detail: detailOutsideHome}
+	case resume.OutcomeUntrusted:
+		detail := fmt.Sprintf("%s is not trusted by Claude on %s; open it once or pass --trust", r.Dir, machine)
+		return api.ControlResultIn{State: api.ControlFailed, Detail: termtext.Clean(detail, api.MaxControlDetailRunes)}
 	}
 	msg := detailHerdrFailed
 	if r.Err != nil {
