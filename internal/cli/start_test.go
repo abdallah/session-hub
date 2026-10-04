@@ -21,14 +21,18 @@ const (
 // the last one repeats.
 type fakeStarts struct {
 	createErr error
-	created   []string // "machine|dir|prompt"
+	created   []string // "machine|dir|prompt", and "|trust" with trust set
 	states    []api.StartRequest
 	reads     int
 	getErr    error
 }
 
 func (f *fakeStarts) CreateStart(_ context.Context, machine string, in api.StartIn) (api.StartRequest, error) {
-	f.created = append(f.created, machine+"|"+in.Dir+"|"+in.Prompt)
+	c := machine + "|" + in.Dir + "|" + in.Prompt
+	if in.Trust {
+		c += "|trust"
+	}
+	f.created = append(f.created, c)
 	if f.createErr != nil {
 		return api.StartRequest{}, f.createErr
 	}
@@ -138,5 +142,53 @@ func TestStartFailures(t *testing.T) {
 	f = &fakeStarts{getErr: &client.StatusError{Status: 404, Message: "not found"}}
 	if _, err := runStart(t, f, "bluebox"); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("404: %v", err)
+	}
+}
+
+func TestStartTrust(t *testing.T) {
+	done := []api.StartRequest{startState(api.ControlDone, nil)}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"bluebox", "--dir", "~/Code/app", "--trust"}, "bluebox|~/Code/app||trust"},
+		{[]string{"bluebox", "--trust", "--dir", "/srv/app", "-m", "hi"}, "bluebox|/srv/app|hi|trust"},
+		// On this machine the default is this directory, which is absolute.
+		{[]string{"tower", "--trust"}, "tower|/home/me/Code/app||trust"},
+		{[]string{"bluebox", "--dir", "~/Code/app"}, "bluebox|~/Code/app|"},
+	} {
+		f := &fakeStarts{states: done}
+		if out, err := runStart(t, f, tc.args...); err != nil || len(f.created) != 1 || f.created[0] != tc.want {
+			t.Errorf("%v: created %v, err %v\n%s", tc.args, f.created, err, out)
+		}
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"bluebox", "--trust"}, "home directory"}, // elsewhere the default is ~
+		{[]string{"bluebox", "--trust", "--dir", "~"}, "home directory"},
+		{[]string{"bluebox", "--trust", "--dir", "Code/app"}, "absolute --dir"},
+		{[]string{"bluebox", "--trust", "--dir", "./app"}, "absolute --dir"},
+		{[]string{"bluebox", "--trust", "--dir", "~other/app"}, "absolute --dir"},
+	} {
+		f := &fakeStarts{states: done}
+		_, err := runStart(t, f, tc.args...)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || len(f.created) != 0 {
+			t.Errorf("%v: err %v, created %v; want %q and no request", tc.args, err, f.created, tc.want)
+		}
+	}
+}
+
+func TestStartUntrustedFails(t *testing.T) {
+	detail := "/home/me/new is not trusted by Claude on bluebox; open it once or pass --trust"
+	f := &fakeStarts{states: []api.StartRequest{startState(api.ControlFailed, func(r *api.StartRequest) { r.Detail = detail })}}
+	out, err := runStart(t, f, "bluebox", "--dir", "/home/me/new")
+	var ee *ExitError
+	if !errors.As(err, &ee) || ee.Code != 1 {
+		t.Fatalf("err %v", err)
+	}
+	if !strings.Contains(out, "failed: "+detail+"\n") || strings.Contains(out, "started on") {
+		t.Errorf("output:\n%s", out)
 	}
 }

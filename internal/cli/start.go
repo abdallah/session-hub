@@ -32,7 +32,7 @@ const (
 	startPoll = time.Second
 )
 
-const startUsage = `usage: sessionhub start <machine> [--dir DIR] [-m "first prompt"]`
+const startUsage = `usage: sessionhub start <machine> [--dir DIR] [--trust] [-m "first prompt"]`
 
 // RunStart implements `sessionhub start`.
 func RunStart(ctx context.Context, args []string) error {
@@ -50,6 +50,7 @@ func (e *env) start(ctx context.Context, args []string) error {
 	fs.SetOutput(io.Discard)
 	dir := fs.String("dir", "", "directory to start in (default: this directory on this machine, ~ elsewhere)")
 	prompt := fs.String("m", "", "first prompt")
+	trust := fs.Bool("trust", false, "mark DIR, and only DIR, as trusted in Claude's config first")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("start: %w\n%s", err, startUsage)
 	}
@@ -71,12 +72,31 @@ func (e *env) start(ctx context.Context, args []string) error {
 			}
 		}
 	}
-	req, err := e.starts.CreateStart(ctx, machine, api.StartIn{Dir: d, Prompt: *prompt})
+	if *trust {
+		if err := checkTrustDir(d); err != nil {
+			return err
+		}
+	}
+	req, err := e.starts.CreateStart(ctx, machine, api.StartIn{Dir: d, Prompt: *prompt, Trust: *trust})
 	if err != nil {
 		return fmt.Errorf("start: %s", errText(err))
 	}
 	fmt.Fprintf(e.out, "%s  starting a session on %s in %s\n", clean(req.ID, 0), clean(req.Machine, 0), clean(req.Dir, 0))
 	return e.followStart(ctx, req)
+}
+
+// checkTrustDir refuses a directory --trust must not mark: a relative one,
+// whose meaning depends on where the watcher runs, and the home directory,
+// which would trust every folder under it. The watcher checks again after
+// resolving the directory.
+func checkTrustDir(d string) error {
+	switch {
+	case d == "~" || d == "~/":
+		return errors.New("start: --trust won't trust the home directory, which would trust every folder under it; pass --dir with a folder inside it")
+	case !strings.HasPrefix(d, "/") && !strings.HasPrefix(d, "~/"):
+		return fmt.Errorf("start: --trust needs an absolute --dir (/... or ~/...), not %q", d)
+	}
+	return nil
 }
 
 // followStart prints each new state of the request until it ends or
