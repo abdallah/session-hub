@@ -167,11 +167,11 @@ func TestRules(t *testing.T) {
 
 func sendFixture() *fakeActions {
 	return &fakeActions{sessions: []api.Session{
-		{ID: "aaaaaaaa-1111", Title: "fix login", Machine: "tower", Status: api.StatusLive, Controllable: true},
-		{ID: "bbbbbbbb-2222", Title: "docs", Machine: "tower", Status: api.StatusLive, Controllable: true},
+		{ID: "aaaaaaaa-1111", Title: "fix login", Machine: "tower", Status: api.StatusLive, Controllable: true, Messageable: true},
+		{ID: "bbbbbbbb-2222", Title: "docs", Machine: "tower", Status: api.StatusLive, Controllable: true, Messageable: true},
 		{ID: "cccccccc-3333", Title: "hooks only", Machine: "tower", Status: api.StatusLive},
-		{ID: "dddddddd-4444", Title: "on bluebox", Machine: "bluebox", Status: api.StatusLive, Controllable: true},
-		{ID: "aaaabbbb-5555", Title: "twin", Machine: "bluebox", Status: api.StatusLive, Controllable: true},
+		{ID: "dddddddd-4444", Title: "on bluebox", Machine: "bluebox", Status: api.StatusLive, Controllable: true, Messageable: true},
+		{ID: "aaaabbbb-5555", Title: "twin", Machine: "bluebox", Status: api.StatusLive, Controllable: true, Messageable: true},
 	}}
 }
 
@@ -228,6 +228,14 @@ func TestSendRefusedAndMachine(t *testing.T) {
 	e.send(context.Background(), []string{"--machine", "tower", "-m", "hi"})
 	if got := strings.Join(f.sent[0].SessionIDs, ","); got != "aaaaaaaa-1111,bbbbbbbb-2222" {
 		t.Errorf("tower targets %s, want the controllable ones", got)
+	}
+	// A session outside herdr whose mod polls takes messages too.
+	f.sessions[2].Messageable = true
+	e, _, _ = actionsEnv(f)
+	f.sent = nil
+	e.send(context.Background(), []string{"--machine", "tower", "-m", "hi"})
+	if got := strings.Join(f.sent[0].SessionIDs, ","); got != "aaaaaaaa-1111,bbbbbbbb-2222,cccccccc-3333" {
+		t.Errorf("tower targets %s, want the messageable ones", got)
 	}
 }
 
@@ -548,5 +556,25 @@ func TestInboxLineTinyWidth(t *testing.T) {
 		if line := inboxLine(in.Items[0], now, w); !strings.HasSuffix(line, " (cut)") || len([]rune(line)) > 7+w {
 			t.Errorf("width %d: %q", w, line)
 		}
+	}
+}
+
+// A blocked item shows the question its mod reported, over the waiting_on
+// items and the recap; a permission request still wins.
+func TestInboxLineShowsBlockedOn(t *testing.T) {
+	s := api.Session{ID: "aaaaaaaa-1111", Title: "t", Machine: "tower", Status: api.StatusBlocked, Recap: "Asked which token.",
+		BlockedOn: "Question: Which\x1b[2J token?"}
+	it := api.InboxItem{Group: api.InboxBlocked, Since: now.Add(-time.Minute), WaitingOn: []string{"w"}, Session: s}
+	if line := inboxLine(it, now, 200); !strings.HasSuffix(line, "  Question: Which[2J token?") {
+		t.Errorf("blocked line %q", line)
+	}
+	it.Group = api.InboxWaiting
+	if line := inboxLine(it, now, 200); !strings.HasSuffix(line, "  w") {
+		t.Errorf("a waiting item shows blocked_on: %q", line)
+	}
+	in := permissionInbox()
+	in.Items[0].Session.BlockedOn = "Question: x?"
+	if line := inboxLine(in.Items[0], now, 200); !strings.Contains(line, "  Question: x? · asks to use Bash: git push") {
+		t.Errorf("permission line %q", line)
 	}
 }

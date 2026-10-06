@@ -262,8 +262,9 @@ func inboxLines(items []api.InboxItem, now time.Time, width int, selected string
 }
 
 // inboxLine is one item: ID prefix, title, machine, age of since, "stale"
-// when the session is stale, and the waiting_on items or the recap, cut to
-// width runes. Each field is cleaned first, so the two-space separators
+// when the session is stale, and the question a blocked session waits on
+// followed by its permission request, either alone, the waiting_on items,
+// or the recap, cut to width runes. Each field is cleaned first, so the two-space separators
 // survive.
 func inboxLine(it api.InboxItem, now time.Time, width int) string {
 	s := it.Session
@@ -275,8 +276,18 @@ func inboxLine(it api.InboxItem, now time.Time, width int) string {
 	if len(it.WaitingOn) > 0 {
 		detail = strings.Join(it.WaitingOn, "; ")
 	}
+	blockedOn := ""
+	if it.Group == api.InboxBlocked && s.BlockedOn != "" {
+		blockedOn = s.BlockedOn
+		detail = blockedOn
+	}
 	if p := it.Permission; p != nil {
+		// The question comes first, so the input stays last, next to its
+		// cut mark.
 		detail = "asks to use " + p.ToolName + ": " + api.PermissionInputText(p.ToolInput)
+		if blockedOn != "" {
+			detail = blockedOn + " · " + detail
+		}
 	}
 	cutMark := ""
 	if p := it.Permission; p != nil && p.Truncated {

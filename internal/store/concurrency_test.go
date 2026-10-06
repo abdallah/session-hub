@@ -207,7 +207,29 @@ func rollbackV5(t *testing.T, s *Store) {
 // to 9 or lower and reopen the file as an older release left it.
 func rollbackV10(t *testing.T, s *Store) {
 	t.Helper()
+	rollbackV11(t, s)
 	if _, err := s.db.Exec("DROP TABLE start_requests"); err != nil {
 		t.Fatalf("drop start_requests: %v", err)
+	}
+}
+
+// rollbackV11 removes what schema v11 added, so a test can set user_version
+// to 10 or lower and reopen the file as an older release left it.
+func rollbackV11(t *testing.T, s *Store) {
+	t.Helper()
+	rollbackV12(t, s)
+	if _, err := s.db.Exec("ALTER TABLE start_requests DROP COLUMN trust"); err != nil {
+		t.Fatalf("drop start_requests.trust: %v", err)
+	}
+}
+
+// rollbackV12 removes what schema v12 added, so a test can set user_version
+// to 11 or lower and reopen the file as an older release left it.
+func rollbackV12(t *testing.T, s *Store) {
+	t.Helper()
+	for _, c := range []string{"blocked_on", "context_percent", "usage_at", "live_cost_usd", "mod_seen_at"} {
+		if _, err := s.db.Exec("ALTER TABLE sessions DROP COLUMN " + c); err != nil {
+			t.Fatalf("drop sessions.%s: %v", c, err)
+		}
 	}
 }

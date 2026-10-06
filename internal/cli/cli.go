@@ -265,6 +265,35 @@ func reportSummary(r *api.Report) string {
 	return "-"
 }
 
+// sessionSummary is the REPORT column of sessionhub ls: what a blocked session
+// waits on, as its mod reported it, else reportSummary.
+func sessionSummary(s api.Session) string {
+	if s.BlockedOn != "" {
+		return "blocked on: " + s.BlockedOn
+	}
+	return reportSummary(s.LatestReport)
+}
+
+// usageLine is the context window fill and cost a session's mod last
+// reported, such as "context 42% · $1.25 (2m ago)", or "".
+func usageLine(s api.Session, now time.Time) string {
+	var parts []string
+	if s.ContextPercent != nil {
+		parts = append(parts, fmt.Sprintf("context %d%%", *s.ContextPercent))
+	}
+	if s.LiveCostUSD != nil {
+		parts = append(parts, fmt.Sprintf("$%.2f", *s.LiveCostUSD))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	line := strings.Join(parts, " · ")
+	if s.UsageAt != nil {
+		line += fmt.Sprintf(" (%s ago)", age(now, *s.UsageAt))
+	}
+	return line
+}
+
 func title(s api.Session) string {
 	if s.Title != "" {
 		return s.Title
@@ -280,7 +309,7 @@ func renderTable(w io.Writer, list []api.Session, now time.Time) {
 	fmt.Fprintln(tw, "MACHINE\tID\tTITLE\tSTATUS\tAGE\tREPORT")
 	for _, s := range list {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", clean(s.Machine, 0), shortID(s.ID),
-			clean(title(s), termtext.TitleWidth), clean(s.Status, 0), age(now, s.LastSeenAt), clean(reportSummary(s.LatestReport), 60))
+			clean(title(s), termtext.TitleWidth), clean(s.Status, 0), age(now, s.LastSeenAt), clean(sessionSummary(s), 60))
 	}
 	tw.Flush()
 }
@@ -297,6 +326,8 @@ func renderDetail(w io.Writer, d api.SessionDetail, now time.Time) {
 	field("status", d.Status)
 	field("agent", d.Agent)
 	field("state", d.AgentState)
+	field("blocked on", d.BlockedOn)
+	field("usage", usageLine(d.Session, now))
 	field("cwd", d.CWD)
 	field("repo", d.GitRepo)
 	field("branch", d.GitBranch)

@@ -111,7 +111,7 @@ func (s *Store) Now() time.Time { return s.now().UTC() }
 // StaleAfter returns the configured staleness threshold.
 func (s *Store) StaleAfter() time.Duration { return s.staleAfter }
 
-const schemaVersion = 11
+const schemaVersion = 12
 
 const schemaV1 = `
 CREATE TABLE machines (
@@ -366,6 +366,18 @@ CREATE INDEX start_requests_machine ON start_requests(machine_id, state, created
 // Claude's config before starting.
 const schemaV11 = `ALTER TABLE start_requests ADD COLUMN trust INTEGER NOT NULL DEFAULT 0;`
 
+// schemaV12 adds what the Claude Code mod reports: the question a blocked
+// session waits on, the context window fill and cost after each turn, and
+// when the session's mod last polled for messages. The usage columns stay
+// NULL until a mod reports them.
+const schemaV12 = `
+ALTER TABLE sessions ADD COLUMN blocked_on TEXT NOT NULL DEFAULT '';  -- one cleaned line, at most 300 runes
+ALTER TABLE sessions ADD COLUMN context_percent INTEGER;              -- 0 to 100
+ALTER TABLE sessions ADD COLUMN usage_at TEXT;                        -- when the mod last reported usage
+ALTER TABLE sessions ADD COLUMN live_cost_usd REAL;
+ALTER TABLE sessions ADD COLUMN mod_seen_at TEXT;                     -- the mod's last message poll
+`
+
 // afterVersionRead runs in migrate between the unlocked version read and the
 // transaction. Tests use it to line two opens up on the same stale version.
 var afterVersionRead = func() {}
@@ -453,6 +465,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if v < 11 {
 		if _, err := tx.ExecContext(ctx, schemaV11); err != nil {
 			return fmt.Errorf("migrate schema to v11: %w", err)
+		}
+	}
+	if v < 12 {
+		if _, err := tx.ExecContext(ctx, schemaV12); err != nil {
+			return fmt.Errorf("migrate schema to v12: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {

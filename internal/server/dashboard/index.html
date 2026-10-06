@@ -624,12 +624,22 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     if (s.status === "live") return s.agent_state || "live";
     return s.status || "";
   }
+
+  // contextLabel is "context 42%" when the session's mod reported its
+  // context window fill, else "".
+  function contextLabel(s) {
+    var p = s && s.context_percent;
+    if (typeof p !== "number" || !isFinite(p)) return "";
+    return "context " + Math.round(Math.min(Math.max(p, 0), 100)) + "%";
+  }
   // layout-state:end
 
   // row-state:begin
-  // inboxNeed is an inbox row's one line: what the session waits on, else
-  // its recap, else the group's label.
+  // inboxNeed is an inbox row's one line: what the session waits on (for a
+  // blocked item, the question its mod reported), else its recap, else the
+  // group's label.
   function inboxNeed(it, s, label) {
+    if (it.group === "blocked" && s && typeof s.blocked_on === "string" && s.blocked_on) return s.blocked_on;
     var w = (it.waiting_on || []).filter(function (x) { return typeof x === "string" && x; });
     if (w.length) return w.join("; ");
     if (s && typeof s.recap === "string" && s.recap) return s.recap;
@@ -774,8 +784,9 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     };
   }
 
-  // canMessage: sessionhub can type a message into the session.
-  function canMessage(s) { return !!s && s.controllable === true && s.status !== "ended"; }
+  // canMessage: sessionhub can type a message into the session, through herdr or
+  // the session's sessionhub mod.
+  function canMessage(s) { return !!s && s.messageable === true && s.status !== "ended"; }
 
   // sendTargets lists the selected sessions, sorted by ID, with whether
   // each can take a message and why not.
@@ -784,7 +795,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       var s = byId[id];
       var why = "";
       if (!s) why = "no longer listed";
-      else if (!canMessage(s)) why = "not in herdr, or its machine's watcher is offline";
+      else if (!canMessage(s)) why = "no sessionhub mod in the session, and not in herdr with its watcher running";
       return { id: id, title: (s && s.title) || id.slice(0, 8), machine: s ? s.machine : "", ok: canMessage(s), why: why };
     });
   }
@@ -1376,6 +1387,15 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     return rp;
   }
 
+  // blockedOnEl is the question a blocked session waits on, or null.
+  function blockedOnEl(s) {
+    if (!s.blocked_on) return null;
+    var bp = el("p", "prompt");
+    bp.appendChild(el("span", "label", "Blocked on: "));
+    bp.appendChild(document.createTextNode(s.blocked_on));
+    return bp;
+  }
+
   function promptEl(s, now) {
     if (!s.last_prompt) return null;
     var lp = el("p", "prompt");
@@ -1447,8 +1467,13 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     art.appendChild(c);
     var bits = [];
     if (s.agent_state) bits.push(s.agent_state);
+    var ctx = contextLabel(s);
+    if (ctx) bits.push(ctx);
     bits.push("seen " + age(s.last_seen_at, now));
     c.appendChild(el("div", "meta", bits.join(" · ")));
+
+    var bo = blockedOnEl(s);
+    if (bo) c.appendChild(bo);
 
     var where = [];
     if (s.cwd) where.push(s.cwd);
@@ -2171,7 +2196,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       renderSendBar();
     });
     label.appendChild(box);
-    label.appendChild(el("span", null, canMessage(s) ? "Select for a message" : "Can't message: not in herdr, or its watcher is offline"));
+    label.appendChild(el("span", null, canMessage(s) ? "Select for a message" : "Can't message: no sessionhub mod, and not in herdr with its watcher running"));
     return label;
   }
 

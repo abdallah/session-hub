@@ -201,6 +201,19 @@ type Session struct {
 	Summary *SessionSummary `json:"summary,omitempty"`
 	// Move is the session's latest move, open or not; nil with none.
 	Move *Move `json:"move,omitempty"`
+	// Messageable is true when sessionhub can deliver a message to the session:
+	// it is Controllable, or its Claude Code mod polled for messages in the
+	// last 2 minutes.
+	Messageable bool `json:"messageable"`
+	// BlockedOn is the question a blocked session waits on, as its mod
+	// reported it: one cleaned line of at most 300 characters, or "".
+	BlockedOn string `json:"blocked_on,omitempty"`
+	// ContextPercent and LiveCostUSD are the context window fill and the
+	// session's cost after its last turn, as its mod reported them at
+	// UsageAt; nil until a mod reports.
+	ContextPercent *int       `json:"context_percent,omitempty"`
+	LiveCostUSD    *float64   `json:"live_cost_usd,omitempty"`
+	UsageAt        *time.Time `json:"usage_at,omitempty"`
 }
 
 type SessionDetail struct {

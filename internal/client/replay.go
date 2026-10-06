@@ -91,6 +91,21 @@ func Replay(ctx context.Context, c *Client, it Item) error {
 			return err
 		}
 		return c.PutDigest(ctx, it.SessionID, v)
+	case OpBlockedOnClear:
+		if err := needID(); err != nil {
+			return err
+		}
+		if len(it.Body) == 0 {
+			return c.SetBlockedOn(ctx, it.SessionID, "")
+		}
+		var v api.BlockedOnIn
+		if err := decode(&v); err != nil {
+			return err
+		}
+		if v.Clears == "" {
+			return c.SetBlockedOn(ctx, it.SessionID, "")
+		}
+		return c.ClearBlockedOn(ctx, it.SessionID, v.Clears)
 	}
 	return &permanentError{fmt.Errorf("queue item %s: unknown op %q", it.ID, it.Op)}
 }

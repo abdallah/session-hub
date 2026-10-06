@@ -151,13 +151,13 @@ func (e *env) send(ctx context.Context, args []string) error {
 			return fmt.Errorf("send: %s", errText(err))
 		}
 		for _, s := range list {
-			if s.Controllable && s.Status != api.StatusEnded {
+			if s.Messageable && s.Status != api.StatusEnded {
 				byID[s.ID] = s
 				ids = append(ids, s.ID)
 			}
 		}
 		if len(ids) == 0 {
-			return fmt.Errorf("send: no live session in herdr on %s", clean(machine, 0))
+			return fmt.Errorf("send: no live session on %s can take a message", clean(machine, 0))
 		}
 	}
 	for _, t := range targets {

@@ -69,6 +69,10 @@ func (s *Server) routes() []route {
 		{"GET", "/v1/moves/{id}/bundle", accessWrite, s.writer(s.getMoveBundle)},
 		{"POST", "/v1/moves/{id}/result", accessWrite, s.writer(s.postMoveResult)},
 		{"PUT", "/v1/machines/self/move-key", accessWrite, s.writer(s.putMoveKey)},
+		{"POST", "/v1/sessions/{id}/blocked-on", accessWrite, s.writer(s.postBlockedOn)},
+		{"PUT", "/v1/sessions/{id}/usage", accessWrite, s.writer(s.putUsage)},
+		{"GET", "/v1/sessions/{id}/messages/next", accessWrite, s.writer(s.pollModMessage)},
+		{"POST", "/v1/messages/{id}/result", accessWrite, s.writer(s.postMessageResult)},
 		{"POST", "/v1/machines/{name}/start", accessStart, s.actor(api.HeaderActionStart, s.postStart)},
 
 		{"GET", "/v1/sessions", accessRead, s.reader(s.listSessions)},

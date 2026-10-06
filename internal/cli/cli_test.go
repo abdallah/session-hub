@@ -350,3 +350,40 @@ func TestLsGrepHintsAtEndedMatches(t *testing.T) {
 		t.Errorf("out = %q, err = %v; want the --all hint", out, err)
 	}
 }
+
+// A blocked session's question from its mod replaces the report in sessionhub ls,
+// and sessionhub show prints it with the mod's usage. Both are cleaned.
+func TestLsAndShowBlockedOnAndUsage(t *testing.T) {
+	const esc = "\x1b[2J"
+	pct, cost, at := 42, 1.25, now.Add(-2*time.Minute)
+	s := api.Session{ID: "aaaaaaaa-1111-4222-8333-444455556666", Machine: "bluebox", Title: "t", Status: api.StatusBlocked,
+		LastSeenAt: now, LatestReport: &api.Report{InFlight: []string{"hidden"}},
+		BlockedOn: "Question: Which" + esc + " library?\u202e", ContextPercent: &pct, LiveCostUSD: &cost, UsageAt: &at}
+	out, err := run(t, &fakeAPI{sessions: []api.Session{s}}, client.Config{}, func(e *env) error { return e.ls(context.Background(), nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "blocked on: Question: Which[2J library?") || strings.Contains(out, "hidden") || strings.ContainsAny(out, "\x1b\u202e") {
+		t.Errorf("ls:\n%q", out)
+	}
+	out, err = run(t, &fakeAPI{detail: api.SessionDetail{Session: s}}, client.Config{}, func(e *env) error {
+		return e.show(context.Background(), []string{"aaaa"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"blocked on: Question: Which[2J library?\n", "usage:     context 42% · $1.25 (2m ago)\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("show lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.ContainsAny(out, "\x1b\u202e") {
+		t.Errorf("show output not cleaned:\n%q", out)
+	}
+	// Without a report from a mod, show prints neither line.
+	out, _ = run(t, &fakeAPI{detail: api.SessionDetail{Session: api.Session{ID: s.ID, Status: api.StatusLive}}}, client.Config{},
+		func(e *env) error { return e.show(context.Background(), []string{"aaaa"}) })
+	if strings.Contains(out, "blocked on:") || strings.Contains(out, "usage:") {
+		t.Errorf("show without mod data:\n%s", out)
+	}
+}

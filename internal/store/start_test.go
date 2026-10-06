@@ -219,9 +219,7 @@ func TestMigrateV10ToV11(t *testing.T) {
 	if _, _, err := s.AddMachine(ctx, "tower", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec("ALTER TABLE start_requests DROP COLUMN trust"); err != nil {
-		t.Fatal(err)
-	}
+	rollbackV11(t, s)
 	// A request stored by a v10 server.
 	if _, err := s.db.Exec(`INSERT INTO start_requests (id, machine_id, dir, prompt, state, requested_by, created_at, expires_at)
 		SELECT 'st_AAAAAAAAAAAAAAAAAAAAAA', id, '/a', '', 'done', 'web:phone', '2026-10-04T08:00:00.000000000Z',

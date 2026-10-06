@@ -362,10 +362,11 @@ func TestDashboardActionStates(t *testing.T) {
 var many = [];
 for (var i = 0; i < 21; i++) many.push({ ok: true });
 var byId = {
-  a: { id: "a", title: "A", machine: "tower", controllable: true, status: "live" },
-  b: { id: "b", title: "", machine: "bluebox", controllable: false, status: "live" }
+  a: { id: "a", title: "A", machine: "tower", controllable: true, messageable: true, status: "live" },
+  b: { id: "b", title: "", machine: "bluebox", controllable: true, messageable: false, status: "live" },
+  m: { id: "m", title: "M", machine: "bluebox", controllable: false, messageable: true, status: "live" }
 };
-var targets = sendTargets({ b: true, a: true, c: true, z: false }, byId);
+var targets = sendTargets({ b: true, a: true, c: true, m: true, z: false }, byId);
 process.stdout.write(JSON.stringify({
   hash: hashTab("#rules"),
   view: rulesView({ instructions: [{ id: 1, text: "Never push." }, { id: 2, text: "ééé" }] }),
@@ -413,8 +414,9 @@ process.stdout.write(JSON.stringify({
   "del": {"url": "/v1/instructions/7", "init": {"method": "DELETE", "headers": {"X-Hub-Action": "instructions"}, "cache": "no-store"}},
   "targets": [
     {"id": "a", "title": "A", "machine": "tower", "ok": true, "why": ""},
-    {"id": "b", "title": "b", "machine": "bluebox", "ok": false, "why": "not in herdr, or its machine's watcher is offline"},
-    {"id": "c", "title": "c", "machine": "", "ok": false, "why": "no longer listed"}],
+    {"id": "b", "title": "b", "machine": "bluebox", "ok": false, "why": "no sessionhub mod in the session, and not in herdr with its watcher running"},
+    {"id": "c", "title": "c", "machine": "", "ok": false, "why": "no longer listed"},
+    {"id": "m", "title": "M", "machine": "bluebox", "ok": true, "why": ""}],
   "sendProblems": ["", "Write the message first.", "Select at least one session sessionhub can message.",
     "A message holds at most 4,000 characters.", "Send to at most 20 sessions at a time."],
   "send": {"url": "/v1/messages", "init": {"method": "POST",
@@ -548,7 +550,9 @@ process.stdout.write(JSON.stringify({
   needs: needsByMachine([{ items: [{ session: { machine: "m1" } }, { session: { machine: "m2" } }] },
     { items: [{ session: { machine: "m1" } }, { session: {} }] }]),
   ages: input.ages.map(function (a) { return shortAge(a, now); }),
-  badges: input.badges.map(function (b) { return cardBadge(b[0], b[1], now); })
+  badges: input.badges.map(function (b) { return cardBadge(b[0], b[1], now); }),
+  contexts: [contextLabel({ context_percent: 42 }), contextLabel({ context_percent: 0 }), contextLabel({ context_percent: 99.6 }),
+    contextLabel({ context_percent: 140 }), contextLabel({ context_percent: "42" }), contextLabel({}), contextLabel(null)]
 }));`, map[string]any{
 		"now":  now,
 		"ages": []any{"2026-10-02T11:59:48Z", "2026-10-02T11:56:00Z", "2026-10-02T09:00:00Z", "2026-09-29T12:00:00Z", "2026-10-02T12:00:30Z", "nope", nil},
@@ -563,16 +567,17 @@ process.stdout.write(JSON.stringify({
 		},
 	})
 	var got struct {
-		Clean   []map[string]bool `json:"clean"`
-		Prune   map[string]bool   `json:"prune"`
-		Toggle  []map[string]bool `json:"toggle"`
-		Open    []bool            `json:"open"`
-		AllColl []bool            `json:"allColl"`
-		All     []map[string]bool `json:"all"`
-		Labels  []string          `json:"labels"`
-		Needs   map[string]int    `json:"needs"`
-		Ages    []string          `json:"ages"`
-		Badges  []string          `json:"badges"`
+		Clean    []map[string]bool `json:"clean"`
+		Prune    map[string]bool   `json:"prune"`
+		Toggle   []map[string]bool `json:"toggle"`
+		Open     []bool            `json:"open"`
+		AllColl  []bool            `json:"allColl"`
+		All      []map[string]bool `json:"all"`
+		Labels   []string          `json:"labels"`
+		Needs    map[string]int    `json:"needs"`
+		Ages     []string          `json:"ages"`
+		Badges   []string          `json:"badges"`
+		Contexts []string          `json:"contexts"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("node output %s: %v", out, err)
@@ -592,6 +597,7 @@ process.stdout.write(JSON.stringify({
 		{"needsByMachine", got.Needs, map[string]int{"m1": 2, "m2": 1}},
 		{"shortAge", got.Ages, []string{"12s", "4m", "3h", "3d", "0s", "", ""}},
 		{"cardBadge", got.Badges, []string{"blocked 4m", "blocked", "working", "idle", "live", "stale", "ended"}},
+		{"contextLabel", got.Contexts, []string{"context 42%", "context 0%", "context 100%", "context 100%", "", "", ""}},
 	}
 	for _, c := range checks {
 		if !reflect.DeepEqual(c.got, c.want) {
@@ -621,6 +627,12 @@ func TestDashboardInboxRowStates(t *testing.T) {
 		{map[string]any{}, map[string]any{"recap": "Tests pass."}, "Finished", "Tests pass."},
 		{map[string]any{}, map[string]any{}, "Blocked", "Blocked"},
 		{map[string]any{}, nil, "Blocked", "Blocked"},
+		{map[string]any{"group": "blocked", "waiting_on": []any{"w"}}, map[string]any{"blocked_on": "Question: Which one?", "recap": "r"}, "Blocked",
+			"Question: Which one?"},
+		{map[string]any{"group": "waiting", "waiting_on": []any{"w"}}, map[string]any{"blocked_on": "Question: Which one?"}, "Waiting on you", "w"},
+		{map[string]any{"group": "blocked"}, map[string]any{"blocked_on": 5, "recap": "r"}, "Blocked", "r"},
+		{map[string]any{"group": "blocked", "permission": map[string]any{"id": "pr_1", "tool_name": "Bash"}},
+			map[string]any{"blocked_on": "Question: Which one?"}, "Blocked", "Question: Which one?"},
 	}
 	open := &primary{"open", "Open in Claude", link}
 	cmd := "ssh -t m 'sessionhub resume x'"

@@ -120,9 +120,10 @@ func expireMessagesTx(ctx context.Context, tx *sql.Tx, now time.Time) error {
 }
 
 // SendMessages queues text for each distinct session in ids, in order. A
-// target that does not exist, has ended, has no herdr pane, or whose
-// machine's watcher has not polled in ControlPollWindow is refused with a
-// reason, and the others still go. machines lists the machines that got a
+// target that does not exist or has ended is refused with a reason, and so
+// is one whose mod has not polled in ControlPollWindow and that has no herdr
+// pane or whose machine's watcher has not polled in ControlPollWindow. The
+// others still go. machines lists the machines that got a
 // queued message, once each. sender is the name shown in the prompt;
 // limitKey names who is counted (web:<name> or machine:<name>), so changing
 // the display sender does not buy a new budget. More than MessagesPerMinute
@@ -212,19 +213,26 @@ func messageTargetTx(ctx context.Context, tx *sql.Tx, id string, now time.Time) 
 		return "invalid session id", 0, "", nil
 	}
 	var pane string
-	var ended, lastPoll sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT s.machine_id, m.name, s.herdr_pane, s.ended_at, m.last_poll
+	var ended, lastPoll, modSeen sql.NullString
+	err = tx.QueryRowContext(ctx, `SELECT s.machine_id, m.name, s.herdr_pane, s.ended_at, m.last_poll, s.mod_seen_at
 		FROM sessions s JOIN machines m ON m.id = s.machine_id WHERE s.id = ?`, id).
-		Scan(&machineID, &machine, &pane, &ended, &lastPoll)
+		Scan(&machineID, &machine, &pane, &ended, &lastPoll, &modSeen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "unknown session", 0, "", nil
 	}
 	if err != nil {
 		return "", 0, "", err
 	}
+	seen, err := parseNullTS(modSeen)
+	if err != nil {
+		return "", 0, "", err
+	}
 	switch {
 	case ended.Valid:
 		return "the session has ended", 0, "", nil
+	case modFresh(seen, now):
+		// The session's mod takes the message, with or without herdr.
+		return "", machineID, machine, nil
 	case pane == "":
 		return "the session is not in herdr", 0, "", nil
 	}
@@ -242,8 +250,10 @@ func messageTargetTx(ctx context.Context, tx *sql.Tx, id string, now time.Time) 
 // was last offered at least MessageRetry ago, as a control
 // claim whose action is api.ActionMessage and whose Text is the prompt to
 // submit. A session's messages go in order: a message is not claimed while an
-// older queued message for the same session waits. ok is false when there is
-// none.
+// older queued message for the same session waits. A session whose mod
+// polled in ControlPollWindow is skipped: its mod claims its messages with
+// ClaimSessionMessage. So is a session without a herdr pane, whose messages
+// only a mod can deliver. ok is false when there is none.
 func (s *Store) ClaimMessage(ctx context.Context, machineID int64) (api.ControlClaim, bool, error) {
 	now := s.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -260,7 +270,9 @@ func (s *Store) ClaimMessage(ctx context.Context, machineID int64) (api.ControlC
 		WHERE m.machine_id = ? AND m.state = ? AND (m.offered_at IS NULL OR m.offered_at <= ?)
 		AND NOT EXISTS (SELECT 1 FROM messages o WHERE o.session_id = m.session_id AND o.state = m.state
 			AND (o.created_at < m.created_at OR (o.created_at = m.created_at AND o.rowid < m.rowid)))
-		ORDER BY m.created_at, m.rowid LIMIT 1`, machineID, api.MessageQueued, formatTS(now.Add(-MessageRetry))).
+		AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = m.session_id AND (s.herdr_pane = '' OR `+modFreshSQL+`))
+		ORDER BY m.created_at, m.rowid LIMIT 1`, machineID, api.MessageQueued, formatTS(now.Add(-MessageRetry)),
+		formatTS(now.Add(-ControlPollWindow))).
 		Scan(&id, &sessionID, &text, &sender, &created, &machine)
 	if errors.Is(err, sql.ErrNoRows) {
 		return api.ControlClaim{}, false, tx.Commit()
@@ -384,7 +396,8 @@ func (s *Store) GetMessage(ctx context.Context, id string) (api.Message, error) 
 }
 
 // NextMessageRetry reports how long until the earliest queued message of
-// machineID that a watcher already saw is offered again (MessageRetry after
+// machineID that a watcher already saw, of a session the watcher serves
+// (with a herdr pane and without a fresh mod), is offered again (MessageRetry after
 // its last offer), and false when there is none. A long poll waits that long
 // instead of for its next turn. The delay is at least one second, so a
 // message held back behind an older one for the same session does not make
@@ -392,9 +405,10 @@ func (s *Store) GetMessage(ctx context.Context, id string) (api.Message, error) 
 func (s *Store) NextMessageRetry(ctx context.Context, machineID int64) (time.Duration, bool, error) {
 	now := s.Now()
 	var offered sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT MIN(offered_at) FROM messages
-		WHERE machine_id = ? AND state = ? AND offered_at IS NOT NULL AND created_at > ?`,
-		machineID, api.MessageQueued, formatTS(now.Add(-MessageTTL))).Scan(&offered)
+	err := s.db.QueryRowContext(ctx, `SELECT MIN(m.offered_at) FROM messages m
+		WHERE m.machine_id = ? AND m.state = ? AND m.offered_at IS NOT NULL AND m.created_at > ?
+		AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = m.session_id AND (s.herdr_pane = '' OR `+modFreshSQL+`))`,
+		machineID, api.MessageQueued, formatTS(now.Add(-MessageTTL)), formatTS(now.Add(-ControlPollWindow))).Scan(&offered)
 	if err != nil || !offered.Valid {
 		return 0, false, err
 	}

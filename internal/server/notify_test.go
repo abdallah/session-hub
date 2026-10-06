@@ -536,6 +536,13 @@ func TestAlertMessage(t *testing.T) {
 		{"no title or cwd: the ID; an http link gets no button",
 			api.Session{ID: "0a1b2c3d-1111", Machine: "tower", RemoteControlURL: "http://claude.ai/x"},
 			45 * time.Second, "⏸ Blocked: session 0a1b2c3d\ntower · blocked 45s ago", []inlineButton{open}},
+		{"the mod's question wins over the report and the recap",
+			api.Session{ID: "0a1b2c3d-1111", Title: "t", Machine: "bluebox", Recap: "Asked about tokens.", LatestReport: report,
+				BlockedOn: "Question: Which\x1b[2J library? (a, b)"},
+			time.Minute, "⏸ Blocked: t\nbluebox · blocked 1m ago\nQuestion: Which[2J library? (a, b)", []inlineButton{open}},
+		{"the question is plain text: Telegram gets no parse_mode, so nothing is escaped",
+			api.Session{ID: "0a1b2c3d-1111", Title: "t", Machine: "bluebox", BlockedOn: `Question: <b>bold</b> & <a href="x">link</a>?`},
+			time.Minute, "⏸ Blocked: t\nbluebox · blocked 1m ago\nQuestion: <b>bold</b> & <a href=\"x\">link</a>?", []inlineButton{open}},
 		{"detail cut to 300 characters",
 			api.Session{ID: "0a1b2c3d-1111", Title: "t", Machine: "tower", Recap: strings.Repeat("x", 400)},
 			time.Minute, "⏸ Blocked: t\ntower · blocked 1m ago\n" + strings.Repeat("x", 299) + "…", []inlineButton{open}},
@@ -619,6 +626,13 @@ func TestAlertMessageShowsPermission(t *testing.T) {
 	text, _ = alertMessage(it, at, "https://sessionhub.example.test")
 	if line := strings.Split(text, "\n")[2]; line != `Asks to use Write: {"file_path":"/a/b.go","content":"abc… (cut)` {
 		t.Errorf("cut request line %q", line)
+	}
+	// With the mod's question too, the alert shows both: the request line,
+	// then the question in place of the recap.
+	it.Session.BlockedOn = "Question: Push now?"
+	text, _ = alertMessage(it, at, "https://sessionhub.example.test")
+	if lines := strings.Split(text, "\n"); len(lines) != 4 || !strings.HasPrefix(lines[2], "Asks to use Write: ") || lines[3] != "Question: Push now?" {
+		t.Errorf("request and question %q", text)
 	}
 	// A Waiting item never carries a request line.
 	w := api.InboxItem{Group: api.InboxWaiting, Since: at.Add(-time.Minute), WaitingOn: []string{"review"}, Session: s}

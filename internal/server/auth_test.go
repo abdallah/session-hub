@@ -162,13 +162,39 @@ func TestAuthMatrix(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The mod's routes. Each blocked-on request targets a new session, so
+	// sid1's state stays as the events case left it; each result gets a new
+	// queued message, which an authorized result closes.
+	modN := 0
+	freshBlocked := func() string {
+		modN++
+		id := fmt.Sprintf("mod-%d", modN)
+		e.register(e.tokA, api.SessionUpsert{ID: id})
+		return "/v1/sessions/" + id + "/blocked-on"
+	}
+	freshResult := func() string {
+		modN++
+		res, _, err := e.st.SendMessages(ctx, []string{sid1}, "result message", "cli on tower", fmt.Sprintf("machine:matrix%d", modN))
+		if err != nil || res[0].ID == "" {
+			t.Fatalf("send: %+v %v", res, err)
+		}
+		return "/v1/messages/" + res[0].ID + "/result"
+	}
+	usagePct, usageCost := 37, 0.42
+
 	cases := map[string]authCase{
-		"GET /v1/inbox":                {path: "/v1/inbox", ok: 200},
-		"GET /v1/instructions":         {path: "/v1/instructions", ok: 200},
-		"POST /v1/instructions":        {path: "/v1/instructions", body: api.InstructionIn{Text: "Use British spelling."}, ok: 201},
-		"DELETE /v1/instructions/{id}": {fresh: freshRule, ok: 204},
-		"POST /v1/messages":            {path: "/v1/messages", body: api.MessagesIn{SessionIDs: []string{sid1}, Text: "hello"}, ok: 200},
-		"GET /v1/messages/{id}":        {path: "/v1/messages/" + sent[0].ID, ok: 200},
+		"POST /v1/sessions/{id}/blocked-on": {fresh: freshBlocked, body: api.BlockedOnIn{Text: "Question: Which one?"}, ok: 200, okB: 409},
+		"PUT /v1/sessions/{id}/usage": {path: "/v1/sessions/" + sid1 + "/usage",
+			body: api.UsageIn{ContextPercent: &usagePct, CostUSD: &usageCost}, ok: 200, okB: 409},
+		// 200 when the poll claims a queued message to sid1, else 204.
+		"GET /v1/sessions/{id}/messages/next": {path: "/v1/sessions/" + sid1 + "/messages/next?wait=1", ok: 204, alsoOK: 200, okB: 409},
+		"POST /v1/messages/{id}/result":       {fresh: freshResult, body: api.MessageResultIn{State: api.MessageDelivered}, ok: 200, okB: 409},
+		"GET /v1/inbox":                       {path: "/v1/inbox", ok: 200},
+		"GET /v1/instructions":                {path: "/v1/instructions", ok: 200},
+		"POST /v1/instructions":               {path: "/v1/instructions", body: api.InstructionIn{Text: "Use British spelling."}, ok: 201},
+		"DELETE /v1/instructions/{id}":        {fresh: freshRule, ok: 204},
+		"POST /v1/messages":                   {path: "/v1/messages", body: api.MessagesIn{SessionIDs: []string{sid1}, Text: "hello"}, ok: 200},
+		"GET /v1/messages/{id}":               {path: "/v1/messages/" + sent[0].ID, ok: 200},
 		"POST /v1/sessions/{id}/permissions": {path: "/v1/sessions/" + sid1 + "/permissions",
 			body: api.PermissionIn{ToolName: "Bash"}, ok: 201, okB: 409},
 		"GET /v1/permissions/{id}/decision": {path: "/v1/permissions/" + waitOn.ID + "/decision?wait=1", ok: 204, okB: 409},
@@ -370,6 +396,18 @@ func TestAuthMatrix(t *testing.T) {
 	d := e.detail(sid1)
 	if d.Machine != "tower" || d.Title != "auth work" || d.GitBranch != "main" || d.AgentState != "working" || len(d.Reports) != 1 {
 		t.Errorf("authorized writes not visible: %+v", d.Session)
+	}
+	if d.ContextPercent == nil || *d.ContextPercent != usagePct || d.LiveCostUSD == nil || *d.LiveCostUSD != usageCost || !d.Messageable {
+		t.Errorf("authorized mod writes not visible: %v %v %v", d.ContextPercent, d.LiveCostUSD, d.Messageable)
+	}
+	blocked := 0
+	for _, x := range e.list("") {
+		if x.BlockedOn == "Question: Which one?" && x.AgentState == "blocked" {
+			blocked++
+		}
+	}
+	if blocked != 1 {
+		t.Errorf("%d sessions blocked on the question, want 1: the authorized blocked-on only", blocked)
 	}
 	if d3 := e.detail(sid3); d3.RemoteControlURL != link {
 		t.Errorf("authorized result not visible: %q", d3.RemoteControlURL)

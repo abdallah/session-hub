@@ -31,6 +31,13 @@ func TestReplayEachOp(t *testing.T) {
 			"POST", "/v1/sessions/s1/title", `{"title":"T"}`},
 		{"digest", Item{Op: OpDigest, SessionID: "sess-1", Body: []byte(`{"as_of":"2026-09-30T10:00:00Z","tokens":{"input":1,"output":2,"cache_read":3,"cache_write":4}}`)},
 			"PUT", "/v1/sessions/sess-1/digest", `{"as_of":"2026-09-30T10:00:00Z","tokens":{"input":1,"output":2,"cache_read":3,"cache_write":4},"bad_lines":0}`},
+		// A clear ignores any body: a queued item can never set a question.
+		{"blocked_on_clear", Item{Op: OpBlockedOnClear, SessionID: "s1", Body: []byte(`{"text":"Question: ok?"}`)},
+			"POST", "/v1/sessions/s1/blocked-on", `{"text":""}`},
+		{"blocked_on_clear of a question", Item{Op: OpBlockedOnClear, SessionID: "s1", Body: []byte(`{"text":"","clears":"Question: ok?"}`)},
+			"POST", "/v1/sessions/s1/blocked-on", `{"text":"","clears":"Question: ok?"}`},
+		{"blocked_on_clear without a body", Item{Op: OpBlockedOnClear, SessionID: "s1"},
+			"POST", "/v1/sessions/s1/blocked-on", `{"text":""}`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -65,6 +72,9 @@ func TestReplayUnsendableItems(t *testing.T) {
 		"empty body":    {Op: OpUpsert},
 		"wrong shape":   {Op: OpReport, SessionID: "s1", Body: []byte(`{"done":"x"}`)},
 		"event no body": {Op: OpEvent, SessionID: "s1"},
+		"clear no id":   {Op: OpBlockedOnClear},
+		// No op sets a question from the queue.
+		"blocked_on set": {Op: "blocked_on", SessionID: "s1", Body: []byte(`{"text":"Question: ok?"}`)},
 	} {
 		err := Replay(context.Background(), c, it)
 		if err == nil || IsRetryable(err) {

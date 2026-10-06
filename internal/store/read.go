@@ -51,7 +51,8 @@ const sessionSelect = `SELECT s.id, s.agent, m.name, m.ssh_host, s.cwd, s.git_re
 	m.last_poll, s.rc_url, s.rc_at,
 	c.id, c.action, c.state, c.requested_by, c.created_at, c.expires_at, c.claimed_at, c.finished_at, c.url, c.detail,
 	s.last_prompt, s.last_prompt_at, dg.body,
-	mv.id, mv.target, mv.state, mv.detail, mv.cloud_url, mv.requested_by, mv.bundle_size, mv.created_at, mv.updated_at, mvs.name
+	mv.id, mv.target, mv.state, mv.detail, mv.cloud_url, mv.requested_by, mv.bundle_size, mv.created_at, mv.updated_at, mvs.name,
+	s.blocked_on, s.context_percent, s.live_cost_usd, s.usage_at, s.mod_seen_at
 FROM sessions s
 JOIN machines m ON m.id = s.machine_id
 LEFT JOIN reports r ON r.id = (SELECT id FROM reports WHERE session_id = s.id ORDER BY id DESC LIMIT 1)
@@ -69,13 +70,17 @@ func (s *Store) scanSession(sc scanner, now time.Time) (api.Session, error) {
 	var ended, rTS, rDone, rInFlight, rWaiting, rNote, lastPoll, rcAt, lastPromptAt, digestBody sql.NullString
 	var rc nullControl
 	var mv nullMove
+	var contextPercent sql.NullInt64
+	var liveCost sql.NullFloat64
+	var usageAt, modSeen sql.NullString
 	err := sc.Scan(&x.ID, &x.Agent, &x.Machine, &sshHost, &x.CWD, &x.GitRepo, &x.GitBranch,
 		&x.HerdrSession, &x.HerdrWorkspace, &x.HerdrPane, &x.Title, &x.TitleSource, &x.AgentState,
 		&started, &lastSeen, &ended, &rTS, &rDone, &rInFlight, &rWaiting, &rNote,
 		&lastPoll, &x.RemoteControlURL, &rcAt,
 		&rc.id, &rc.action, &rc.state, &rc.requestedBy, &rc.created, &rc.expires, &rc.claimed, &rc.finished, &rc.url, &rc.detail,
 		&x.LastPrompt, &lastPromptAt, &digestBody,
-		&mv.id, &mv.target, &mv.state, &mv.detail, &mv.cloudURL, &mv.by, &mv.size, &mv.created, &mv.updated, &mv.source)
+		&mv.id, &mv.target, &mv.state, &mv.detail, &mv.cloudURL, &mv.by, &mv.size, &mv.created, &mv.updated, &mv.source,
+		&x.BlockedOn, &contextPercent, &liveCost, &usageAt, &modSeen)
 	if err != nil {
 		return x, err
 	}
@@ -105,6 +110,22 @@ func (s *Store) scanSession(sc scanner, now time.Time) (api.Session, error) {
 		return x, err
 	}
 	x.Controllable = x.HerdrPane != "" && polled != nil && now.Sub(*polled) <= ControlPollWindow
+	seen, err := parseNullTS(modSeen)
+	if err != nil {
+		return x, err
+	}
+	x.Messageable = x.Controllable || modFresh(seen, now)
+	if contextPercent.Valid {
+		n := int(contextPercent.Int64)
+		x.ContextPercent = &n
+	}
+	if liveCost.Valid {
+		c := liveCost.Float64
+		x.LiveCostUSD = &c
+	}
+	if x.UsageAt, err = parseNullTS(usageAt); err != nil {
+		return x, err
+	}
 	if x.RemoteControl, err = rc.request(x.ID, x.Machine, now); err != nil {
 		return x, err
 	}

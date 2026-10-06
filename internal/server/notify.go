@@ -344,9 +344,13 @@ func alertMessage(it api.InboxItem, now time.Time, publicURL string) (string, []
 	return strings.Join(lines, "\n"), buttons
 }
 
-// alertDetail is what the session waits on: the item's waiting_on, else the
-// latest report's when no prompt came after that report, else the recap.
+// alertDetail is what the session waits on: for a Blocked item, the question
+// its mod reported; else the item's waiting_on, else the latest report's when
+// no prompt came after that report, else the recap.
 func alertDetail(it api.InboxItem) string {
+	if it.Group == api.InboxBlocked && it.Session.BlockedOn != "" {
+		return it.Session.BlockedOn
+	}
 	if len(it.WaitingOn) > 0 {
 		return strings.Join(it.WaitingOn, "; ")
 	}

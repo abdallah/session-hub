@@ -276,6 +276,10 @@ func (s *Store) upsertTx(ctx context.Context, tx *sql.Tx, machineID int64, u api
 	if u.AgentState != "" {
 		sets = append(sets, "turn_ended_at = "+turnEndedExpr, "blocked_at = "+blockedAtExpr)
 		args = append(args, u.AgentState, formatTS(now), u.AgentState, formatTS(now))
+		if u.AgentState != "blocked" {
+			// What the session waited on is answered once it leaves blocked.
+			sets = append(sets, "blocked_on = ''")
+		}
 	}
 	if firstPrompt == "" { // the first prompt is recorded once
 		set("first_prompt", u.FirstPrompt)
@@ -407,6 +411,11 @@ func (s *Store) AddEvent(ctx context.Context, machineID int64, id string, e api.
 		if (!last.Valid || formatTS(ts) >= last.String) && !hooksIdleOverDone {
 			q += ", agent_state = ?, state_ts = ?, turn_ended_at = " + turnEndedExpr + ", blocked_at = " + blockedAtExpr
 			args = append(args, state, formatTS(ts), state, formatTS(ts), state, formatTS(ts))
+			if state != "blocked" {
+				// What the session waited on is answered once it leaves
+				// blocked: the hooks' prompt (working) and Stop (idle) clear it.
+				q += ", blocked_on = ''"
+			}
 			seen = e.Source == api.SourcePlugin && prev == "done" && state == "idle"
 			leftBlocked = prev == "blocked" && state != "blocked"
 		}
