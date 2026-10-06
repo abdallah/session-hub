@@ -78,6 +78,7 @@ machine = "bluebox"
 
 ```sh
 sessionhub install-hooks && sessionhub install-mcp && sessionhub install-plugin
+sessionhub install-mod   # optional: the Claude Code mod
 ```
 
 ### Expose it to your other machines
@@ -215,6 +216,14 @@ Claude Code hooks, and the MCP server.
    sessionhub ls
    ```
 
+5. Optional: install the Claude Code mod, which shows a question Claude asks
+   in the inbox, reports each session's context window fill, and lets
+   `sessionhub send` reach sessions outside herdr. `join` doesn't install it:
+
+   ```sh
+   sessionhub install-mod
+   ```
+
 The join prints two manual steps. sessionhub edits neither file.
 
 ### Add the CLAUDE.md snippet
@@ -288,6 +297,10 @@ The first connection opens a browser for the Access login.
 - Other machines: run `make install`, then `sessionhub install-plugin` for the same
   reason. The hooks and the MCP server pick up the new binary on their next
   run.
+- On every machine with the Claude Code mod, run `sessionhub install-mod`
+  after the new binary is in place. The mod is part of the binary, so this
+  writes the new copy. `make deploy` does it for you on the server host when
+  `~/.local/share/sessionhub/claude-mod` exists.
 
 Release notes that need extra steps (database migrations, new hook entries)
 are in [`upgrading.md`](upgrading.md).
@@ -357,6 +370,7 @@ On each client machine:
 ```sh
 sessionhub uninstall-plugin
 sessionhub uninstall-hooks
+sessionhub uninstall-mod
 sessionhub uninstall-mcp
 rm -f ~/.config/sessionhub/config.toml
 rm -rf ~/.local/state/sessionhub ~/.local/share/sessionhub/herdr-plugin

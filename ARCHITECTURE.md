@@ -17,6 +17,7 @@ runs as:
 | herdr plugin | `sessionhub plugin startup\|event\|watch` | `internal/plugin` | Started by herdr; `watch` is the long-running watcher. |
 | CLI | `sessionhub ls`, `inbox`, `resume`, … | `internal/cli`, `internal/resume` | Run by you. |
 | Enrollment | `sessionhub join` | `internal/join` | Once per machine. |
+| Claude Code mod | `sessionhub install-mod`, `sessionhub mod <command>` | `internal/claudemod` (the installer and the mod's JavaScript, embedded), `internal/modcmd` | The mod runs inside each interactive Claude Code session and calls `sessionhub mod`. |
 
 Shared code: `internal/client` (config, HTTP client, offline queue),
 `internal/api` (the JSON types both sides use), `internal/paths` (every
@@ -61,6 +62,12 @@ up through a long poll (`GET /v1/machines/self/control?wait=30`) and posts
 the result back. Permission prompts work the other way round: the
 `PermissionRequest` hook holds a long poll on the server until someone
 answers on the dashboard or the CLI, or the terminal answers first.
+
+A session with the Claude Code mod takes its own messages: the mod runs
+`sessionhub mod poll`, which long-polls
+`GET /v1/sessions/{id}/messages/next`, so a session outside herdr can get
+messages too. While a session's mod polls, the watcher leaves its messages
+alone.
 
 ## Auth
 

@@ -31,7 +31,10 @@ clean:
 # server or watcher keeps its old inode until it restarts. The plugin watcher
 # does not restart with the server, so the last step reruns install-plugin,
 # which stops the old watcher and starts one on the new binary; it is skipped
-# until `sessionhub join` has written the client config. Non-interactive ssh has no
+# until `sessionhub join` has written the client config. It then reruns
+# install-mod, only when the Claude Code mod is installed there
+# (~/.local/share/sessionhub/claude-mod exists), so the mod matches the new
+# binary. Non-interactive ssh has no
 # ~/.local/bin in PATH, where herdr is installed, hence the PATH prefix.
 deploy:
 	@test -n "$(DEPLOY_HOST)" || { echo 'set DEPLOY_HOST to the server'\''s SSH host, e.g. make deploy DEPLOY_HOST=myserver'; exit 1; }
@@ -44,4 +47,5 @@ deploy:
 	ssh $(DEPLOY_HOST) 'systemctl --user daemon-reload && systemctl --user enable --now sessionhub && systemctl --user restart sessionhub'
 	ssh $(DEPLOY_HOST) 'for i in 1 2 3 4 5; do curl -fsS http://127.0.0.1:8787/healthz && exit 0; sleep 1; done; systemctl --user --no-pager status sessionhub; exit 1'
 	ssh $(DEPLOY_HOST) 'if [ -f ~/.config/sessionhub/config.toml ]; then PATH=$$HOME/.local/bin:$$PATH ~/.local/bin/sessionhub install-plugin; else echo "no client config yet: skipping install-plugin (run sessionhub join)"; fi'
+	ssh $(DEPLOY_HOST) 'if [ -d ~/.local/share/sessionhub/claude-mod ]; then PATH=$$HOME/.local/bin:$$PATH ~/.local/bin/sessionhub install-mod; fi'
 	ssh $(DEPLOY_HOST) '~/.local/bin/sessionhub version'

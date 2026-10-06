@@ -35,6 +35,10 @@ CLI, or a Telegram message.
   from your phone.
 - **Move sessions.** Hand a session, with its branch and uncommitted changes,
   to another machine or to a Claude Code cloud session.
+- **Claude Code mod.** Optional, with `sessionhub install-mod`: the inbox
+  shows the question a blocked session asks, the dashboard shows each
+  session's context window fill, `sessionhub send` reaches sessions outside
+  herdr, and Claude Code's status line shows the inbox counts.
 - **Alerts.** Optional Telegram messages when a session has been blocked or
   waiting on you for 30 seconds.
 
@@ -121,6 +125,13 @@ five minutes. When you want more machines, follow
 
    ```sh
    sessionhub join localhost --name "$(hostname -s)"
+   ```
+
+   Optionally, add the Claude Code mod as well (see
+   [`docs/cli.md`](docs/cli.md#sessionhub-install-mod)):
+
+   ```sh
+   sessionhub install-mod
    ```
 
 4. Paste the snippet that `join` prints into `~/.claude/CLAUDE.md`, so

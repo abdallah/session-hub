@@ -221,6 +221,9 @@ Beside the 2-second ticks, the watcher keeps one long poll open on
   offers it again 15 seconds after the last offer. No pane, a pane that is
   gone (`pane_not_found`), another session in the pane, or no agent is
   `refused`. The log line never holds the message text.
+- The watcher gets no messages for a session whose Claude Code mod polled in
+  the last 2 minutes, or for a session without a herdr pane: the mod takes
+  those itself (see `docs/cli.md`, "`sessionhub mod`").
 - A claim whose action is `start` carries a start request in `start` and no
   session. Unless the machine set `remote_start = false` (or
   `SESSIONHUB_REMOTE_START=off`; the watcher reads the config for each

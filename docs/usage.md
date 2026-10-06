@@ -42,7 +42,15 @@
 - `sessionhub send <id-prefix>... -m "<text>"` types a message into sessions,
   prefixed with who sent it, once each one's agent is idle. On the
   dashboard, **Select** the sessions and use the **Send a message** bar.
-  Only sessions in herdr on a machine whose watcher runs can take one.
+  Sessions in herdr on a machine whose watcher runs can take one, and so
+  can sessions whose sessionhub mod polls.
+- `sessionhub install-mod` installs the sessionhub Claude Code mod on this
+  machine. In sessions started after that, an `AskUserQuestion` shows in the
+  inbox with its question, the dashboard shows each session's context window
+  fill, `sessionhub send` reaches sessions outside herdr, and the status line
+  shows the inbox counts. Run it once on each machine;
+  `sessionhub uninstall-mod` removes it. See
+  [`cli.md`](cli.md#sessionhub-install-mod).
 - When a session waits on a permission prompt, the inbox row shows the tool
   and command with **Allow once** and **Deny**, and the Telegram alert names
   them; `sessionhub approve <id-prefix>` and `sessionhub deny <id-prefix> ["reason"]` do

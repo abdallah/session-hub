@@ -180,6 +180,10 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `GET /v1/moves/{id}/bundle` | machine (the move's target, while `unpacking`) | `200`, the bundle | Download the sealed bundle. `410` when its file is gone. |
 | `POST /v1/moves/{id}/result` | machine (the source while `packing`, the target while `unpacking`; the source again once the move ended and its part closed) | `200`, the `Move` | Report `done` or `failed` (`MoveResultIn`). After the move ended, the source's result with the final state adds its `detail` as a note. |
 | `PUT /v1/machines/self/move-key` | machine | `204` | Register this machine's move public key (`MoveKeyIn`). |
+| `POST /v1/sessions/{id}/blocked-on` | machine (the owning one) | `200`, the `Session` | Set or clear what the session waits on (`BlockedOnIn`). See [The Claude Code mod](#the-claude-code-mod). |
+| `PUT /v1/sessions/{id}/usage` | machine (the owning one) | `200`, the `Session` | Store the context window fill and cost (`UsageIn`). |
+| `GET /v1/sessions/{id}/messages/next?wait=25` | machine (the owning one) | `200` a `ModMessage`; `204` none | The mod's long poll for the session's next message. |
+| `POST /v1/messages/{id}/result` | machine (the message's) | `200`, the `Message` | The mod's result for a message (`MessageResultIn`). |
 | `POST /v1/machines/{name}/start` | machine, or cookie with `X-Hub-Action: start` | `202`, the `StartRequest` | Ask the machine's watcher to start a new session (`StartIn`). `404` unknown machine, `409` watcher offline, `429` at 5 pending. See [Starting sessions](#starting-sessions). |
 | `GET /v1/starts/{id}` | read | `200`, the `StartRequest` | One start request and its state. |
 | `POST /v1/logins` | machine | `201`, `Login` | Create a one-time sign-in link (`LoginIn`). `400` bad name, `409` name taken, `429` at 5 unused links. |
@@ -217,7 +221,9 @@ A session card is compact: one header line with a status dot, the title, the
 time since the session was last seen, and a state badge such as
 "blocked 4m", "working", "idle", "stale", or "ended". The blocked time comes
 from the inbox item's `since`. Tap the header to expand the card; it then
-shows the working directory and branch, the recap, the latest report, the
+shows the agent state with `context NN%` when the session's mod reported its
+context window fill, what a blocked session waits on (**Blocked on:**, from
+its mod), the working directory and branch, the recap, the latest report, the
 last prompt, the summary line, **Details**, the resume command with **Copy**,
 and the Remote Control row. The headers are buttons, so **Tab**, **Enter**,
 and **Space** work too.
@@ -241,8 +247,9 @@ with the session list, every 30 seconds.
 
 Each inbox row reads like a phone notification: the title in bold, the time
 since the item's `since`, up to two lines that say what is needed, and the machine
-and group in small text. The line shows the `waiting_on` items, else the
-recap, else the group's label. Tapping the row does the most useful thing it
+and group in small text. The line shows, on a **Blocked** row, the question
+the session's mod reported; else the `waiting_on` items, else the recap, else
+the group's label. Every string goes in as text, never as markup. Tapping the row does the most useful thing it
 can, and the row names it:
 
 1. If the session has a Remote Control link, the row opens it in a new tab
@@ -291,8 +298,8 @@ Writes send `X-Hub-Action: instructions`. The filter is hidden on this tab.
 
 **Select**, beside the filter on the **Sessions** tab, shows a checkbox on
 every card; an expanded card always shows one. A session sessionhub cannot message
-(not in herdr, or its machine's watcher is offline) has its checkbox
-disabled. While sessions are selected, the **Send a message** bar at the
+(`messageable` is false: no sessionhub mod polls in it, and it is not in herdr on a
+machine whose watcher polls) has its checkbox disabled. While sessions are selected, the **Send a message** bar at the
 bottom of the **Sessions** tab lists them
 with a text box and **Send to N sessions**, which asks for confirmation,
 listing the sessions, and sends with `X-Hub-Action: send`. Each target's
@@ -622,9 +629,11 @@ with one result per target, in order:
     {"results": [{"session_id": "...", "id": "msg_...", "state": "queued"},
                  {"session_id": "...", "state": "refused", "detail": "the session is not in herdr"}]}
 
-A target is refused when the session is unknown, has ended, has no herdr pane,
-or its machine's watcher has not polled in the last 2 minutes. The other
-targets still go.
+A target is refused when the session is unknown or has ended, or when its
+mod has not polled in the last 2 minutes and the session has no herdr pane or
+its machine's watcher has not polled in the last 2 minutes. The other targets
+still go. `Session.messageable` says whether a send would be accepted, apart
+from ended sessions.
 
 The sender is `dashboard` for a browser, `cli on <machine>` for a machine
 token, and `session <first 8 characters>` when a machine token sends
@@ -648,6 +657,12 @@ with the prompt in `text`, and answers on `POST /v1/control/{id}/result` with
 working or blocked; the message stays queued and is offered again 15 seconds
 after the last offer). A `failed` result counts as `refused`. A message not
 delivered within 10 minutes is `expired`.
+
+The watcher leaves alone the messages of a session whose Claude Code mod
+polled in the last 2 minutes, and those of a session without a herdr pane:
+the mod claims them on `GET /v1/sessions/{id}/messages/next`, with the same
+order and the same 15-second re-offer, and answers on `POST
+/v1/messages/{id}/result`. See [The Claude Code mod](#the-claude-code-mod).
 
 `GET /v1/messages/{id}` (read access) returns the message: `id`,
 `session_id`, `machine`, `sender`, `text`, `state`, `detail`, `created_at`,
@@ -806,6 +821,70 @@ If it doesn't and `trust` is not set, the request fails with `<dir> is not
 trusted by Claude on <machine>; open it once or pass --trust`, and nothing
 starts. The watcher never answers Claude's trust prompt in a pane.
 
+### The Claude Code mod
+
+The mod runs inside each Claude Code session and calls `sessionhub mod`, which
+calls these routes with the machine token. Each route takes only the machine
+that owns the session: another machine's token gets `409`, an unknown
+session `404`. A refused call writes nothing. Only the message poll sets the
+session's `mod_seen_at`, so a session stays messageable while its mod
+polls; if the mod's message loop stops, the herdr watcher takes the
+session's messages again 2 minutes later, even while blocked-on and usage
+reports go on. `blocked-on` and `usage` for a session that has ended answer
+`200` with the session unchanged: a late report never revives a session.
+
+- `POST /v1/sessions/{id}/blocked-on` with `{"text": "..."}` sets
+  `blocked_on`, what the session waits on, such as `Question: Which library
+  should we use? (date-fns, luxon, dayjs)`. The server cleans the text first:
+  control and bidirectional characters removed, whitespace folded to one
+  space, cut to 300 characters with `…`. A non-empty text also sets
+  `agent_state` to `blocked` (and `blocked_at` when it was not blocked), so
+  the session shows in the inbox. When `agent_state` is `idle` or `done`, a
+  text changes nothing: the turn is over, so the question arrived after it
+  was answered.
+- `{"text": "", "clears": "<question>"}` clears the question named: the
+  server cleans `clears` like the text, and only when the stored
+  `blocked_on` equals it does it clear `blocked_on` and, when blocked, set
+  `agent_state` to `working`. Otherwise it changes nothing, so a late clear
+  never ends a newer question. `text` and `clears` both set is `400`.
+- `{"text": ""}` without `clears` (an older mod) clears `blocked_on` and,
+  when `agent_state` is `blocked` and `blocked_on` was set (the mod's own
+  block), sets it to `working`; any other state stays, so a clear that
+  arrives after the turn ended, or after a permission prompt blocked the
+  session again, does not undo it.
+- Each `blocked-on` call that changes the session records a `blocked_on`
+  event (source `mod`, payload `text`, the first 200 characters) and sets
+  `last_seen_at`. Like an upsert, it leaves `state_ts` alone.
+- Any change of `agent_state` to a state other than `blocked`, from a
+  `state_changed` event or an upsert, clears `blocked_on`. The hooks' prompt
+  (`working`) and Stop (`idle`) are the usual ones.
+- `PUT /v1/sessions/{id}/usage` with `{"context_percent": 42, "cost_usd":
+  1.25}` stores the context window fill (an integer, 0 to 100) and the
+  session's cost in US dollars (0 to 1,000,000), and sets `usage_at` and
+  `last_seen_at`. A missing field keeps the stored value; a body with
+  neither is `400`.
+- `GET /v1/sessions/{id}/messages/next?wait=25` holds the request open for
+  up to `wait` seconds (1 to 30, default 30) and answers `200` with
+  `{"id": "msg_...", "text": "..."}` once the session has a message, or `204`.
+  `text` is the prompt to submit, with the sender line the watcher would
+  type. The poll sets the session's `mod_seen_at` before it waits, and again
+  on every claim attempt, which makes the session messageable, with or
+  without herdr, for 2 minutes. The session's messages go out in order, one
+  at a time; a claimed message is offered again 15 seconds after its last
+  offer until a result closes it. A send to the
+  session wakes the poll. A session holds at most 2 open polls and a machine
+  64; more is `429`. A `HEAD` is `405`.
+- `POST /v1/messages/{id}/result` with `{"state": "delivered", "detail":
+  "..."}` records the mod's result: `delivered`, `busy` (the message stays
+  queued and is offered again 15 seconds after its last offer), or
+  `refused`. `failed` is `400`. The server cleans `detail` to one line of at
+  most 200 characters. A message that is not queued any more is `409`.
+
+`Session` carries what the mod reported: `blocked_on`, `context_percent`,
+`live_cost_usd`, and `usage_at` (each left out until a mod reports it), and
+`messageable`. `controllable` keeps meaning herdr control: Remote Control and
+moves still need herdr and a polling watcher.
+
 ### Inbox
 
 `GET /v1/inbox` lists the sessions that need you, across machines. Each
@@ -828,6 +907,10 @@ session that has not ended is in at most one group, the first that matches:
   arrives.
 - A **Blocked** item carries `permission`, the session's newest open
   permission request, when it has one. See "Permission requests".
+- A **Blocked** item's `session.blocked_on` is the question the session's
+  mod reported, when it has one. The dashboard, `sessionhub inbox`, and the
+  Telegram alert show it in place of the recap, and next to the permission
+  request when the item has both.
 - When the agent state moves from `done` to `idle` (herdr marks a finished
   pane seen), the server dismisses that session's **Finished** item at its
   `since`, in the same write, on both the `state_changed` event and the herdr
@@ -894,9 +977,11 @@ Asks to use <tool>: <command or file, cut to 300 characters>
 For a **Blocked** item, the `Asks to use` line is there when the session has
 an open permission request (see [Permission requests](#permission-requests)),
 and ends in ` (cut)` when the hook cut the input.
-The last line is the latest report's `waiting_on` items when you haven't sent
-a prompt since that report, else the recap; it is left out when both are
-empty. Answer the request with **Allow once** or **Deny** in the inbox that
+The last line is the question the session's mod reported (`blocked_on`) when
+there is one, else the latest report's `waiting_on` items when you haven't
+sent a prompt since that report, else the recap; it is left out when all are
+empty. An alert goes out once per blocked `since`, so a question the mod
+reports after the alert for that block went out does not send another. Answer the request with **Allow once** or **Deny** in the inbox that
 **Open inbox** opens; the bot itself never answers. For a **Waiting on you** item:
 
 ```
@@ -1008,7 +1093,7 @@ keys on. The server uses one connection, and every transaction starts with
 same file, such as `sessionhub machine add`, waits instead of failing with
 `SQLITE_BUSY`. The schema version is in
 `PRAGMA user_version`; the server creates the schema on first open, upgrades an
-older one in place (version 2 adds `sessions.state_ts`; version 3 adds `control_requests`, `machines.last_poll`, and `sessions.rc_url` and `rc_at`; version 4 adds `session_digests` and `sessions.last_prompt` and `last_prompt_at`; version 5 adds `login_codes` and `web_sessions`; version 6 adds `sessions.turn_ended_at`, `sessions.blocked_at`, and `inbox_triage`; version 7 adds `inbox_alerts`; version 8 adds `instructions`, `messages`, and `permission_requests`; version 9 adds `moves` and `machines.move_key`; version 10 adds `start_requests`; version 11 adds `start_requests.trust`), and refuses
+older one in place (version 2 adds `sessions.state_ts`; version 3 adds `control_requests`, `machines.last_poll`, and `sessions.rc_url` and `rc_at`; version 4 adds `session_digests` and `sessions.last_prompt` and `last_prompt_at`; version 5 adds `login_codes` and `web_sessions`; version 6 adds `sessions.turn_ended_at`, `sessions.blocked_at`, and `inbox_triage`; version 7 adds `inbox_alerts`; version 8 adds `instructions`, `messages`, and `permission_requests`; version 9 adds `moves` and `machines.move_key`; version 10 adds `start_requests`; version 11 adds `start_requests.trust`; version 12 adds the mod's `sessions` columns), and refuses
 a database from a newer version. Times are stored as UTC RFC 3339 with a
 fixed nine-digit fraction, so they also sort as text. The database directory
 is created with mode `0700`.
@@ -1144,6 +1229,21 @@ in standard base64, or empty until its watcher registers one) and `moves`:
 Bundles are files, never rows (see "Moves" under the API). The version 8
 binary refuses a version 9 database; restoring the backup is the only
 rollback.
+
+### Mod columns
+
+Schema version 12 adds five `sessions` columns for the mod:
+
+| Column | Holds |
+|---|---|
+| `blocked_on` | what the session waits on: one cleaned line, at most 300 characters; `''` when nothing |
+| `context_percent` | the context window fill, 0 to 100; `NULL` until reported |
+| `usage_at` | when the mod last reported usage |
+| `live_cost_usd` | the session's cost in US dollars; `NULL` until reported |
+| `mod_seen_at` | the mod's last message poll; within 2 minutes, the mod takes the session's messages |
+
+The version 11 binary refuses a version 12 database; restoring the backup is
+the only rollback.
 
 The source is in `internal/store` (schema, queries, status) and
 `internal/server` (HTTP, auth, config, commands).

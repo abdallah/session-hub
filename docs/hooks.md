@@ -8,7 +8,7 @@ or blocks a Claude Code turn.
 
 | Command | What it does |
 |---|---|
-| `sessionhub install-hooks` | Adds sessionhub's hook entries for six events to `settings.json`. |
+| `sessionhub install-hooks` | Adds sessionhub's hook entries for six events to `settings.json`. Prints a reminder to run `sessionhub install-mod` while the mod is not installed. |
 | `sessionhub uninstall-hooks` | Removes only sessionhub's entries. |
 | `sessionhub hook session-start\|prompt\|stop\|notification\|session-end\|context\|permission-request` | Handles one hook call. Claude Code runs this. |
 | `sessionhub hook flush` | Internal. Drains the queue. `session-end` starts it. |

@@ -65,6 +65,25 @@ or Claude Code.
   `GetMoveBundle(id, writer)` streams one back and refuses more than 64 MiB.
   Both use `BundleTimeout` (10 minutes) instead of the per-request limit and
   return `*StatusError` for a non-2xx answer.
+- The Claude Code mod's calls, which `sessionhub mod` makes for the mod:
+  - `SetBlockedOn(id, text)` posts `POST /v1/sessions/{id}/blocked-on`; an
+    empty `text` clears a mod-set block. The server cleans and cuts the text.
+  - `ClearBlockedOn(id, question)` posts `{"text": "", "clears": question}`,
+    which clears the block only while it is that question.
+  - `PutUsage(id, api.UsageIn)` puts the context window fill and cost; a nil
+    field is left out and keeps the stored value.
+  - `PollSessionMessage(id, wait) (*api.ModMessage, error)` holds `GET
+    /v1/sessions/{id}/messages/next?wait=<whole seconds, 1 to 30>` open with
+    a time limit of `wait` plus 10 s, and returns the claimed message (`ID`,
+    and `Text`, the prompt to submit), or `nil` on `204`. A `200` without an
+    ID is an error.
+  - `PostMessageResult(id, api.MessageResultIn) (api.Message, error)` posts
+    `delivered`, `busy`, or `refused`.
+
+  Another machine's session gets a `*StatusError` with status `409`.
+  There is no queue op that sets a question. `internal/modcmd` (`sessionhub mod`)
+  uses these calls with a 5-second limit, and `poll` with a 30-second
+  deadline for a 25-second wait. See `docs/cli.md`, "`sessionhub mod`".
 - Non-2xx responses return `*StatusError{Status, Message}`. `Message` is the
   `api.Error` text, or the trimmed body when it is not JSON (a proxy page).
 - `ListSessions` and `ListMachines` decode a bare JSON array, which is what
@@ -78,7 +97,13 @@ and `queue.lock`.
 
 - `Append(Item)`: takes an exclusive `flock`, writes one line, fsyncs. Sets
   `ID` and `QueuedAt` when empty. Item ops: `upsert`, `event`,
-  `herdr_sessions`; `Body` is the JSON body of the matching API call.
+  `herdr_sessions`, `report`, `title`, `digest`, and `blocked_on_clear`
+  (`OpBlockedOnClear`, with `SessionID` and a body of `{"clears":
+  "<question>"}`: it clears that question only, through `ClearBlockedOn`; an
+  item with no body clears only a mod-set block); `Body` is the JSON body of the matching API call.
+  `Replay` sends any of them. There is no op that sets a question: a set
+  replayed later would block a session that was already answered, so
+  `SetBlockedOn` with text is best effort.
 - `Drain(fn)`: holds the lock, reads the file, and calls `fn(all items)`. If
   the read fails with anything other than end of file, `Drain` returns the
   error without calling `fn` and leaves the file alone, so a partial read

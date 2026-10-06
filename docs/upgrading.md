@@ -4,6 +4,35 @@ The general upgrade steps and how to roll back are in
 [`self-hosting.md`](self-hosting.md#upgrade). This page lists the releases
 that need more than that. Newest first.
 
+## Upgrade to the Claude Code mod
+
+This release adds the sessionhub Claude Code mod and moves the database to
+schema version 12. Deploy the server first; it upgrades the database on its
+first start. A new client against an old server finds no targets for
+`sessionhub send --machine`, because the old server doesn't send
+`messageable`.
+
+Then, on every machine where you want the mod, install the new binary and
+run:
+
+```sh
+sessionhub install-plugin
+sessionhub install-mod
+```
+
+`sessionhub install-mod` writes the mod to
+`~/.local/share/sessionhub/claude-mod/` and adds that directory to
+`env.CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`, after a backup.
+Sessions started after that load the mod; running ones don't. From now on,
+`make deploy` reruns `sessionhub install-mod` on the server host when the mod
+is installed there; on other machines, rerun it after each upgrade.
+
+To roll back, run `sessionhub uninstall-mod` with the new binary on every
+machine that has the mod. Then stop the server, restore the database backup
+as described in [self-hosting.md](self-hosting.md#upgrade), install the
+previous binary everywhere, and start the server. The version 11 binary
+refuses a version 12 database.
+
 ## Upgrade to start trust checks
 
 This release moves the database to schema version 11. Deploy the server

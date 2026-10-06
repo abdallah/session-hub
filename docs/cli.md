@@ -23,7 +23,7 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub rules add "<text>"` | Add a rule, 1 to 300 characters on one line. The list holds at most 2,000 characters. |
 | `sessionhub rules rm <id>` | Remove rule `<id>`. |
 | `sessionhub send <id-or-prefix>... -m "<text>"` | Send a message to sessions. See below. |
-| `sessionhub send --machine <M> -m "<text>"` | Send a message to every live session in herdr on `<M>`. |
+| `sessionhub send --machine <M> -m "<text>"` | Send a message to every live session on `<M>` that can take one. |
 | `sessionhub approve [--yes] <request-id\|prefix>` | Allow a pending permission prompt once, after it shows the request and asks. See below. |
 | `sessionhub deny [--yes] <request-id\|prefix> ["reason"]` | Deny a pending permission prompt, with an optional reason Claude sees. |
 | `sessionhub move <id-or-prefix> <machine\|cloud>` | Move a session to another machine, or hand it to a Claude Code cloud session, and print its progress for up to 3 minutes. See below. |
@@ -33,6 +33,9 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub resume [--force] [--remote-control] <id-prefix>` | Get back into a session. See below. `--force` starts a session the server reports `live` or `blocked` even though no pane runs it to focus. `--remote-control` starts Claude with Remote Control on. Flags go before the prefix. |
 | `sessionhub resume --pick [--force] [--remote-control]` | Numbered list of this machine's sessions (live first, then newest; at most 30). Type a number, then the same logic as `sessionhub resume`. Empty input cancels. |
 | `sessionhub remote-control <id-prefix>` | Turn on Claude Code Remote Control for a session. See below. `-h` or `--help` prints the usage. |
+| `sessionhub install-mod [--settings FILE] [--binary PATH]` | Install the sessionhub Claude Code mod. See below. |
+| `sessionhub uninstall-mod [--settings FILE]` | Remove the sessionhub Claude Code mod. |
+| `sessionhub mod <command>` | The calls the sessionhub Claude Code mod makes. Not meant to be run by hand. See below. |
 | `sessionhub plugin open-picker` | Runs `herdr plugin pane open --plugin sessionhub --entrypoint resume-picker --placement overlay --focus`, which runs `sessionhub resume --pick`. It uses `HERDR_BIN_PATH` when set. |
 | `sessionhub plugin open-inbox` | Runs `herdr plugin pane open --plugin sessionhub --entrypoint inbox --placement split --direction right --focus`, which runs `sessionhub inbox --watch` in a pane to the right. It uses `HERDR_BIN_PATH` when set. The pane opens in the herdr of the machine the command runs on, so run it in the herdr you are looking at; outside a herdr pane (for example over SSH), it prints a note saying where the pane opened. |
 
@@ -305,8 +308,9 @@ edit the same list.
 `sessionhub send` types a message into each target session's terminal, prefixed
 with `From the user via sessionhub (cli on <machine>):` and a blank line. Each
 target is a session ID or a prefix of at least 4 characters; `--machine M`
-targets every live session in herdr on `M` whose watcher is polling. Flags
-may come before or after the targets.
+targets every live session on `M` that can take a message: in herdr with
+the watcher polling, or with the sessionhub mod polling. Flags may come before or
+after the targets.
 
 It prints one line per target, `queued` or `refused: <reason>`, then waits
 up to 15 seconds and prints the delivery result of each queued one:
@@ -315,6 +319,62 @@ up to 15 seconds and prints the delivery result of each queued one:
 `expired`. The watcher types a message only when the session's agent is
 idle or done. The command exits 1 when any target was refused or expired.
 At most 30 messages a minute leave one machine.
+
+## `sessionhub install-mod`
+
+The sessionhub Claude Code mod runs inside every interactive Claude Code session in
+a terminal. It reports what an `AskUserQuestion` asks, so the inbox and the
+Telegram alert show the question, and the session's context window fill and
+cost. It also types `sessionhub send` messages into the session, with or without
+herdr, and shows the inbox counts in the session's status line, such as `2
+blocked · 1 waiting`. The mod holds no token: it runs `sessionhub mod`.
+
+`sessionhub install-mod`:
+
+1. Writes the mod, which the binary carries, to
+   `~/.local/share/sessionhub/claude-mod/`, with the absolute path of the installed
+   binary (`~/.local/bin/sessionhub`, or `--binary PATH`) filled into
+   `hooks/config.js`. The files go to a new directory that replaces the old
+   one with a rename. If nothing changed, it writes nothing.
+2. Adds that directory to `env.CLAUDE_CODE_PLUGIN_DIRS` in
+   `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR/settings.json` when set, or
+   `--settings FILE`). It keeps the other `:`-separated entries and the rest
+   of the file byte for byte, writes a `settings.json.sessionhub-backup-<time>`
+   first, and writes nothing when the directory is already listed.
+
+If the settings edit fails, the previous mod directory is put back. The
+command refuses to run until the binary is at `~/.local/bin/sessionhub`
+(see the README's [Install](../README.md#install)).
+Sessions started after the install load the mod.
+
+`sessionhub uninstall-mod` removes the directory from `CLAUDE_CODE_PLUGIN_DIRS`
+(and the key, and an `env` left empty, when it was the only entry), then
+deletes `~/.local/share/sessionhub/claude-mod/`.
+
+The mod is part of the binary, so after you install a new binary, run
+`sessionhub install-mod` again to update it; `make deploy` does it on the
+server host when the mod is installed there. `sessionhub install-hooks` prints a reminder while
+the mod is not installed.
+
+## `sessionhub mod`
+
+The mod runs these subcommands with `$.process.run`. Their arguments and
+input are a contract with the mod (`internal/claudemod/mod/hooks/register.js`)
+and stay backward compatible: unknown JSON fields are ignored, and an
+unknown flag is an error. Each call uses a 5-second HTTP limit except `poll`.
+Any failure exits non-zero, with the error on stderr, and stdout carries only
+the output below.
+
+| Subcommand | Stdin | Does |
+| --- | --- | --- |
+| `blocked-on --session ID` | `{"questions": [...]}` (the `AskUserQuestion` input) or `{"text": "..."}`, with `"clear": true` to clear | Reports what the session waits on, as one line such as `Question: Which library should we use? (date-fns, luxon, dayjs)`; more questions are joined with ` · `. A question is sent once and never queued: replayed later, it would block a session that was already answered. With `"clear": true`, the same input formats to the same line, and the server clears the block only while it is that question. `{"text": ""}` (an older mod) clears only a block the mod set. A clear that can't reach the server is queued (`blocked_on_clear`, with the question) and exits 0. |
+| `usage --session ID` | `{"context": {"tokens", "window", "percent"}, "cost": {"usd"}}` | Reports the context window fill (`percent`, else `tokens` over `window`) and the cost. It skips the call unless the fill moved by at least 1 point or the cost by at least $0.01 since the last report it sent for that session, which it keeps in `<state dir>/mod-usage/<session>.json`. Never queued. |
+| `poll --session ID` | none | Waits up to 25 seconds for the session's next message, 30 seconds in all. Prints `{"id": "...", "text": "..."}` on one line, or nothing when none came. A transport or server error exits non-zero, so the mod backs off. |
+| `result --message ID --state delivered\|busy\|refused [--detail TEXT]` | none | Reports what happened to a message `poll` printed. |
+| `inbox-count` | none | Prints `{"blocked": n, "waiting": n, "finished": n}`. |
+
+The state directory is `~/.local/state/sessionhub`, or `$SESSIONHUB_STATE_DIR`. State
+files of sessions that have not reported for 7 days are removed.
 
 ## `sessionhub approve` and `sessionhub deny`
 
