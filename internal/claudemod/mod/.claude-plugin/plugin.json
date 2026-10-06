@@ -1,0 +1,6 @@
+{
+  "name": "sessionhub",
+  "version": "0.1.0",
+  "description": "Reports what a Claude Code session is blocked on and its usage to sessionhub, delivers sessionhub messages, and shows the sessionhub inbox count.",
+  "author": { "name": "Abdallah Deeb" }
+}

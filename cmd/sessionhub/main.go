@@ -8,11 +8,13 @@ import (
 	"io"
 	"os"
 
+	"github.com/abdallah/session-hub/internal/claudemod"
 	"github.com/abdallah/session-hub/internal/cli"
 	"github.com/abdallah/session-hub/internal/digest"
 	"github.com/abdallah/session-hub/internal/hooks"
 	"github.com/abdallah/session-hub/internal/join"
 	"github.com/abdallah/session-hub/internal/mcp"
+	"github.com/abdallah/session-hub/internal/modcmd"
 	"github.com/abdallah/session-hub/internal/plugin"
 	"github.com/abdallah/session-hub/internal/resume"
 	"github.com/abdallah/session-hub/internal/server"
@@ -34,6 +36,9 @@ commands:
   hook <event>                  Claude Code hook handler (always exits 0)
   install-hooks                 add sessionhub hooks to Claude Code settings
   uninstall-hooks               remove sessionhub hooks
+  install-mod                   install the sessionhub Claude Code mod
+  uninstall-mod                 remove the sessionhub Claude Code mod
+  mod <command>                 the Claude Code mod's calls (internal)
   mcp                           run the MCP server
   install-mcp                   register the MCP server with Claude Code
   uninstall-mcp                 remove the MCP registration
@@ -75,6 +80,9 @@ var routes = map[string]handler{
 	"hook":               hooks.Run,
 	"install-hooks":      hooks.RunInstall,
 	"uninstall-hooks":    hooks.RunUninstall,
+	"install-mod":        claudemod.RunInstall,
+	"uninstall-mod":      claudemod.RunUninstall,
+	"mod":                modcmd.Run,
 	"mcp":                mcp.Run,
 	"install-mcp":        mcp.RunInstall,
 	"uninstall-mcp":      mcp.RunUninstall,

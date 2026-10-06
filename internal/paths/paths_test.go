@@ -18,6 +18,7 @@ func TestPaths(t *testing.T) {
 		{"state dir", StateDir, "SESSIONHUB_STATE_DIR", ".local/state/sessionhub"},
 		{"database", DB, "SESSIONHUB_DB", ".local/share/sessionhub/sessionhub.db"},
 		{"plugin dir", PluginDir, "", ".local/share/sessionhub/herdr-plugin"},
+		{"mod dir", ModDir, "", ".local/share/sessionhub/claude-mod"},
 		{"binary", Binary, "", ".local/bin/sessionhub"},
 		{"herdr socket", HerdrSocket, "HERDR_SOCKET_PATH", ".config/herdr/herdr.sock"},
 	}

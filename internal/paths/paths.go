@@ -45,6 +45,11 @@ func PluginDir() string {
 	return filepath.Join(home(), ".local", "share", "sessionhub", "herdr-plugin")
 }
 
+// ModDir is where `sessionhub install-mod` writes the Claude Code mod.
+func ModDir() string {
+	return filepath.Join(home(), ".local", "share", "sessionhub", "claude-mod")
+}
+
 // Binary is the installed sessionhub binary used in manifests and hook entries.
 func Binary() string {
 	return filepath.Join(home(), ".local", "bin", "sessionhub")

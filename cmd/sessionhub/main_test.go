@@ -13,7 +13,7 @@ import (
 )
 
 var commands = []string{"server", "machine", "plugin", "install-plugin", "uninstall-plugin", "hook", "install-hooks",
-	"uninstall-hooks", "mcp", "install-mcp", "uninstall-mcp", "ls", "show", "status", "login", "inbox", "rules", "send",
+	"uninstall-hooks", "install-mod", "uninstall-mod", "mod", "mcp", "install-mcp", "uninstall-mcp", "ls", "show", "status", "login", "inbox", "rules", "send",
 	"approve", "deny", "move", "move-key", "resume", "remote-control", "join"}
 
 // pluginSubs are the plugin subcommands with their own route.
@@ -63,6 +63,9 @@ func TestDispatchRoutes(t *testing.T) {
 		{[]string{"hook", "stop"}, "hook", []string{"stop"}},
 		{[]string{"install-hooks"}, "install-hooks", []string{}},
 		{[]string{"uninstall-hooks"}, "uninstall-hooks", []string{}},
+		{[]string{"install-mod"}, "install-mod", []string{}},
+		{[]string{"uninstall-mod"}, "uninstall-mod", []string{}},
+		{[]string{"mod", "poll", "--session", "s1"}, "mod", []string{"poll", "--session", "s1"}},
 		{[]string{"mcp"}, "mcp", []string{}},
 		{[]string{"install-mcp"}, "install-mcp", []string{}},
 		{[]string{"uninstall-mcp"}, "uninstall-mcp", []string{}},

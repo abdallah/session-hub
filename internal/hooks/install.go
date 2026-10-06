@@ -95,6 +95,9 @@ func RunInstall(ctx context.Context, args []string) error {
 	default:
 		fmt.Printf("Installed sessionhub hooks in %s\n", o.settings)
 	}
+	if !modInstalled() {
+		fmt.Println("The sessionhub Claude Code mod is not installed: run `sessionhub install-mod` to add it.")
+	}
 	return nil
 }
 
