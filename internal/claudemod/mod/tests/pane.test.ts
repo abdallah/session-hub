@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine, Plugin } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { clean, fit, inputText, parseInbox } from '../hooks/pane.jsx'
+import { clean, fit, inputText, parseInbox, parseTime } from '../hooks/pane.jsx'
 
 type Call = { args: string[]; timeoutMs?: number }
 type Answer = { exitCode?: number; stdout?: string; stderr?: string } | 'deny'
@@ -36,7 +36,8 @@ const INBOX = {
   items: [
     {
       group: 'blocked',
-      since: ago(5),
+      // Go writes RFC 3339 with up to 9 fractional digits.
+      since: ago(5.5).replace('.000Z', '.123456789Z'),
       session: { id: S_BASH, title: 'Fix CI', machine: 'box-a', blocked_on: 'Question: Which runner? (small, large)' },
       permission: { id: PR_BASH, tool_name: 'Bash', tool_input: { command: 'make test\nrm -rf build', description: 'x' } },
     },
@@ -461,6 +462,13 @@ describe('pane helpers', () => {
     expect(clean(`a${ESC}[31m\tb\n\nc${RLO}d`)).toBe('a [31m b c d')
     expect(clean(42)).toBe('')
     expect(Array.from(clean('x'.repeat(2000))).length).toBe(500)
+  })
+
+  test('parseTime reads Go times with up to 9 fractional digits', () => {
+    expect(parseTime('2026-10-07T11:55:00.123456789Z')).toBe(Date.parse('2026-10-07T11:55:00.123Z'))
+    expect(parseTime('2026-10-07T13:55:00+02:00')).toBe(Date.parse('2026-10-07T11:55:00Z'))
+    expect(parseTime('soon')).toBeNaN()
+    expect(parseTime(undefined)).toBeNaN()
   })
 
   test('fit cuts with an ellipsis', () => {

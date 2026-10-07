@@ -140,7 +140,7 @@ export function parseInbox(stdout) {
     const s = it.session ?? {}
     const id = typeof s.id === 'string' ? s.id : ''
     if (!SESSION_ID_RE.test(id)) continue
-    const since = Date.parse(it.since)
+    const since = parseTime(it.since)
     items.push({
       group,
       sessionId: id,
@@ -161,6 +161,15 @@ export function parseInbox(stdout) {
       finished: count(c.finished, items, 'finished'),
     },
   }
+}
+
+// Parses an RFC 3339 time as Go writes it, in milliseconds, or NaN. Go
+// writes up to 9 fractional digits; ECMAScript promises Date.parse only 3,
+// so the fraction is cut to milliseconds first.
+/** @param {unknown} t */
+export function parseTime(t) {
+  if (typeof t !== 'string') return NaN
+  return Date.parse(t.replace(/(\.\d{3})\d+/, '$1'))
 }
 
 /**
