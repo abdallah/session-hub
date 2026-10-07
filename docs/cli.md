@@ -366,8 +366,11 @@ The sessionhub Claude Code mod runs inside every interactive Claude Code session
 a terminal. It reports what an `AskUserQuestion` asks, so the inbox and the
 Telegram alert show the question, and the session's context window fill and
 cost. It also types `sessionhub send` messages into the session, with or without
-herdr, and shows the inbox counts in the session's status line, such as `2
-blocked · 1 waiting`. The mod holds no token: it runs `sessionhub mod`.
+herdr, shows the inbox counts in the session's status line, such as `2
+blocked · 1 waiting`, and adds the `/inbox` command, which opens the inbox in
+a pane (see [The inbox pane](#the-inbox-pane-inbox)). The mod holds no token:
+it runs `sessionhub mod` and, for the pane, `sessionhub inbox`, `sessionhub
+approve`, and `sessionhub deny`.
 
 `sessionhub install-mod`:
 
@@ -395,6 +398,52 @@ The mod is part of the binary, so after you install a new binary, run
 `sessionhub install-mod` again to update it; `make deploy` does it on the
 server host when the mod is installed there. `sessionhub install-hooks` prints a reminder while
 the mod is not installed.
+
+### The inbox pane (`/inbox`)
+
+In an interactive Claude Code session in a terminal, `/inbox` opens a pane
+titled **sessionhub inbox**, and running `/inbox` again closes it. **Close**
+(hotkey **q**) and Claude Code's own close mark close it too. Opened from an
+empty prompt, the pane takes the keyboard, so the hotkeys work at once;
+**Esc** returns to the prompt, and **ctrl+x tab** goes back to the pane.
+
+The pane lists the same items as `sessionhub inbox`, grouped **Blocked**,
+**Waiting**, and **Finished**. Each item shows the session title (or the
+first 8 characters of its ID), the machine, and how long ago it triggered. A
+blocked item also shows the question it waits on and, when it waits on a
+permission prompt, the tool and one line of its input. A waiting item shows
+its first three `waiting_on` lines. Long lines are cut to the pane's width.
+
+Each item has buttons:
+
+| Button | Shown for | Runs |
+| --- | --- | --- |
+| **Allow once** | A blocked item with an open permission request | `sessionhub approve --yes <request-id>` |
+| **Deny** | A blocked item with an open permission request | `sessionhub deny --yes <request-id>` |
+| **Dismiss** | Every item | `sessionhub inbox dismiss <session-id>` |
+
+Nothing runs until you press a button. The pane shows what the command
+printed, or its error, as a toast, then reads the inbox again. **Allow once**
+is left out in two cases, where the pane says why instead:
+
+- The request is for `AskUserQuestion`: allowing it from outside answers
+  nothing, so the pane says to answer in the session.
+- The hook cut the request's input: `sessionhub approve` refuses it (see
+  [`sessionhub approve` and `sessionhub deny`](#sessionhub-approve-and-sessionhub-deny)),
+  so the pane says to allow it in the terminal.
+
+**Dismiss** dismisses what the inbox shows for that session when you press
+it: if the item changed since the pane last read the inbox, the newer item
+is the one dismissed.
+
+While the pane is open, it runs `sessionhub inbox --json` every 15 seconds,
+30 seconds after a failed read, and right after each action or a press of
+**Refresh** (hotkey **r**). If a read fails, the pane keeps the last items
+and shows the error above them. Each read also updates the status line's
+counts and the cache the other sessions on the machine read them from. The
+reads stop when the pane closes or the session ends. Every text from the
+server is drawn as plain text, with control and bidirectional characters
+removed.
 
 ## `sessionhub mod`
 

@@ -496,3 +496,21 @@ Observed during the first deploy. Evidence: `docs/dev/evidence/task-10.md`.
 - A new zsh pane on `tower` can stop at a `compinit` "insecure directories"
   prompt, which swallows the first character of a command sent to it. `herdr
   agent start` then times out; retry once the shell is at its prompt.
+
+## Claude Code mods: what the inbox pane ran into (2.1.292, 2026-10-07)
+
+- `claude plugin validate` follows `$` only into functions of the same file.
+  A hooks module that passes `$` to a function it imports fails validation
+  ("$ is followed only into a function declared in this same file"). So
+  `register.js` holds every `$` call, and `hooks/pane.jsx` is pure: parsing,
+  cleaning, and the tree, with callbacks for the buttons.
+- A plugin's own `$.ui.close` does not run its own `ui.close` hook (a call
+  dispatches to the hooks beneath the caller). The mod stops the pane's
+  timer itself before it closes the pane; the `ui.close` hook covers the
+  person's close and an unload.
+- `claude plugin validate` reports a `command.run` hook as "answers its own
+  command" only when `$.command.register` names the command as a literal.
+  Matchers written with an imported constant show as `id=?`.
+- The test kit's `$.ui` has no `open` or `close`. A test raises an outside
+  close through an inline plugin (`test(name, { plugins: [...] }, body)`)
+  whose own hook calls `$.ui.close`.

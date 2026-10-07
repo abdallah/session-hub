@@ -1,6 +1,7 @@
 {
   "name": "sessionhub",
   "version": "0.1.0",
-  "description": "Reports what a Claude Code session is blocked on and its usage to sessionhub, delivers sessionhub messages, and shows the sessionhub inbox count.",
-  "author": { "name": "Abdallah Deeb" }
+  "description": "Reports what a Claude Code session is blocked on and its usage to sessionhub, delivers sessionhub messages, shows the sessionhub inbox count, and opens the inbox in a pane.",
+  "author": { "name": "Abdallah Deeb" },
+  "types": "./types/index.d.ts"
 }

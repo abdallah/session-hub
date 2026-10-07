@@ -48,7 +48,9 @@
   machine. In sessions started after that, an `AskUserQuestion` shows in the
   inbox with its question, the dashboard shows each session's context window
   fill, `sessionhub send` reaches sessions outside herdr, and the status line
-  shows the inbox counts. Run it once on each machine;
+  shows the inbox counts. In Claude Code, `/inbox` opens the inbox in a pane
+  where you allow, deny, or dismiss items; see
+  [The inbox pane](cli.md#the-inbox-pane-inbox). Run it once on each machine;
   `sessionhub uninstall-mod` removes it. See
   [`cli.md`](cli.md#sessionhub-install-mod).
 - When a session waits on a permission prompt, the inbox row shows the tool

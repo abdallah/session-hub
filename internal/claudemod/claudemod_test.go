@@ -13,9 +13,12 @@ import (
 	"time"
 )
 
-// wantFiles is what the binary carries: no tests, type declarations,
-// tsconfig.json, or .gitignore.
-var wantFiles = []string{".claude-plugin/plugin.json", "hooks/config.js", "hooks/hooks.json", "hooks/register.js"}
+// wantFiles is what the binary carries: no tests, generated type
+// declarations, tsconfig.json, or .gitignore.
+var wantFiles = []string{
+	".claude-plugin/plugin.json", "hooks/config.js", "hooks/hooks.json", "hooks/pane.jsx", "hooks/register.js",
+	"types/index.d.ts",
+}
 
 type fixture struct {
 	home, settings, bin, dir string

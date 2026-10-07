@@ -42,7 +42,8 @@ CLI, or a Telegram message.
 - **Claude Code mod.** Optional, with `sessionhub install-mod`: the inbox
   shows the question a blocked session asks, the dashboard shows each
   session's context window fill, `sessionhub send` reaches sessions outside
-  herdr, and Claude Code's status line shows the inbox counts.
+  herdr, Claude Code's status line shows the inbox counts, and `/inbox`
+  opens the inbox in a pane where you allow, deny, or dismiss.
 - **Alerts.** Optional Telegram messages when a session has been blocked or
   waiting on you for 30 seconds.
 

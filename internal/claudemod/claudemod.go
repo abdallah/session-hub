@@ -22,10 +22,11 @@ import (
 	"github.com/abdallah/session-hub/internal/paths"
 )
 
-// The mod's files, by name: the tests, the generated type declarations, and
-// the development files stay out of the binary.
+// The mod's files, by name: the tests, the type declarations Claude Code
+// generates, and the development files stay out of the binary. The mod's own
+// $.state contract (types/index.d.ts), which plugin.json names, goes in.
 //
-//go:embed mod/.claude-plugin/plugin.json mod/hooks/config.js mod/hooks/hooks.json mod/hooks/register.js
+//go:embed mod/.claude-plugin/plugin.json mod/hooks/config.js mod/hooks/hooks.json mod/hooks/register.js mod/hooks/pane.jsx mod/types/index.d.ts
 var embedded embed.FS
 
 // configFile holds the sessionhub binary's path; placeholder is what install
