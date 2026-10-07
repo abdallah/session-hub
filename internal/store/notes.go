@@ -54,9 +54,6 @@ func (s *Store) AddNote(ctx context.Context, in api.NoteIn, a Actor, urls RefURL
 		return api.NoteResult{}, err
 	}
 	n := tasks.Parse(text)
-	if n.Title == "" {
-		return api.NoteResult{}, invalidf("note %q names no work", text)
-	}
 	now := s.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -83,6 +80,9 @@ func (s *Store) AddNote(ctx context.Context, in api.NoteIn, a Actor, urls RefURL
 	to, action := api.TaskInProgress, api.NoteJoined
 	if n.Finish {
 		to, action = api.TaskDone, api.NoteDone
+	}
+	if id == "" && n.Title == "" {
+		return api.NoteResult{}, invalidf("note %q names no work, and the session has no task to finish", text)
 	}
 	if id == "" {
 		if id, err = newTaskID(); err != nil {
@@ -112,9 +112,15 @@ func (s *Store) AddNote(ctx context.Context, in api.NoteIn, a Actor, urls RefURL
 		if err != nil {
 			return api.NoteResult{}, err
 		}
-		if cur != id {
+		// A finish note ends the session's work on the task: from now on
+		// its time is no task's until the next note.
+		var next any = id
+		if n.Finish {
+			next = nil
+		}
+		if n.Finish || cur != id {
 			if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO task_spans (session_id, task_id, started_at) VALUES (?, ?, ?)`,
-				in.SessionID, id, formatTS(now)); err != nil {
+				in.SessionID, next, formatTS(now)); err != nil {
 				return api.NoteResult{}, err
 			}
 		}
@@ -150,6 +156,13 @@ func noteTaskTx(ctx context.Context, tx *sql.Tx, n tasks.Note, sessionID string,
 		err = pick(`SELECT id, state FROM tasks WHERE lower(ref) = lower(?) AND merged_into IS NULL
 			AND (state IN `+openTaskStates+` OR (state = ? AND updated_at >= ?))
 			ORDER BY updated_at DESC LIMIT 1`, n.Ref, api.TaskDone, formatTS(now.Add(-doneReopenWindow)))
+		if err != nil || id != "" {
+			return id, state, err
+		}
+		// A task merged away keeps its ref: follow it to the live target.
+		err = pick(`SELECT t.id, t.state FROM tasks m JOIN tasks t ON t.id = m.merged_into
+			WHERE lower(m.ref) = lower(?) AND t.merged_into IS NULL AND t.state != ?
+			ORDER BY m.updated_at DESC LIMIT 1`, n.Ref, api.TaskDropped)
 		return id, state, err
 	}
 	if sessionID == "" {
@@ -170,27 +183,31 @@ func sessionTaskTx(ctx context.Context, tx *sql.Tx, sessionID string) (string, s
 		}
 		return err
 	}
-	if err := scan(`SELECT t.id, t.state FROM task_spans sp JOIN tasks t ON t.id = sp.task_id
-		WHERE sp.session_id = ? ORDER BY sp.started_at DESC LIMIT 1`); err != nil {
+	var nid, nstate sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT t.id, t.state FROM task_spans sp LEFT JOIN tasks t ON t.id = sp.task_id
+		WHERE sp.session_id = ? ORDER BY sp.started_at DESC LIMIT 1`, sessionID).Scan(&nid, &nstate)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", "", err
 	}
+	id, state = nid.String, nstate.String
 	if id != "" && strings.Contains(openTaskStates, "'"+state+"'") {
 		return id, state, nil
 	}
-	err := scan(`SELECT t.id, t.state FROM task_sessions ts JOIN tasks t ON t.id = ts.task_id
+	err = scan(`SELECT t.id, t.state FROM task_sessions ts JOIN tasks t ON t.id = ts.task_id
 		WHERE ts.session_id = ? AND t.state IN ` + openTaskStates + ` ORDER BY t.updated_at DESC LIMIT 1`)
 	return id, state, err
 }
 
-// spanTaskTx is the task of the session's latest span, or "".
+// spanTaskTx is the task of the session's latest span, or "" when it has
+// none or the latest span is no task's.
 func spanTaskTx(ctx context.Context, tx *sql.Tx, sessionID string) (string, error) {
-	var id string
+	var id sql.NullString
 	err := tx.QueryRowContext(ctx, `SELECT task_id FROM task_spans WHERE session_id = ? ORDER BY started_at DESC LIMIT 1`,
 		sessionID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
-	return id, err
+	return id.String, err
 }
 
 // earlierNote rebuilds the answer to a note already stored under eventID.

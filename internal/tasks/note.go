@@ -30,7 +30,10 @@ type Note struct {
 
 var (
 	// finishRE matches a finish word at the start, with the separator after it.
-	finishRE = regexp.MustCompile(`(?i)^(?:done:|done\s|finished\b|closed\b|close\s)\s*:?\s*`)
+	finishRE = regexp.MustCompile(`(?i)^(?:done[:.]|done\s|finished\s|finished$)\s*:?\s*`)
+	// closeRE matches close or closed at the start. They finish only a note
+	// with a ref, so "close look at the logs" is not a finish.
+	closeRE = regexp.MustCompile(`(?i)^closed?\s+:?\s*`)
 	// ticketRE matches a ticket ref, in optional parentheses.
 	ticketRE = regexp.MustCompile(`(?i)\(?\b(systemsdev-\d+)\b\)?`)
 	// bareTicketRE matches a ticket number without its prefix: five digits
@@ -46,14 +49,27 @@ const trimSet = " \t:,-—"
 // Parse reads a note. A ticket ref wins over an MR ref; the ref is cut from
 // the title. A title left empty becomes the ref.
 func Parse(text string) Note {
-	var n Note
 	s := strings.TrimSpace(text)
-	if loc := finishRE.FindStringIndex(s); loc != nil {
-		n.Finish = true
-		s = s[loc[1]:]
-	} else if strings.EqualFold(s, "done") || strings.EqualFold(s, "finished") || strings.EqualFold(s, "closed") {
+	if strings.EqualFold(s, "done") {
 		return Note{Finish: true}
 	}
+	if loc := finishRE.FindStringIndex(s); loc != nil {
+		n := parseRest(s[loc[1]:])
+		n.Finish = true
+		return n
+	}
+	if loc := closeRE.FindStringIndex(s); loc != nil {
+		if n := parseRest(s[loc[1]:]); n.Ref != "" {
+			n.Finish = true
+			return n
+		}
+	}
+	return parseRest(s)
+}
+
+// parseRest finds the ref in s and makes the title.
+func parseRest(s string) Note {
+	var n Note
 	if m := ticketRE.FindStringSubmatchIndex(s); m != nil {
 		n.Ref, n.Kind = strings.ToLower(s[m[2]:m[3]]), RefTicket
 		s = s[:m[0]] + " " + s[m[1]:]

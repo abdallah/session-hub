@@ -94,6 +94,48 @@ func TestNoteMRJoinsSessionTask(t *testing.T) {
 	}
 }
 
+// A bare finish word finishes the session's task.
+func TestNoteBareDone(t *testing.T) {
+	e := newControlEnv(t)
+	a := e.note("s1", "work on W")
+	if r := e.note("s1", "done"); r.Task.ID != a.Task.ID || r.Task.State != api.TaskDone {
+		t.Errorf("bare done: %+v", r)
+	}
+}
+
+// A ref still reaches its work after its task is merged.
+func TestNoteRefFollowsMerge(t *testing.T) {
+	e := newControlEnv(t)
+	a := e.note("s1", "systemsdev-123 start")
+	b := e.task(api.TaskIn{Title: "umbrella", State: api.TaskInProgress}, tYou)
+	if _, err := e.s.MergeTask(context.Background(), a.Task.ID, b.ID, tYou); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.note("s2", "more on systemsdev-123"); r.Task.ID != b.ID {
+		t.Errorf("after merge the note went to %s (%s), want %s", r.Task.ID, r.Action, b.ID)
+	}
+}
+
+// After a finish note, the session's time belongs to no task until the
+// next note.
+func TestNoteFinishClosesSpan(t *testing.T) {
+	e := newControlEnv(t)
+	e.session(e.tower, "s1", "")
+	e.setClock(at(9, 0))
+	a := e.note("s1", "work on V")
+	e.setClock(at(10, 0))
+	e.note("s1", "done: V")
+	e.setStateFrom("s1", "working", "hooks", at(9, 0))
+	e.setStateFrom("s1", "idle", "hooks", at(11, 0))
+	e.setClock(at(12, 0))
+	if got := e.daySeconds("2026-09-30", time.UTC, a.Task.ID); got != 3600 {
+		t.Errorf("V: %d s, want 3600 (the hour after done is not V's)", got)
+	}
+	if r := e.note("s1", "next thing"); r.Action != api.NoteCreated || r.Task.ID == a.Task.ID {
+		t.Errorf("note after done joined the done task: %+v", r)
+	}
+}
+
 func TestNoteFinish(t *testing.T) {
 	e := newControlEnv(t)
 	a := e.note("s1", "work on Y")
@@ -182,7 +224,7 @@ func TestNoteValidation(t *testing.T) {
 		{"", nextNoteID()},
 		{strings.Repeat("x", 501), nextNoteID()},
 		{"fine", "te_short"},
-		{"done:", nextNoteID()},
+		{"done:", nextNoteID()}, // no task to finish in a new session
 	} {
 		if _, err := e.addNote("s1", c.text, c.id); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%q %q: %v, want ErrInvalid", c.text[:min(len(c.text), 10)], c.id, err)

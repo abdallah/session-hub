@@ -36,6 +36,10 @@ func TestParseRealNotes(t *testing.T) {
 		{"18032 built: draft MR !2225, dry runs pass", Note{Title: "built: draft MR !2225, dry runs pass", Ref: "systemsdev-18032", Kind: RefTicket}, false},
 		{"done: checkout-payments-silent fix MR !2223", Note{Title: "checkout-payments-silent fix", Ref: "!2223", Kind: RefMR}, true},
 		// Not from the day, but the edges of the rules.
+		{"close look at the logs", Note{Title: "close look at the logs"}, false},
+		{"closed-loop control tweaks", Note{Title: "closed-loop control tweaks"}, false},
+		{"Done. Shipped it", Note{Title: "Shipped it"}, true},
+		{"done", Note{}, true},
 		{"bump port 18787 for scratch", Note{Title: "bump port 18787 for scratch"}, false},
 		{"(123456) too long", Note{Title: "(123456) too long"}, false},
 		{"Systemsdev-17993", Note{Title: "systemsdev-17993", Ref: "systemsdev-17993", Kind: RefTicket}, false},

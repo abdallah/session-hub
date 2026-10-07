@@ -611,10 +611,13 @@ func (s *Store) MergeTask(ctx context.Context, id, into string, a Actor) (api.Ta
 	if err := insertTaskEventTx(ctx, tx, id, now, src.State, api.TaskDropped, a.Name, "merged into "+into, ""); err != nil {
 		return api.Task{}, err
 	}
-	if len(src.Sessions) > 0 {
-		if err := touchTaskTx(ctx, tx, into, now); err != nil {
-			return api.Task{}, err
-		}
+	// An event on the target puts it in the day view of the merge, where
+	// the merged work's time now shows.
+	if err := insertTaskEventTx(ctx, tx, into, now, dst.State, dst.State, a.Name, "merged from "+id, ""); err != nil {
+		return api.Task{}, err
+	}
+	if err := touchTaskTx(ctx, tx, into, now); err != nil {
+		return api.Task{}, err
 	}
 	if src, err = readTask(ctx, tx, id); err != nil {
 		return api.Task{}, err

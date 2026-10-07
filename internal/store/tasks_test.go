@@ -53,6 +53,22 @@ func TestMigrateV13ToV14(t *testing.T) {
 	}
 }
 
+// A merge records an event on the target, so the day view lists it the day
+// the merged work happened.
+func TestMergeTouchesTargetDay(t *testing.T) {
+	e := newControlEnv(t)
+	target := e.task(api.TaskIn{Title: "old", State: api.TaskInProgress}, tYou)
+	e.force(target.ID, api.TaskDone)
+	e.clock.Advance(48 * time.Hour)
+	src := e.task(api.TaskIn{Title: "new", State: api.TaskInProgress}, tYou)
+	if _, err := e.s.MergeTask(context.Background(), src.ID, target.ID, tYou); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.count(`SELECT COUNT(*) FROM task_events WHERE task_id = ? AND note = ?`, target.ID, "merged from "+src.ID); n != 1 {
+		t.Errorf("target merge events: %d", n)
+	}
+}
+
 func TestMigrateV12ToV13(t *testing.T) {
 	s, path := openTemp(t)
 	rollbackV13(t, s)
@@ -392,7 +408,7 @@ func TestMergeTask(t *testing.T) {
 	if n := e.count(`SELECT COUNT(*) FROM task_events WHERE task_id = ? AND from_state = 'proposed' AND to_state = 'dropped' AND note = ?`, a.ID, "merged into "+b.ID); n != 1 {
 		t.Errorf("merge event: %d", n)
 	}
-	if n := e.count(`SELECT COUNT(*) FROM task_events`); n != evBefore+1 {
+	if n := e.count(`SELECT COUNT(*) FROM task_events`); n != evBefore+2 {
 		t.Errorf("events %d -> %d", evBefore, n)
 	}
 

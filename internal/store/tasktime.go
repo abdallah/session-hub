@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"sort"
 	"time"
@@ -132,7 +133,8 @@ func (s *Store) sessionSpans(ctx context.Context, id string) ([]span, error) {
 	defer rows.Close()
 	var out []span
 	for rows.Next() {
-		var ts, task string
+		var ts string
+		var task sql.NullString // NULL: no task
 		if err := rows.Scan(&ts, &task); err != nil {
 			return nil, err
 		}
@@ -140,7 +142,7 @@ func (s *Store) sessionSpans(ctx context.Context, id string) ([]span, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, span{t, task})
+		out = append(out, span{t, task.String})
 	}
 	return out, rows.Err()
 }

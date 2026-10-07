@@ -426,7 +426,7 @@ CREATE TABLE task_session_ignores (
 const schemaV14 = `
 CREATE TABLE task_spans (
 	session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-	task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+	task_id    TEXT REFERENCES tasks(id) ON DELETE CASCADE, -- NULL: no task (after a finish note)
 	started_at TEXT NOT NULL,
 	PRIMARY KEY (session_id, started_at)
 );
