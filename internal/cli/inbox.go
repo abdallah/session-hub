@@ -24,7 +24,7 @@ type inboxAPI interface {
 
 const inboxUsage = `usage:
   sessionhub inbox [--json | --watch]
-  sessionhub inbox dismiss <id|prefix>
+  sessionhub inbox dismiss [--since <time>] <id|prefix>
   sessionhub inbox snooze <id|prefix> <1h|4h|tomorrow|duration>`
 
 // inboxHeadings are the group headings. Items arrive in group order.
@@ -94,13 +94,30 @@ func (e *env) inboxCmd(ctx context.Context, args []string) error {
 	return e.inboxList(ctx, args)
 }
 
+// inboxDismiss dismisses an item. With --since, the time the caller saw
+// (RFC 3339), it refuses an item that changed since then, so a stale view
+// never dismisses a newer event.
 func (e *env) inboxDismiss(ctx context.Context, args []string) error {
-	if len(args) != 1 {
+	fs := flag.NewFlagSet("sessionhub inbox dismiss", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	sinceArg := fs.String("since", "", "the item's time as the caller saw it")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
 		return fmt.Errorf("inbox dismiss: want one ID or prefix\n%s", inboxUsage)
 	}
-	it, err := e.inboxItem(ctx, args[0])
+	var seen time.Time
+	if *sinceArg != "" {
+		t, err := time.Parse(time.RFC3339Nano, *sinceArg)
+		if err != nil {
+			return fmt.Errorf("inbox dismiss: --since %q is not an RFC 3339 time", clean(*sinceArg, 0))
+		}
+		seen = t
+	}
+	it, err := e.inboxItem(ctx, fs.Arg(0))
 	if err != nil {
 		return fmt.Errorf("inbox dismiss: %w", err)
+	}
+	if !seen.IsZero() && it.Since.After(seen) {
+		return fmt.Errorf("inbox dismiss: %s has a newer event; not dismissed", shortID(it.Session.ID))
 	}
 	if err := e.inbox.DismissInbox(ctx, it.Session.ID, it.Since); err != nil {
 		return fmt.Errorf("inbox dismiss: %w", err)

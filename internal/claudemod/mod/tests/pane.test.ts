@@ -244,7 +244,7 @@ describe('inbox pane', () => {
     expect(actions.map((c) => c.args)).toEqual([
       ['approve', '--yes', PR_BASH],
       ['deny', '--yes', PR_ASK],
-      ['inbox', 'dismiss', S_WAIT],
+      ['inbox', 'dismiss', `--since=${ago(60 * 26)}`, S_WAIT],
     ])
     expect(actions.every((c) => c.timeoutMs === 20_000)).toBe(true)
     expect(eng.toasts).toEqual([
@@ -502,6 +502,7 @@ describe('pane helpers', () => {
     expect(items.map((i) => i.sessionId)).toEqual([S_BASH])
     expect(items[0]?.permission).toBeNull()
     expect(items[0]?.since).toBe(0)
+    expect(items[0]?.sinceText).toBe('')
     expect(counts).toEqual({ blocked: 1, waiting: 0, finished: 0 })
   })
 })

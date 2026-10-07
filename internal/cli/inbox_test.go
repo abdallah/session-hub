@@ -212,6 +212,21 @@ func TestInboxDismiss(t *testing.T) {
 			t.Errorf("%v: sent a dismiss", c.args)
 		}
 	}
+	// --since dismisses only the event the caller saw.
+	f = &fakeInbox{inbox: inboxFixture()}
+	if _, err := runInbox(t, f, 80, now, "dismiss", "--since", "2026-09-30T11:30:00.000000000Z", "bbbbbbbb"); err != nil || len(f.dismissed) != 1 {
+		t.Errorf("--since, same event: %v %v", f.dismissed, err)
+	}
+	f = &fakeInbox{inbox: inboxFixture()}
+	if _, err := runInbox(t, f, 80, now, "dismiss", "--since", "2026-09-30T11:29:59Z", "bbbbbbbb"); err == nil ||
+		!strings.Contains(err.Error(), "newer event") || len(f.dismissed) != 0 {
+		t.Errorf("--since, newer event: %v %v", f.dismissed, err)
+	}
+	if _, err := runInbox(t, &fakeInbox{inbox: inboxFixture()}, 80, now, "dismiss", "--since", "yesterday", "bbbbbbbb"); err == nil ||
+		!strings.Contains(err.Error(), "RFC 3339") {
+		t.Errorf("--since, bad time: %v", err)
+	}
+
 	// The ambiguous error names both candidates.
 	_, err = runInbox(t, &fakeInbox{inbox: inboxFixture()}, 80, now, "dismiss", "cccc")
 	if !strings.Contains(err.Error(), "cccccccc-3333") || !strings.Contains(err.Error(), "cccc0000-4444") {

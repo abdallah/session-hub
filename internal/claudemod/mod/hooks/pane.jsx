@@ -30,6 +30,8 @@ const SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 const REQUEST_ID_RE = /^pr_[A-Za-z0-9_-]{22}$/
 // `sessionhub inbox dismiss` takes an ID or prefix of at least 4 characters.
 const MIN_DISMISS_ID = 4
+// An RFC 3339 time as Go writes it, for `inbox dismiss --since`.
+const SINCE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/
 
 // The tool input fields that say what a tool will do, in the order
 // api.PermissionInputText tries them.
@@ -43,11 +45,14 @@ export const EMPTY_PANE = { items: [], counts: { blocked: 0, waiting: 0, finishe
  * toast uses.
  * @typedef {'allow' | 'deny' | 'dismiss'} ActionKind
  */
-/** @type {Record<ActionKind, { label: string, args: (target: string) => string[] }>} */
+/** @type {Record<ActionKind, { label: string, args: (target: string, since: string) => string[] }>} */
 export const ACTIONS = {
   allow: { label: 'Allow', args: (id) => ['approve', '--yes', id] },
   deny: { label: 'Deny', args: (id) => ['deny', '--yes', id] },
-  dismiss: { label: 'Dismiss', args: (id) => ['inbox', 'dismiss', id] },
+  dismiss: {
+    label: 'Dismiss',
+    args: (id, since) => ['inbox', 'dismiss', ...(since ? [`--since=${since}`] : []), id],
+  },
 }
 
 // Control characters (C0, DEL, C1), zero-width characters, the line and
@@ -147,6 +152,7 @@ export function parseInbox(stdout) {
       title: clean(s.title) || id.slice(0, 8),
       machine: clean(s.machine),
       since: Number.isFinite(since) ? since : 0,
+      sinceText: Number.isFinite(since) && typeof it.since === 'string' && SINCE_RE.test(it.since) ? it.since : '',
       blockedOn: group === 'blocked' ? clean(s.blocked_on) : '',
       waitingOn: group === 'waiting' && Array.isArray(it.waiting_on) ? it.waiting_on.map(clean).filter(Boolean) : [],
       permission: group === 'blocked' ? parsePermission(it.permission) : null,
@@ -209,7 +215,7 @@ export function canAllow(p) {
  * @property {InboxPaneState} state
  * @property {number} now milliseconds
  * @property {number} cols the body's columns
- * @property {(kind: ActionKind, target: string) => unknown} onAction
+ * @property {(kind: ActionKind, target: string, since?: string) => unknown} onAction
  * @property {() => unknown} onRefresh
  * @property {() => unknown} onClose
  */
@@ -270,7 +276,7 @@ export function paneTree({ Box, Text, Button }, v) {
             <Button
               key={`dismiss:${it.sessionId}`}
               label="Dismiss"
-              onPress={() => v.onAction('dismiss', it.sessionId)}
+              onPress={() => v.onAction('dismiss', it.sessionId, it.sinceText)}
             />
           )}
         </Box>

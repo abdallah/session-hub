@@ -17,7 +17,7 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub login rm <name\|id>` | Sign a browser out. It matches a name first, then an ID. No confirmation. |
 | `sessionhub inbox [--json]` | The sessions that need you, across machines, under the headings **Blocked**, **Waiting on you**, and **Finished**, oldest first in each. One line per item: ID prefix, title, machine, how long ago it arrived, `stale` for a stale session, and what it waits on (for a blocked session with a permission request, `asks to use <tool>: <command or file>`) or its recap, cut to the terminal width. `--json` prints the server response. See below. |
 | `sessionhub inbox --watch` | The same list, full screen, refreshed every 5 seconds, with a cursor you move with the keyboard. See below. |
-| `sessionhub inbox dismiss <id\|prefix>` | Hide an inbox item until something new happens in that session. |
+| `sessionhub inbox dismiss [--since <time>] <id\|prefix>` | Hide an inbox item until something new happens in that session. |
 | `sessionhub inbox snooze <id\|prefix> <1h\|4h\|tomorrow\|duration>` | Hide an inbox item for a while. `tomorrow` means 9:00 local time the next day. A Go duration such as `90m` also works, up to just under 7 days (167h59m). |
 | `sessionhub rules [ls]` | The standing rules every session sees, one per line: number, text, and who added it. See below. |
 | `sessionhub rules add "<text>"` | Add a rule, 1 to 300 characters on one line. The list holds at most 2,000 characters. |
@@ -232,6 +232,8 @@ terminal's, else `COLUMNS`, else 100 characters. An empty inbox prints
 `sessionhub inbox dismiss` and `sessionhub inbox snooze` take a session ID or a prefix of
 at least 4 characters, matched against the current inbox; an exact ID wins.
 If the session isn't in the inbox, they fail with "not in the inbox".
+With `--since`, the item's time as you saw it (RFC 3339), `dismiss` fails with "has a
+newer event" and sends nothing if the session has changed since then.
 
 - A dismissed item stays hidden until something new happens: the session
   blocks again, reports a new `waiting_on`, or finishes another turn.
@@ -420,7 +422,7 @@ Each item has buttons:
 | --- | --- | --- |
 | **Allow once** | A blocked item with an open permission request | `sessionhub approve --yes <request-id>` |
 | **Deny** | A blocked item with an open permission request | `sessionhub deny --yes <request-id>` |
-| **Dismiss** | Every item | `sessionhub inbox dismiss <session-id>` |
+| **Dismiss** | Every item | `sessionhub inbox dismiss --since=<item time> <session-id>` |
 
 Nothing runs until you press a button. The pane shows what the command
 printed, or its error, as a toast, then reads the inbox again. **Allow once**

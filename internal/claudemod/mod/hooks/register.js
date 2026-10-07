@@ -200,14 +200,15 @@ async function paneRefresh($) {
  * @param {Engine} $
  * @param {ActionKind} kind
  * @param {string} target a request ID for allow and deny, a session ID for dismiss
+ * @param {string} [since] the dismissed item's time as the server sent it
  */
-async function paneAct($, kind, target) {
+async function paneAct($, kind, target, since = '') {
   const key = `${kind}:${target}`
   if (paneRunning.has(key)) return
   paneRunning.add(key)
   const { label, args } = ACTIONS[kind]
   try {
-    const r = await paneRun($, args(target))
+    const r = await paneRun($, args(target, since))
     if (r.exitCode === 0) $.ui.toast(`sessionhub: ${firstLine(r.stdout) || `${label} sent`}`)
     else $.ui.toast(`sessionhub: ${label} failed: ${firstLine(r.stderr) || `exit ${r.exitCode}`}`)
   } catch (err) {
@@ -370,7 +371,7 @@ export function register(on) {
       state,
       now: await $.clock.now(),
       cols: e.props.bodyColumns,
-      onAction: (kind, target) => paneAct($, kind, target),
+      onAction: (kind, target, since) => paneAct($, kind, target, since),
       onRefresh: () => paneRefreshNow($),
       onClose: () => closePane($),
     })

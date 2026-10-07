@@ -20,6 +20,9 @@ export type PaneItem = {
   machine: string
   // The item's trigger time in milliseconds, or 0 when unknown.
   since: number
+  // The trigger time as the server sent it (RFC 3339), or "" when unknown.
+  // Dismiss passes it back so a newer event stays in the inbox.
+  sinceText: string
   blockedOn: string
   waitingOn: string[]
   permission: PanePermission | null
