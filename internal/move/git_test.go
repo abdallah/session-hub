@@ -115,12 +115,12 @@ func TestReadRepo(t *testing.T) {
 }
 
 // gitRaw fails, instead of growing without bound, once the output passes
-// maxSealed, and says so rather than calling it a timeout.
+// maxBundle, and says so rather than calling it a timeout.
 func TestGitRawCapsOutput(t *testing.T) {
 	_, work := newRepo(t)
-	old := maxSealed
-	t.Cleanup(func() { maxSealed = old })
-	maxSealed = 64
+	old := maxBundle
+	t.Cleanup(func() { maxBundle = old })
+	maxBundle = 64
 	out, err := gitRaw(context.Background(), work, gitOpts{}, "cat-file", "-p", "HEAD")
 	if err == nil || !strings.Contains(err.Error(), "output passes") || len(out) > 64 {
 		t.Errorf("capped output: %d bytes, %v", len(out), err)

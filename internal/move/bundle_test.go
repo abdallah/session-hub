@@ -4,7 +4,9 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 var bundleNow = time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
@@ -81,7 +85,7 @@ func TestBuildAndExtract(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := b.Manifest
-	if m.V != 1 || m.MoveID != "mv_AAAAAAAAAAAAAAAAAAAAAA" || m.SessionID != testSessionID || m.SourceMachine != "bluebox" ||
+	if m.V != 2 || m.MoveID != "mv_AAAAAAAAAAAAAAAAAAAAAA" || m.SessionID != testSessionID || m.SourceMachine != "bluebox" ||
 		m.RelPath != "sub" || m.RootRel != "work" || m.Branch != "main" || m.Head != gitT(t, work, "rev-parse", "HEAD") ||
 		m.Remote != origin || m.ClaudeVersion != "2.1.285" || !m.Created.Equal(bundleNow) || m.SourceCWD != filepath.Join(work, "sub") {
 		t.Errorf("manifest %+v", m)
@@ -206,7 +210,9 @@ func TestBuildLimits(t *testing.T) {
 	}
 	maxUntrackedFile = oldFile
 
-	maxSealed = 4096
+	oldBundle := maxBundle
+	t.Cleanup(func() { maxBundle = oldBundle })
+	maxBundle = 4096
 	writeFile(t, filepath.Join(claude, "projects", "-home-user-proj", testSessionID+".jsonl"), strings.Repeat("y", 8192), 0o600)
 	if _, _, err := Build(ctx, in); err == nil || !strings.Contains(err.Error(), "limit") ||
 		!strings.Contains(err.Error(), "transcript/"+testSessionID+".jsonl") {
@@ -225,12 +231,52 @@ func TestBuildLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The sealed limit applies to the compressed bundle: 8 KiB of repeats
+	// fits in 4 KiB, 8 KiB of random bytes does not.
+	maxBundle, maxSealed = oldBundle, 4096
+	if _, _, err := Build(ctx, in); err != nil {
+		t.Errorf("compressible bundle under the sealed limit: %v", err)
+	}
+	noise := make([]byte, 8192)
+	rand.Read(noise)
+	writeFile(t, filepath.Join(claude, "projects", "-home-user-proj", testSessionID+".jsonl"), string(noise), 0o600)
+	if _, _, err := Build(ctx, in); err == nil || !strings.Contains(err.Error(), "compressed bundle") ||
+		!strings.Contains(err.Error(), "transcript/"+testSessionID+".jsonl") {
+		t.Errorf("sealed limit: %v, want an error naming the compressed bundle and the transcript", err)
+	}
+
 	// Two transcripts with one ID is refused.
 	maxSealed = oldSealed
 	writeFile(t, filepath.Join(claude, "projects", "-other", testSessionID+".jsonl"), "x\n", 0o600)
 	if _, _, err := Build(ctx, in); err == nil || !strings.Contains(err.Error(), "found 2 transcripts") {
 		t.Errorf("two transcripts: %v", err)
 	}
+}
+
+// unzstd decompresses a bundle to its tar.
+func unzstd(t *testing.T, data []byte) []byte {
+	t.Helper()
+	zr, err := zstd.NewReader(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	out, err := zr.DecodeAll(data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// zstdOf compresses a tar into a bundle.
+func zstdOf(t *testing.T, data []byte) []byte {
+	t.Helper()
+	zw, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zw.Close()
+	return zw.EncodeAll(data, nil)
 }
 
 type tarEntry struct {
@@ -274,7 +320,7 @@ func writeEntries(t *testing.T, es []tarEntry) []byte {
 func TestExtractRefuses(t *testing.T) {
 	_, work := dirtyRepo(t)
 	data, _ := buildFor(t, work, newClaudeDir(t, testSessionID))
-	base := readEntries(t, data)
+	base := readEntries(t, unzstd(t, data))
 	reg := func(name, body string) tarEntry {
 		return tarEntry{tar.Header{Typeflag: tar.TypeReg, Name: name, Mode: 0o600, Format: tar.FormatPAX}, []byte(body)}
 	}
@@ -302,9 +348,9 @@ func TestExtractRefuses(t *testing.T) {
 	}
 	// The whole bundle fits well under 64 KiB, so this limit refuses only
 	// the oversized entry.
-	oldSealed, oldFile := maxSealed, maxUntrackedFile
-	t.Cleanup(func() { maxSealed, maxUntrackedFile = oldSealed, oldFile })
-	maxSealed, maxUntrackedFile = 64<<10, 1<<10
+	oldBundle, oldFile := maxBundle, maxUntrackedFile
+	t.Cleanup(func() { maxBundle, maxUntrackedFile = oldBundle, oldFile })
+	maxBundle, maxUntrackedFile = 64<<10, 1<<10
 	cases := map[string]func([]tarEntry) []tarEntry{
 		"move ID":        withManifest(func(m *Manifest) { m.MoveID = "../../x" }),
 		"session ID":     withManifest(func(m *Manifest) { m.SessionID = "../x" }),
@@ -333,7 +379,7 @@ func TestExtractRefuses(t *testing.T) {
 		},
 		"oversized": func(es []tarEntry) []tarEntry {
 			n := "file-history/" + testSessionID + "/huge"
-			return append(withListed(es, n), reg(n, strings.Repeat("x", int(maxSealed)+1)))
+			return append(withListed(es, n), reg(n, strings.Repeat("x", int(maxBundle)+1)))
 		},
 		"untracked oversized": func(es []tarEntry) []tarEntry {
 			es[len(es)-1].data = writeEntries(t, []tarEntry{reg("big.bin", strings.Repeat("x", int(maxUntrackedFile)+1))})
@@ -380,7 +426,7 @@ func TestExtractRefuses(t *testing.T) {
 	}
 	for name, edit := range cases {
 		es := edit(slices.Clone(base))
-		if b, err := Extract(writeEntries(t, es)); err == nil || b != nil {
+		if b, err := Extract(zstdOf(t, writeEntries(t, es))); err == nil || b != nil {
 			t.Errorf("%s: Extract accepted it", name)
 		}
 	}
@@ -389,6 +435,60 @@ func TestExtractRefuses(t *testing.T) {
 	}
 	if _, err := Extract([]byte("not a tar")); err == nil {
 		t.Error("garbage accepted")
+	}
+	if _, err := Extract(append(slices.Clone(zstdMagic), "not zstd"...)); err == nil {
+		t.Error("bad zstd accepted")
+	}
+}
+
+// A bundle that unpacks past maxBundle is refused, however small it is.
+func TestExtractRefusesBomb(t *testing.T) {
+	old := maxBundle
+	t.Cleanup(func() { maxBundle = old })
+	maxBundle = 1 << 20
+	bomb := zstdOf(t, make([]byte, 8<<20))
+	if len(bomb) > 4<<10 {
+		t.Fatalf("bomb is %d bytes", len(bomb))
+	}
+	if _, err := Extract(bomb); err == nil || !strings.Contains(err.Error(), "more than") {
+		t.Errorf("bomb: %v, want an error about the unpacked size", err)
+	}
+	// A streamed frame doesn't declare its size up front.
+	var buf bytes.Buffer
+	zw, err := zstd.NewWriter(&buf, zstd.WithWindowSize(1<<17))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw.Write(make([]byte, 8<<20))
+	zw.Close()
+	if _, err := Extract(buf.Bytes()); err == nil || !strings.Contains(err.Error(), "more than") {
+		t.Errorf("streamed bomb: %v, want an error about the unpacked size", err)
+	}
+}
+
+// A version 1 bundle (a plain tar, or a manifest that says 1) is
+// ErrOldBundle; a later version is a *NewerBundleError.
+func TestExtractVersions(t *testing.T) {
+	_, work := dirtyRepo(t)
+	data, _ := buildFor(t, work, newClaudeDir(t, testSessionID))
+	plain := unzstd(t, data)
+	if _, err := Extract(plain); !errors.Is(err, ErrOldBundle) {
+		t.Errorf("uncompressed tar: %v, want ErrOldBundle", err)
+	}
+	withV := func(v int) []byte {
+		es := readEntries(t, plain)
+		var m Manifest
+		json.Unmarshal(es[0].data, &m)
+		m.V = v
+		es[0].data, _ = json.Marshal(m)
+		return zstdOf(t, writeEntries(t, es))
+	}
+	if _, err := Extract(withV(1)); !errors.Is(err, ErrOldBundle) {
+		t.Errorf("manifest version 1: %v, want ErrOldBundle", err)
+	}
+	var newer *NewerBundleError
+	if _, err := Extract(withV(3)); !errors.As(err, &newer) || newer.V != 3 {
+		t.Errorf("manifest version 3: %v, want a NewerBundleError", err)
 	}
 }
 

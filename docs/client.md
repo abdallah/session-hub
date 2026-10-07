@@ -201,7 +201,7 @@ and the watcher's steps.
   and the ciphertext with its tag (`SealOverhead`, 61 bytes, in all). `Open`
   takes the target's private key and the source's registered public key;
   a wrong key, a changed byte, or another move ID all fail with `ErrOpen`.
-  Both work in memory, on at most 64 MiB.
+  Both work in memory, on at most 64 MiB of sealed bundle.
 - **Threat model.** The server and Cloudflare relay ciphertext and cannot
   read it. Whoever controls the server or the tunnel could swap a registered
   public key; compare fingerprints out of band to detect that. Whoever holds the target's
@@ -213,10 +213,12 @@ and the watcher's steps.
   level relative to the search root that holds it (`DefaultRoots`: `~/Code`
   plus the client config's `move_roots`). Every Git call runs with
   `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0`, SSH in `BatchMode`, a
-  timeout (30 s, 2 min for `push` and `fetch`), and a 64 MiB cap on its
+  timeout (30 s, 2 min for `push` and `fetch`), and a 1 GiB cap on its
   output. `NormalizeRemote` compares remotes without scheme, user, port,
   `.git`, or host case.
-- **Bundle.** `Build` writes a tar archive: `manifest.json` first, then
+- **Bundle.** `Build` writes a tar archive, compressed with zstd at the
+  default level on all cores (format 2; format 1 was an uncompressed tar):
+  `manifest.json` first, then
   `transcript/<id>.jsonl`, the sidecar folder `transcript/<id>/...`,
   `file-history/<id>/...`, `git/changes.patch` (`git diff --binary HEAD`:
   staged and unstaged changes, binary files, deletions), and
@@ -234,9 +236,12 @@ and the watcher's steps.
   transcript and the file history are carried as they are, encrypted, so a
   secret that Claude read or edited during the session can travel inside
   them. `Build` checks the sizes of all files before it reads any of them:
-  an untracked file over 10 MiB, or a sealed bundle over 64 MiB, fails the
-  move with the file names, the five largest for the bundle. `Extract`
-  refuses a manifest with an invalid move ID, session ID, relative path,
+  an untracked file over 10 MiB, files over 1 GiB in all, or a compressed
+  and sealed bundle over 64 MiB, fails the move with the file names, the
+  five largest for the bundle. `Extract` unpacks at most 1 GiB and refuses a
+  bundle that unpacks to more. It refuses a format 1 bundle
+  (`ErrOldBundle`, "upgrade sessionhub on" the source) and a newer one
+  (`NewerBundleError`, "upgrade sessionhub on" the target). It also refuses a manifest with an invalid move ID, session ID, relative path,
   branch, or HEAD, and anything else: another entry name, `..`, an absolute
   path, a link, a hard link, a directory, an oversized entry, a duplicate,
   an entry the manifest does not list, or an untracked path inside `.git`.

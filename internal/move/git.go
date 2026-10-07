@@ -75,7 +75,7 @@ func RedactURLs(s string) string { return urlCreds.ReplaceAllString(s, "://") }
 
 // gitRaw runs git -C dir args and returns its stdout as is. The error names
 // the subcommand and carries git's message on one line. Output over
-// maxSealed fails the call.
+// maxBundle fails the call.
 func gitRaw(ctx context.Context, dir string, o gitOpts, args ...string) ([]byte, error) {
 	if o.timeout == 0 {
 		o.timeout = gitTimeout
@@ -90,14 +90,14 @@ func gitRaw(ctx context.Context, dir string, o gitOpts, args ...string) ([]byte,
 	cmd.Env = gitEnv(o.env)
 	cmd.Stdin = o.stdin
 	cmd.WaitDelay = 5 * time.Second
-	out := &cappedBuffer{max: maxSealed, stop: cancel}
+	out := &cappedBuffer{max: maxBundle, stop: cancel}
 	var errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = out, &errb
 	if err := cmd.Run(); err != nil {
 		msg := strings.Join(strings.Fields(errb.String()), " ")
 		switch {
 		case out.over:
-			msg = "output passes " + mib(maxSealed)
+			msg = "output passes " + mib(maxBundle)
 		case ctx.Err() != nil:
 			msg = "timed out after " + o.timeout.String()
 		case msg == "":

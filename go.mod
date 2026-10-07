@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/klauspost/compress v1.20.1
 	modernc.org/sqlite v1.50.0
 	rsc.io/qr v0.2.0
 )

@@ -578,7 +578,15 @@ func (m *mover) moveIn(ctx context.Context, cl *client.Client, claim api.Control
 		return
 	}
 	b, err := move.Extract(plain)
-	if err != nil {
+	var newer *move.NewerBundleError
+	switch {
+	case errors.Is(err, move.ErrOldBundle):
+		fail(stepf("open", "%v: upgrade sessionhub on %s", err, mv.Source))
+		return
+	case errors.As(err, &newer):
+		fail(stepf("open", "%v: upgrade sessionhub on %s", err, mv.Target))
+		return
+	case err != nil:
 		fail(&stepError{"open", err})
 		return
 	}

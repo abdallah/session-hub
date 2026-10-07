@@ -18,10 +18,28 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
+
 	"github.com/abdallah/session-hub/internal/api"
 )
 
-const manifestVersion = 1
+// manifestVersion is the bundle format. Version 1 was an uncompressed tar;
+// version 2 is a zstd-compressed tar.
+const manifestVersion = 2
+
+// zstdMagic starts every zstd frame.
+var zstdMagic = []byte{0x28, 0xb5, 0x2f, 0xfd}
+
+// ErrOldBundle is Extract's error for a bundle in the version 1 format,
+// which an older sessionhub on the source builds.
+var ErrOldBundle = errors.New("the bundle is in the old uncompressed format")
+
+// NewerBundleError is Extract's error for a bundle from a newer sessionhub.
+type NewerBundleError struct{ V int }
+
+func (e *NewerBundleError) Error() string {
+	return fmt.Sprintf("the bundle is format %d, this sessionhub reads format %d", e.V, manifestVersion)
+}
 
 // Bundle entry names. The transcript, its sidecar folder, and the file
 // history are under transcript/ and file-history/.
@@ -32,9 +50,11 @@ const (
 )
 
 var (
-	// maxUntrackedFile caps one untracked file; maxSealed caps the sealed
-	// bundle. Tests lower them.
+	// maxUntrackedFile caps one untracked file; maxBundle caps the bundle
+	// before compression, and so what Extract unpacks; maxSealed caps the
+	// sealed bundle. Tests lower them.
 	maxUntrackedFile int64 = 10 << 20
+	maxBundle        int64 = 1 << 30
 	maxSealed        int64 = api.MaxSealedBundle
 
 	sessionIDRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
@@ -134,12 +154,13 @@ type sized struct {
 
 // Build packs the session's transcript, sidecar folder, and file history,
 // the repository's tracked changes against HEAD as a binary patch, and its
-// untracked files, into a tar archive. Secret-looking files stay out of
-// both and are listed in the manifest's Skipped, as are links and other
-// files that are not regular files. It fails when the transcript is missing
-// or not unique, an untracked file passes 10 MiB, or the sealed bundle would
-// pass 64 MiB, naming the files. It checks the sizes before it reads any
-// file, and it never writes the repository's index.
+// untracked files, into a zstd-compressed tar archive. Secret-looking files
+// stay out of both and are listed in the manifest's Skipped, as are links
+// and other files that are not regular files. It fails when the transcript
+// is missing or not unique, an untracked file passes 10 MiB, the files pass
+// 1 GiB, or the sealed bundle passes 64 MiB, naming the largest files. It
+// checks the uncompressed sizes before it reads any file, and it never
+// writes the repository's index.
 func Build(ctx context.Context, in BuildInput) ([]byte, Manifest, error) {
 	m := Manifest{V: manifestVersion, MoveID: in.MoveID, SessionID: in.SessionID, SourceMachine: in.Machine,
 		SourceCWD: in.CWD, RelPath: in.Repo.RelPath, RootRel: in.Repo.RootRel, Remote: in.Repo.Remote,
@@ -183,7 +204,7 @@ func Build(ctx context.Context, in BuildInput) ([]byte, Manifest, error) {
 	if err != nil {
 		return nil, m, err
 	}
-	budget := maxSealed - SealOverhead
+	budget := maxBundle
 	var all []sized
 	var total int64
 	for _, c := range append(slices.Clone(cands), untracked...) {
@@ -191,7 +212,7 @@ func Build(ctx context.Context, in BuildInput) ([]byte, Manifest, error) {
 		total += c.info.Size()
 	}
 	if total > budget {
-		return nil, m, tooBig(total+SealOverhead, all)
+		return nil, m, tooBig("files", total, maxBundle, all)
 	}
 	patch, secret, err := trackedChanges(ctx, in.Repo.Root, env)
 	if err != nil {
@@ -199,7 +220,7 @@ func Build(ctx context.Context, in BuildInput) ([]byte, Manifest, error) {
 	}
 	all = append(all, sized{entryPatch, int64(len(patch))})
 	if total += int64(len(patch)); total > budget {
-		return nil, m, tooBig(total+SealOverhead, all)
+		return nil, m, tooBig("files", total, maxBundle, all)
 	}
 	m.Skipped = append(append(m.Skipped, secret...), skipped...)
 
@@ -245,32 +266,57 @@ func Build(ctx context.Context, in BuildInput) ([]byte, Manifest, error) {
 	if err != nil {
 		return nil, m, err
 	}
+	// The tar goes straight into the encoder, which uses every core.
 	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	if err := writeEntry(tw, entryManifest, mj, 0o600, in.Now); err != nil {
+	zw, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedDefault))
+	if err != nil {
 		return nil, m, err
 	}
+	cw := &countWriter{w: zw}
+	tw := tar.NewWriter(cw)
+	werr := writeEntry(tw, entryManifest, mj, 0o600, in.Now)
 	for _, e := range entries {
-		if err := writeEntry(tw, e.name, e.data, 0o600, in.Now); err != nil {
-			return nil, m, err
+		if werr == nil {
+			werr = writeEntry(tw, e.name, e.data, 0o600, in.Now)
 		}
 	}
-	if err := tw.Close(); err != nil {
-		return nil, m, err
+	if werr == nil {
+		werr = tw.Close()
+	}
+	if err := zw.Close(); werr == nil {
+		werr = err
+	}
+	if werr != nil {
+		return nil, m, werr
+	}
+	all = all[:0]
+	for _, e := range entries {
+		if e.name != entryUntracked {
+			all = append(all, sized{e.name, int64(len(e.data))})
+		}
+	}
+	for _, f := range files {
+		all = append(all, sized{f.Name, int64(len(f.Data))})
+	}
+	if cw.n > maxBundle {
+		return nil, m, tooBig("files", cw.n, maxBundle, all)
 	}
 	if size := int64(buf.Len()) + SealOverhead; size > maxSealed {
-		all = all[:0]
-		for _, e := range entries {
-			if e.name != entryUntracked {
-				all = append(all, sized{e.name, int64(len(e.data))})
-			}
-		}
-		for _, f := range files {
-			all = append(all, sized{f.Name, int64(len(f.Data))})
-		}
-		return nil, m, tooBig(size, all)
+		return nil, m, tooBig(fmt.Sprintf("compressed bundle (%s before compression)", mib(cw.n)), size, maxSealed, all)
 	}
 	return buf.Bytes(), m, nil
+}
+
+// countWriter counts what passes through it.
+type countWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
 }
 
 func writeEntry(tw *tar.Writer, name string, data []byte, mode int64, now time.Time) error {
@@ -282,10 +328,10 @@ func writeEntry(tw *tar.Writer, name string, data []byte, mode int64, now time.T
 	return err
 }
 
-// tooBig is the error for a bundle of size bytes, sealed, over maxSealed. It
-// names the five largest files.
-func tooBig(size int64, all []sized) error {
-	return fmt.Errorf("the bundle is %s, over the %s limit; largest files: %s", mib(size), mib(maxSealed), largest(all, 5))
+// tooBig is the error for what, of size bytes, over limit. It names the
+// five largest files.
+func tooBig(what string, size, limit int64, all []sized) error {
+	return fmt.Errorf("the %s is %s, over the %s limit; largest files: %s", what, mib(size), mib(limit), largest(all, 5))
 }
 
 // largest names the n biggest files as "name (size)".
@@ -587,12 +633,42 @@ func validBranch(b string) bool {
 	return true
 }
 
-// Extract reads and checks a bundle: manifest.json first, with a valid move
+// Extract unpacks a bundle, at most maxBundle bytes of it, and checks it
+// with extractTar. A version 1 bundle is ErrOldBundle; a newer one is a
+// *NewerBundleError.
+func Extract(data []byte) (*Bundle, error) {
+	if !bytes.HasPrefix(data, zstdMagic) {
+		if isTar(data) {
+			return nil, ErrOldBundle
+		}
+		return nil, errors.New("the bundle is not zstd-compressed")
+	}
+	zr, err := zstd.NewReader(bytes.NewReader(data), zstd.WithDecoderMaxMemory(uint64(maxBundle)))
+	if err != nil {
+		return nil, err
+	}
+	defer zr.Close()
+	plain, err := io.ReadAll(io.LimitReader(zr, maxBundle+1))
+	if errors.Is(err, zstd.ErrDecoderSizeExceeded) || err == nil && int64(len(plain)) > maxBundle {
+		return nil, fmt.Errorf("the bundle unpacks to more than %s", mib(maxBundle))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("decompress bundle: %w", err)
+	}
+	return extractTar(plain)
+}
+
+// isTar reports whether data starts with a POSIX tar header.
+func isTar(data []byte) bool {
+	return len(data) >= 512 && bytes.HasPrefix(data[257:], []byte("ustar"))
+}
+
+// extractTar reads and checks a bundle's tar: manifest.json first, with a valid move
 // ID, session ID, relative paths, branch, and HEAD; then only the entry names
 // a move uses, each a regular file listed in the manifest, once;
 // the manifest's list complete; the untracked files safe repository paths
 // outside .git that match the manifest. It never touches the disk.
-func Extract(data []byte) (*Bundle, error) {
+func extractTar(data []byte) (*Bundle, error) {
 	tr := tar.NewReader(bytes.NewReader(data))
 	b := &Bundle{}
 	seen := map[string]bool{}
@@ -617,7 +693,7 @@ func Extract(data []byte) (*Bundle, error) {
 			return nil, fmt.Errorf("bundle entry %q appears twice", h.Name)
 		}
 		seen[h.Name] = true
-		if h.Size < 0 || h.Size > maxSealed {
+		if h.Size < 0 || h.Size > maxBundle {
 			return nil, fmt.Errorf("bundle entry %q has size %d", h.Name, h.Size)
 		}
 		body, err := io.ReadAll(io.LimitReader(tr, h.Size))
@@ -631,8 +707,11 @@ func Extract(data []byte) (*Bundle, error) {
 			if err := json.Unmarshal(body, &b.Manifest); err != nil {
 				return nil, fmt.Errorf("bundle manifest: %w", err)
 			}
-			if b.Manifest.V != manifestVersion {
-				return nil, fmt.Errorf("bundle manifest version %d, want %d", b.Manifest.V, manifestVersion)
+			switch v := b.Manifest.V; {
+			case v > manifestVersion:
+				return nil, &NewerBundleError{v}
+			case v < manifestVersion:
+				return nil, ErrOldBundle
 			}
 			if err := checkManifest(b.Manifest); err != nil {
 				return nil, err
