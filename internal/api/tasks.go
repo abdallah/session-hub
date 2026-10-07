@@ -29,6 +29,9 @@ type Task struct {
 	CreatedAt  time.Time     `json:"created_at"`
 	UpdatedAt  time.Time     `json:"updated_at"`
 	Sessions   []TaskSession `json:"sessions"`
+	// ActiveSeconds is the working time of its sessions on the day; the
+	// day view fills it.
+	ActiveSeconds int64 `json:"active_seconds"`
 }
 
 // TaskSession is a session linked to a task.
@@ -37,6 +40,9 @@ type TaskSession struct {
 	Title   string   `json:"title"`
 	Machine string   `json:"machine"`
 	Done    []string `json:"done,omitempty"` // filled by the day view only
+	// ActiveSeconds is the session's working time for this task on the
+	// day; the day view fills it.
+	ActiveSeconds int64 `json:"active_seconds"`
 }
 
 // TaskIn is the body of a task create. ID is optional; a client that

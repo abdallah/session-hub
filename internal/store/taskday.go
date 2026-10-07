@@ -129,6 +129,10 @@ func (s *Store) TaskDay(ctx context.Context, date string, loc *time.Location) (a
 				if t.Sessions[i].Done, err = s.dayReportItems(ctx, t.Sessions[i].ID, start, next, now); err != nil {
 					return err
 				}
+				if t.Sessions[i].ActiveSeconds, err = s.taskSeconds(ctx, t.Sessions[i].ID, t.ID, start, next, now); err != nil {
+					return err
+				}
+				t.ActiveSeconds += t.Sessions[i].ActiveSeconds
 			}
 			*dst = append(*dst, t)
 		}
