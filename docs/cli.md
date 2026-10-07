@@ -26,7 +26,7 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub task ls [--date YYYY-MM-DD]` | The three columns, **Todo**, **In progress**, and **Done**, for a day (default today) in the local time zone. |
 | `sessionhub task review` | The review queue: **Proposed**, **Awaiting done**, and **Sessions with no task**. |
 | `sessionhub task accept\|reject\|done\|drop\|start\|reopen <id> [--note T]` | Change a task's state. See below. |
-| `sessionhub task merge <id> --into <id>` | Merge a proposal into another task. |
+| `sessionhub task merge <id> --into <id>` | Merge a task into another; the first is dropped. |
 | `sessionhub send <id-or-prefix>... -m "<text>"` | Send a message to sessions. See below. |
 | `sessionhub send --machine <M> -m "<text>"` | Send a message to every live session on `<M>` that can take one. |
 | `sessionhub approve [--yes] <request-id\|prefix>` | Allow a pending permission prompt once, after it shows the request and asks. See below. |

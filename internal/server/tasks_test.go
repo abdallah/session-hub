@@ -110,7 +110,7 @@ func TestTaskLinkMergeEdit(t *testing.T) {
 	if task.ID != taskA {
 		t.Errorf("merge returns the target: %+v", task)
 	}
-	e.must(http.StatusConflict, "POST", "/v1/tasks/"+taskA+"/merge", e.tokA, api.TaskMergeIn{Into: taskB}, nil)
+	e.must(http.StatusBadRequest, "POST", "/v1/tasks/"+taskA+"/merge", e.tokA, api.TaskMergeIn{Into: taskB}, nil)
 }
 
 func TestTaskDayAndReview(t *testing.T) {

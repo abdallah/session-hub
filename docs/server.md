@@ -173,7 +173,7 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `GET /v1/tasks?state=open` | read | `200`, `[]Task` | Open tasks (`proposed`, `todo`, `in_progress`, `done_proposed`). `open` is the default and the only value; another value is `400`. |
 | `POST /v1/tasks` | machine, or cookie with `X-Hub-Action: tasks` | `201` new, `200` existing; the `Task` | Create a task (`TaskIn`). See [Tasks](#tasks). |
 | `POST /v1/tasks/{id}/state` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the `Task` | Move a task (`TaskStateIn`: `to`, `note`, `session_id`, `event_id`). `409` for a move the actor may not make. |
-| `POST /v1/tasks/{id}/merge` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the target `Task` | Merge a proposal into another task (`TaskMergeIn`: `into`). `409` unless the source is `proposed`. |
+| `POST /v1/tasks/{id}/merge` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the target `Task` | Merge a task into another (`TaskMergeIn`: `into`); the source is dropped and its sessions and spans move to the target. `409` when the source is dropped or merged; `400` when the target is proposed or dropped. |
 | `POST /v1/tasks/{id}/sessions` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the `Task` | Link a session (`TaskLinkIn`: `session_id`, `event_id`). |
 | `PATCH /v1/tasks/{id}` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the `Task` | Edit `title`, `ref`, `ref_url`, or `source` (`TaskEditIn`). Always acts as you. |
 | `GET /v1/tasks/day?date=YYYY-MM-DD&tz=Area/City` | read | `200`, `TaskDay` | The **Todo**, **In progress**, and **Done** columns for a day. `date` is required; a missing `tz` means UTC. `400` for a bad date or zone. |
@@ -1004,8 +1004,8 @@ resolves. A non-empty `session_id` is linked for any actor.
 
 You cannot move a task merged into another. An agent's state change or
 link on a merged task acts on its merge target instead, one hop only. A
-merge drops the proposal,
-sets `merged_into`, and moves the proposal's session links to the target,
+merge drops the source task (any state but `dropped`),
+sets `merged_into`, and moves its session links and spans to the target,
 which can't be `proposed` or `dropped`.
 
 **Day view.** `TaskDay` has the `date`, the `tz`, and three columns. The day

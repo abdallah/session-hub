@@ -587,8 +587,8 @@ func (s *Store) MergeTask(ctx context.Context, id, into string, a Actor) (api.Ta
 	if err != nil {
 		return api.Task{}, err
 	}
-	if src.State != api.TaskProposed {
-		return api.Task{}, fmt.Errorf("%w: only a proposed task merges; this one is %s", ErrConflict, src.State)
+	if src.State == api.TaskDropped || src.MergedInto != "" {
+		return api.Task{}, fmt.Errorf("%w: a %s task does not merge", ErrConflict, src.State)
 	}
 	if dst.State == api.TaskProposed || dst.State == api.TaskDropped {
 		return api.Task{}, invalidf("cannot merge into a %s task", dst.State)
@@ -601,11 +601,14 @@ func (s *Store) MergeTask(ctx context.Context, id, into string, a Actor) (api.Ta
 	if _, err := tx.ExecContext(ctx, `DELETE FROM task_sessions WHERE task_id = ?`, id); err != nil {
 		return api.Task{}, err
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE task_spans SET task_id = ? WHERE task_id = ?`, into, id); err != nil {
+		return api.Task{}, err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE tasks SET state = ?, merged_into = ?, updated_at = ? WHERE id = ?`,
 		api.TaskDropped, into, formatTS(now), id); err != nil {
 		return api.Task{}, err
 	}
-	if err := insertTaskEventTx(ctx, tx, id, now, api.TaskProposed, api.TaskDropped, a.Name, "merged into "+into, ""); err != nil {
+	if err := insertTaskEventTx(ctx, tx, id, now, src.State, api.TaskDropped, a.Name, "merged into "+into, ""); err != nil {
 		return api.Task{}, err
 	}
 	if len(src.Sessions) > 0 {

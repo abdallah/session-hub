@@ -239,6 +239,7 @@ func rollbackV12(t *testing.T, s *Store) {
 // to 12 or lower and reopen the file as an older release left it.
 func rollbackV13(t *testing.T, s *Store) {
 	t.Helper()
+	rollbackV14(t, s)
 	for _, tb := range []string{"task_session_ignores", "task_sessions", "task_events", "tasks"} {
 		if _, err := s.db.Exec("DROP TABLE " + tb); err != nil {
 			t.Fatalf("drop %s: %v", tb, err)

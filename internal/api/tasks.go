@@ -61,7 +61,7 @@ type TaskStateIn struct {
 	EventID   string `json:"event_id,omitempty"`
 }
 
-// TaskMergeIn is the body of a proposal merge.
+// TaskMergeIn is the body of a task merge.
 type TaskMergeIn struct {
 	Into string `json:"into"`
 }
@@ -106,3 +106,25 @@ type TaskReview struct {
 	DoneProposed []Task    `json:"done_proposed"`
 	Untasked     []Session `json:"untasked"`
 }
+
+// NoteIn is the body of POST /v1/notes: a worklog note. ID is a te_ task
+// event ID that makes a retry a no-op. SessionID is the session that wrote
+// it, if any.
+type NoteIn struct {
+	ID        string `json:"id"`
+	Text      string `json:"text"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+// NoteResult is the answer to a note: the task it went to and what it did.
+type NoteResult struct {
+	Task   Task   `json:"task"`
+	Action string `json:"action"` // created|joined|done
+}
+
+// NoteResult actions.
+const (
+	NoteCreated = "created"
+	NoteJoined  = "joined"
+	NoteDone    = "done"
+)

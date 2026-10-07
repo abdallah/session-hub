@@ -24,6 +24,35 @@ func (e *controlEnv) task(in api.TaskIn, a Actor) api.Task {
 	return t
 }
 
+// rollbackV14 removes what schema v14 added.
+func rollbackV14(t *testing.T, s *Store) {
+	t.Helper()
+	if _, err := s.db.Exec("DROP TABLE task_spans"); err != nil {
+		t.Fatalf("drop task_spans: %v", err)
+	}
+}
+
+func TestMigrateV13ToV14(t *testing.T) {
+	s, path := openTemp(t)
+	rollbackV14(t, s)
+	if _, err := s.db.Exec("PRAGMA user_version = 13"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s2, err := Open(path, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	var v, n int
+	if err := s2.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 14 {
+		t.Fatalf("user_version %d %v, want 14", v, err)
+	}
+	if err := s2.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='task_spans'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("task_spans missing")
+	}
+}
+
 func TestMigrateV12ToV13(t *testing.T) {
 	s, path := openTemp(t)
 	rollbackV13(t, s)
@@ -37,8 +66,8 @@ func TestMigrateV12ToV13(t *testing.T) {
 	}
 	defer s2.Close()
 	var v int
-	if err := s2.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 13 {
-		t.Fatalf("user_version %d %v, want 13", v, err)
+	if err := s2.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != schemaVersion {
+		t.Fatalf("user_version %d %v, want %d", v, err, schemaVersion)
 	}
 	for _, tb := range []string{"tasks", "task_events", "task_sessions", "task_session_ignores"} {
 		var n int
@@ -368,8 +397,8 @@ func TestMergeTask(t *testing.T) {
 	}
 
 	// Refusals.
-	if _, err := e.s.MergeTask(ctx, b.ID, a.ID, tYou); !errors.Is(err, ErrConflict) {
-		t.Errorf("merge a non-proposal: %v", err)
+	if _, err := e.s.MergeTask(ctx, a.ID, b.ID, tYou); !errors.Is(err, ErrConflict) {
+		t.Errorf("merge a merged task again: %v", err)
 	}
 	p := e.task(api.TaskIn{Title: "p", SessionID: "s1"}, tAgent("s1", e.tower))
 	if _, err := e.s.MergeTask(ctx, p.ID, p.ID, tYou); !errors.Is(err, ErrInvalid) {
