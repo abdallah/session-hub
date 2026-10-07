@@ -72,6 +72,16 @@ type TaskLinkIn struct {
 	EventID   string `json:"event_id,omitempty"`
 }
 
+// MaxTaskIgnoreBatch caps the session ids in one ignore request.
+const MaxTaskIgnoreBatch = 500
+
+// TaskIgnoreIn is the body of POST /v1/tasks/review/ignore: one session in
+// SessionID, or a batch in SessionIDs, never both.
+type TaskIgnoreIn struct {
+	SessionID  string   `json:"session_id,omitempty"`
+	SessionIDs []string `json:"session_ids,omitempty"`
+}
+
 // TaskEditIn is the body of a task edit; a nil field is left alone.
 type TaskEditIn struct {
 	Title  *string `json:"title,omitempty"`

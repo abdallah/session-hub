@@ -309,3 +309,35 @@ func tAgentFor(e *controlEnv, id string) Actor {
 	}
 	return tAgent(id, e.tower)
 }
+
+func TestIgnoreUntaskedMany(t *testing.T) {
+	e := newControlEnv(t)
+	ctx := context.Background()
+	for _, id := range []string{"a", "b", "c"} {
+		e.session(e.tower, id, "")
+		if err := e.s.SetTitle(ctx, e.tower.ID, id, "Title "+id); err != nil {
+			t.Fatal(err)
+		}
+		e.sendPrompt(id)
+	}
+	// An unknown id refuses the whole batch.
+	if err := e.s.IgnoreUntasked(ctx, "a", "nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("batch with unknown session: %v, want ErrNotFound", err)
+	}
+	if r, err := e.s.TaskReview(ctx); err != nil || len(r.Untasked) != 3 {
+		t.Fatalf("after refused batch: %d untasked, err %v; want 3", len(r.Untasked), err)
+	}
+	if err := e.s.IgnoreUntasked(ctx, "a", "b"); err != nil {
+		t.Fatal(err)
+	}
+	r, err := e.s.TaskReview(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Untasked) != 1 || r.Untasked[0].ID != "c" {
+		t.Errorf("untasked = %+v, want only c", r.Untasked)
+	}
+	if err := e.s.IgnoreUntasked(ctx); err != nil {
+		t.Errorf("empty batch: %v", err)
+	}
+}

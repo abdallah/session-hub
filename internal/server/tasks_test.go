@@ -124,4 +124,15 @@ func TestTaskDayAndReview(t *testing.T) {
 	e.register(e.tokA, api.SessionUpsert{ID: sid1})
 	e.must(http.StatusNoContent, "POST", "/v1/tasks/review/ignore", e.tokA, api.TaskLinkIn{SessionID: sid1}, nil)
 	e.must(http.StatusNotFound, "POST", "/v1/tasks/review/ignore", e.tokA, api.TaskLinkIn{SessionID: sid2}, nil)
+	// A batch: all or nothing.
+	e.register(e.tokA, api.SessionUpsert{ID: sid2})
+	e.must(http.StatusNoContent, "POST", "/v1/tasks/review/ignore", e.tokA, api.TaskIgnoreIn{SessionIDs: []string{sid1, sid2}}, nil)
+	e.must(http.StatusBadRequest, "POST", "/v1/tasks/review/ignore", e.tokA, api.TaskIgnoreIn{}, nil)
+	e.must(http.StatusBadRequest, "POST", "/v1/tasks/review/ignore", e.tokA, api.TaskIgnoreIn{SessionID: sid1, SessionIDs: []string{sid2}}, nil)
+	e.must(http.StatusBadRequest, "POST", "/v1/tasks/review/ignore", e.tokA, api.TaskIgnoreIn{SessionIDs: []string{"bad id"}}, nil)
+	many := make([]string, api.MaxTaskIgnoreBatch+1)
+	for i := range many {
+		many[i] = sid1
+	}
+	e.must(http.StatusBadRequest, "POST", "/v1/tasks/review/ignore", e.tokA, api.TaskIgnoreIn{SessionIDs: many}, nil)
 }

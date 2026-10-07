@@ -178,7 +178,7 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `PATCH /v1/tasks/{id}` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the `Task` | Edit `title`, `ref`, `ref_url`, or `source` (`TaskEditIn`). Always acts as you. |
 | `GET /v1/tasks/day?date=YYYY-MM-DD&tz=Area/City` | read | `200`, `TaskDay` | The **Todo**, **In progress**, and **Done** columns for a day. `date` is required; a missing `tz` means UTC. `400` for a bad date or zone. |
 | `GET /v1/tasks/review` | read | `200`, `TaskReview` | Proposed tasks, done proposals, and sessions with no task. |
-| `POST /v1/tasks/review/ignore` | machine, or cookie with `X-Hub-Action: tasks` | `204` | Hide a session from **Sessions with no task** (`session_id`). |
+| `POST /v1/tasks/review/ignore` | machine, or cookie with `X-Hub-Action: tasks` | `204` | Hide sessions from **Sessions with no task**: one in `session_id`, or up to 500 in `session_ids`. All or nothing: an unknown session is `404` and hides none. |
 | `GET /v1/messages/{id}` | read | `200`, `Message` | One message and its delivery state. |
 | `POST /v1/sessions/{id}/permissions` | machine (the owning one) | `201`, `PermissionRequest` | The permission hook's request (`PermissionIn`). `410` for an ended session. See [Permission requests](#permission-requests). |
 | `GET /v1/permissions/{id}/decision?wait=30` | machine (the owning one) | `200` the request once it is not open; `204` none yet | The permission hook's long poll. |

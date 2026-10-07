@@ -1321,6 +1321,9 @@ func TestDashboardTasks(t *testing.T) {
 		"saveMap(TASKS_DATE_KEY, dateMap(taskDate))", "taskDate = rememberedDate(loadMap(TASKS_DATE_KEY), localDate(Date.now()))",
 		"var readOnly = taskDate !== localDate(Date.now());", "column.key", // placement from the column
 		"@media (max-width: 699px)",
+		// Sessions with no task: collapsed, outside the Review count, and an Ignore all button.
+		`h.appendChild(el("span", "count", String(prop.length + dp.length)));`,
+		`var more = el("details", "untasked");`, `"Ignore all"`, "session_ids: un.map(function (s) { return s.id; })",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q", want)

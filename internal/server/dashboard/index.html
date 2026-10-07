@@ -260,6 +260,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
 }
 .review h2 { margin: 8px 0 4px; }
 .review h3 { font-size: .8rem; text-transform: uppercase; color: var(--muted); margin: 10px 0 2px; }
+.review details.untasked > summary { font-size: .8rem; text-transform: uppercase; color: var(--muted); margin: 10px 0 2px; cursor: pointer; }
 .review-item { border-top: 1px solid var(--line); padding: 6px 0; }
 .review-item .actions { padding: 2px 0 0; gap: 4px; }
 .review-item select {
@@ -484,6 +485,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   var taskErrors = {};      // task or session id -> why its last write failed
   var openTaskMenus = {};   // task id -> true while its state menu is open
   var openEvidence = {};    // task id -> true while its done items are shown
+  var openUntasked = false; // true while Sessions with no task is expanded
   var mergePick = {};       // proposal id -> the merge target picked in its select
 
   // auth-state:begin
@@ -2598,13 +2600,33 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     var box = el("section", "review");
     box.setAttribute("aria-label", "Review");
     var h = el("h2", null, "Review");
-    h.appendChild(el("span", "count", String(prop.length + dp.length + un.length)));
+    h.appendChild(el("span", "count", String(prop.length + dp.length)));
     box.appendChild(h);
-    [["Proposed", prop, proposalItem], ["Done?", dp, doneProposedItem], ["Sessions with no task", un, untaskedItem]].forEach(function (g) {
+    [["Proposed", prop, proposalItem], ["Done?", dp, doneProposedItem]].forEach(function (g) {
       if (!g[1].length) return;
       box.appendChild(el("h3", null, g[0]));
       g[1].forEach(function (x) { box.appendChild(g[2](x)); });
     });
+    // Sessions with no task start collapsed and stay out of the count: on a
+    // busy week they outnumber everything else.
+    if (un.length) {
+      var more = el("details", "untasked");
+      more.open = openUntasked;
+      more.appendChild(el("summary", null, "Sessions with no task (" + un.length + ")"));
+      var all = el("div", "actions");
+      all.appendChild(taskButton("Ignore all", "untasked-all", "textbtn", function () {
+        if (!window.confirm("Hide all " + un.length + " sessions from Review? Ignored sessions do not come back.")) return;
+        taskWrite("untasked-all", taskPost("/v1/tasks/review/ignore", {
+          session_ids: un.map(function (s) { return s.id; })
+        }));
+      }));
+      more.appendChild(all);
+      var allErr = taskErrorEl("untasked-all");
+      if (allErr) more.appendChild(allErr);
+      un.forEach(function (x) { more.appendChild(untaskedItem(x)); });
+      more.addEventListener("toggle", function () { openUntasked = more.open; });
+      box.appendChild(more);
+    }
     frag.appendChild(box);
     return frag;
   }

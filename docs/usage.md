@@ -100,6 +100,10 @@ session reports with `report_progress`.
   `sessionhub task review`, list the proposals and the sessions that have
   no task. Accept, merge, or reject a proposal, and confirm or reject a done
   proposal, from either place.
+- **Sessions with no task** starts collapsed on the dashboard and does not
+  count toward the **Review** total. Expand it to turn a session into a
+  task with **Make task**, or hide it with **Ignore**. **Ignore all** hides
+  every session in the list; an ignored session does not come back.
 - A task shows the sessions linked to it and the `done` items they reported
   that day.
 - Agents follow the task rule in the `initialize` instructions of the MCP

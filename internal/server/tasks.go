@@ -184,17 +184,34 @@ func (s *Server) getTaskReview(w http.ResponseWriter, r *http.Request, _ princip
 	writeJSON(w, http.StatusOK, rev)
 }
 
-// ignoreUntasked is POST /v1/tasks/review/ignore: 204.
+// ignoreUntasked is POST /v1/tasks/review/ignore: 204. The body names one
+// session or a batch of at most api.MaxTaskIgnoreBatch.
 func (s *Server) ignoreUntasked(w http.ResponseWriter, r *http.Request, _ principal) {
-	var in api.TaskLinkIn
+	var in api.TaskIgnoreIn
 	if !decode(w, r, &in) {
 		return
 	}
-	if !store.ValidSessionID(in.SessionID) {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid session id %q", in.SessionID))
+	ids := in.SessionIDs
+	switch {
+	case in.SessionID != "" && len(ids) > 0:
+		writeError(w, http.StatusBadRequest, "send session_id or session_ids, not both")
+		return
+	case in.SessionID != "":
+		ids = []string{in.SessionID}
+	case len(ids) == 0:
+		writeError(w, http.StatusBadRequest, "session_id or session_ids is required")
+		return
+	case len(ids) > api.MaxTaskIgnoreBatch:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("at most %d session ids per request", api.MaxTaskIgnoreBatch))
 		return
 	}
-	if err := s.store.IgnoreUntasked(r.Context(), in.SessionID); err != nil {
+	for _, id := range ids {
+		if !store.ValidSessionID(id) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid session id %q", id))
+			return
+		}
+	}
+	if err := s.store.IgnoreUntasked(r.Context(), ids...); err != nil {
 		s.storeError(w, err)
 		return
 	}

@@ -246,25 +246,29 @@ func (s *Store) TaskReview(ctx context.Context) (api.TaskReview, error) {
 	return out, nil
 }
 
-// IgnoreUntasked hides session id from the review queue's untasked list.
-// Ignoring twice is a no-op; an unknown session is ErrNotFound.
-func (s *Store) IgnoreUntasked(ctx context.Context, id string) error {
+// IgnoreUntasked hides sessions from the review queue's untasked list, all
+// or none: an unknown session is ErrNotFound and nothing is stored.
+// Ignoring a session twice is a no-op.
+func (s *Store) IgnoreUntasked(ctx context.Context, ids ...string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	var one int
-	err = tx.QueryRowContext(ctx, `SELECT 1 FROM sessions WHERE id = ?`, id).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("%w: session %s", ErrNotFound, id)
-	}
-	if err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO task_session_ignores (session_id, ignored_at) VALUES (?, ?)`,
-		id, formatTS(s.Now())); err != nil {
-		return err
+	now := formatTS(s.Now())
+	for _, id := range ids {
+		var one int
+		err = tx.QueryRowContext(ctx, `SELECT 1 FROM sessions WHERE id = ?`, id).Scan(&one)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: session %s", ErrNotFound, id)
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO task_session_ignores (session_id, ignored_at) VALUES (?, ?)`,
+			id, now); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
