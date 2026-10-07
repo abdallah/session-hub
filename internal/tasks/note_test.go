@@ -31,7 +31,13 @@ func TestParseRealNotes(t *testing.T) {
 		{"done: tasks review collapse + ignore all", Note{Title: "tasks review collapse + ignore all"}, true},
 		{"done: ATE runners moved to ate/gitlab-runner (zero-diff)", Note{Title: "ATE runners moved to ate/gitlab-runner (zero-diff)"}, true},
 		{"MR !2218 up: QA/staging WP Aurora dropped from tofu", Note{Title: "up: QA/staging WP Aurora dropped from tofu", Ref: "!2218", Kind: RefMR}, false},
+		{"18032 planned; paused for Raouf's reply", Note{Title: "planned; paused for Raouf's reply", Ref: "systemsdev-18032", Kind: RefTicket}, false},
+		{"fix checkout-payments-silent false positive (16975)", Note{Title: "fix checkout-payments-silent false positive", Ref: "systemsdev-16975", Kind: RefTicket}, false},
+		{"18032 built: draft MR !2225, dry runs pass", Note{Title: "built: draft MR !2225, dry runs pass", Ref: "systemsdev-18032", Kind: RefTicket}, false},
+		{"done: checkout-payments-silent fix MR !2223", Note{Title: "checkout-payments-silent fix", Ref: "!2223", Kind: RefMR}, true},
 		// Not from the day, but the edges of the rules.
+		{"bump port 18787 for scratch", Note{Title: "bump port 18787 for scratch"}, false},
+		{"(123456) too long", Note{Title: "(123456) too long"}, false},
 		{"Systemsdev-17993", Note{Title: "systemsdev-17993", Ref: "systemsdev-17993", Kind: RefTicket}, false},
 		{"done:", Note{}, true},
 		{"DONE: Ship it", Note{Title: "Ship it"}, true},

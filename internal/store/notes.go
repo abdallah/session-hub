@@ -139,6 +139,13 @@ func noteTaskTx(ctx context.Context, tx *sql.Tx, n tasks.Note, sessionID string,
 		}
 		return err
 	}
+	// An MR is usually the result of the session's current task: look
+	// there first.
+	if n.Kind == tasks.RefMR && sessionID != "" {
+		if id, state, err = sessionTaskTx(ctx, tx, sessionID); err != nil || id != "" {
+			return id, state, err
+		}
+	}
 	if n.Ref != "" {
 		err = pick(`SELECT id, state FROM tasks WHERE lower(ref) = lower(?) AND merged_into IS NULL
 			AND (state IN `+openTaskStates+` OR (state = ? AND updated_at >= ?))
@@ -148,15 +155,30 @@ func noteTaskTx(ctx context.Context, tx *sql.Tx, n tasks.Note, sessionID string,
 	if sessionID == "" {
 		return "", "", nil
 	}
-	if err = pick(`SELECT t.id, t.state FROM task_spans sp JOIN tasks t ON t.id = sp.task_id
-		WHERE sp.session_id = ? ORDER BY sp.started_at DESC LIMIT 1`, sessionID); err != nil {
+	return sessionTaskTx(ctx, tx, sessionID)
+}
+
+// sessionTaskTx is the session's current task: its latest span's task if
+// open, else its newest open linked task, else "".
+func sessionTaskTx(ctx context.Context, tx *sql.Tx, sessionID string) (string, string, error) {
+	var id, state string
+	scan := func(q string) error {
+		err := tx.QueryRowContext(ctx, q, sessionID).Scan(&id, &state)
+		if errors.Is(err, sql.ErrNoRows) {
+			id, state = "", ""
+			return nil
+		}
+		return err
+	}
+	if err := scan(`SELECT t.id, t.state FROM task_spans sp JOIN tasks t ON t.id = sp.task_id
+		WHERE sp.session_id = ? ORDER BY sp.started_at DESC LIMIT 1`); err != nil {
 		return "", "", err
 	}
 	if id != "" && strings.Contains(openTaskStates, "'"+state+"'") {
 		return id, state, nil
 	}
-	err = pick(`SELECT t.id, t.state FROM task_sessions ts JOIN tasks t ON t.id = ts.task_id
-		WHERE ts.session_id = ? AND t.state IN `+openTaskStates+` ORDER BY t.updated_at DESC LIMIT 1`, sessionID)
+	err := scan(`SELECT t.id, t.state FROM task_sessions ts JOIN tasks t ON t.id = ts.task_id
+		WHERE ts.session_id = ? AND t.state IN ` + openTaskStates + ` ORDER BY t.updated_at DESC LIMIT 1`)
 	return id, state, err
 }
 

@@ -33,6 +33,9 @@ var (
 	finishRE = regexp.MustCompile(`(?i)^(?:done:|done\s|finished\b|closed\b|close\s)\s*:?\s*`)
 	// ticketRE matches a ticket ref, in optional parentheses.
 	ticketRE = regexp.MustCompile(`(?i)\(?\b(systemsdev-\d+)\b\)?`)
+	// bareTicketRE matches a ticket number without its prefix: five digits
+	// at the start of the note or alone in parentheses.
+	bareTicketRE = regexp.MustCompile(`^(\d{5})\b|\((\d{5})\)`)
 	// mrRE matches an MR ref at a word start, with an optional "MR " before it.
 	mrRE = regexp.MustCompile(`(?i)(?:^|\s)\(?(?:MR\s+)?!(\d+)\b\)?`)
 )
@@ -53,6 +56,15 @@ func Parse(text string) Note {
 	}
 	if m := ticketRE.FindStringSubmatchIndex(s); m != nil {
 		n.Ref, n.Kind = strings.ToLower(s[m[2]:m[3]]), RefTicket
+		s = s[:m[0]] + " " + s[m[1]:]
+	} else if m := bareTicketRE.FindStringSubmatchIndex(s); m != nil {
+		var num string
+		if m[2] >= 0 {
+			num = s[m[2]:m[3]]
+		} else {
+			num = s[m[4]:m[5]]
+		}
+		n.Ref, n.Kind = "systemsdev-"+num, RefTicket
 		s = s[:m[0]] + " " + s[m[1]:]
 	} else if m := mrRE.FindStringSubmatchIndex(s); m != nil {
 		n.Ref, n.Kind = "!"+s[m[2]:m[3]], RefMR

@@ -81,6 +81,19 @@ func TestNoteSessionTask(t *testing.T) {
 	}
 }
 
+// An MR ref is the result of the session's work: with a current task, the
+// note goes to it.
+func TestNoteMRJoinsSessionTask(t *testing.T) {
+	e := newControlEnv(t)
+	a := e.note("s1", "fix silent alert (16975)")
+	if r := e.note("s1", "done: alert fix MR !2223"); r.Task.ID != a.Task.ID || r.Action != api.NoteDone {
+		t.Errorf("MR finish: %+v", r)
+	}
+	if r := e.note("s2", "MR !7 review"); r.Action != api.NoteCreated || r.Task.Ref != "!7" {
+		t.Errorf("MR with no session task: %+v", r)
+	}
+}
+
 func TestNoteFinish(t *testing.T) {
 	e := newControlEnv(t)
 	a := e.note("s1", "work on Y")
