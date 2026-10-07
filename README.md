@@ -25,6 +25,10 @@ CLI, or a Telegram message.
 - **Progress reports.** An MCP server gives each session `report_progress`
   and `set_title`, so you see what it has done, what is in flight, and what
   it is waiting on without opening it.
+- **Tasks.** The same MCP server gives each session `list_tasks`,
+  `propose_task`, `link_task`, and `propose_done`, so sessions tie their work
+  to tasks you accept and confirm on the dashboard's **Tasks** tab or with
+  `sessionhub task`.
 - **Get back in.** `sessionhub resume <id>` focuses the session, restarts it,
   or prints the `ssh` command for the machine it is on. You can also turn on
   Claude Code Remote Control and continue in the Claude app.

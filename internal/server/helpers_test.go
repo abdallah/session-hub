@@ -487,6 +487,46 @@ func (e *env) triageRows() string {
 	return b.String()
 }
 
+// taskRows dumps the task tables over a second connection, so the auth
+// matrix sees a rejected request that wrote only there.
+func (e *env) taskRows() string {
+	e.t.Helper()
+	db, err := sql.Open("sqlite", e.dbPath)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	defer db.Close()
+	var b strings.Builder
+	for _, q := range []string{
+		`SELECT id, title, ref, ref_url, source, state, COALESCE(merged_into, ''), created_by, updated_at FROM tasks ORDER BY id`,
+		`SELECT task_id, ts, from_state, to_state, actor, note, COALESCE(client_id, '') FROM task_events ORDER BY id`,
+		`SELECT task_id, session_id, linked_at FROM task_sessions ORDER BY task_id, session_id`,
+		`SELECT session_id, ignored_at FROM task_session_ignores ORDER BY session_id`,
+	} {
+		rows, err := db.Query(q)
+		if err != nil {
+			e.t.Fatal(err)
+		}
+		cols, _ := rows.Columns()
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		for rows.Next() {
+			if err := rows.Scan(ptrs...); err != nil {
+				e.t.Fatal(err)
+			}
+			fmt.Fprintln(&b, vals...)
+		}
+		if err := rows.Err(); err != nil {
+			e.t.Fatal(err)
+		}
+		rows.Close()
+	}
+	return b.String()
+}
+
 func ids(l []api.Session) []string {
 	out := []string{}
 	for _, s := range l {

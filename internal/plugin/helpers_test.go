@@ -154,6 +154,17 @@ func newFakeHub(t *testing.T) *fakeHub {
 			var u struct{ ID string }
 			json.Unmarshal(body, &u)
 			h.known[u.ID] = true
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/tasks"):
+			// Agent task calls name the session in the body.
+			var b struct {
+				SessionID string `json:"session_id"`
+			}
+			json.Unmarshal(body, &b)
+			if !h.known[b.SessionID] {
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"error":"unknown session"}`))
+				return
+			}
 		case r.Method == http.MethodPut && r.URL.Path == "/v1/machines/self/herdr-sessions":
 			var p struct{ Sessions []struct{ ID string } }
 			json.Unmarshal(body, &p)

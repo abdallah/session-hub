@@ -274,7 +274,7 @@ func (s *Server) storeError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusGone, err.Error())
 	case errors.Is(err, store.ErrFull):
 		writeError(w, http.StatusConflict, err.Error())
-	case errors.Is(err, store.ErrWrongMachine):
+	case errors.Is(err, store.ErrWrongMachine), errors.Is(err, store.ErrConflict):
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, store.ErrNotControllable), errors.Is(err, store.ErrRequestClosed), errors.Is(err, store.ErrInputCut):
 		writeError(w, http.StatusConflict, err.Error())

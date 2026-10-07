@@ -31,6 +31,7 @@ type env struct {
 	api     hubAPI
 	login   loginAPI
 	inbox   inboxAPI
+	tasks   taskAPI
 	actions actionsAPI
 	moves   moveAPI
 	starts  startAPI
@@ -66,7 +67,7 @@ func defaultEnv() (*env, error) {
 		return nil, err
 	}
 	c.SetTimeout(client.InteractiveTimeout)
-	return &env{cfg: cfg, api: c, login: c, inbox: c, actions: c, moves: c, starts: c, getwd: os.Getwd, pause: time.Sleep, width: termWidth, out: os.Stdout, now: time.Now,
+	return &env{cfg: cfg, api: c, login: c, inbox: c, tasks: c, actions: c, moves: c, starts: c, getwd: os.Getwd, pause: time.Sleep, width: termWidth, out: os.Stdout, now: time.Now,
 		isTerminal:    func() bool { return isTerminal(os.Stdin.Fd()) && isTerminal(os.Stdout.Fd()) },
 		in:            os.Stdin,
 		stdinTerminal: func() bool { return isTerminal(os.Stdin.Fd()) }}, nil

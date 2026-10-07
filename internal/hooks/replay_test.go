@@ -131,3 +131,38 @@ func TestDrainUpsertsAndRetriesReportAndTitleOn404(t *testing.T) {
 		t.Errorf("queue has %d items, want 0", n)
 	}
 }
+
+// The three task ops get the same upsert-and-retry: the server answers 404
+// when the session of an agent's task call is not known yet.
+func TestDrainUpsertsAndRetriesTaskOpsOn404(t *testing.T) {
+	srv := newFakeServer(t)
+	known := false
+	srv.status = func(r rec) int {
+		if r.Path == "/v1/sessions" {
+			known = true
+			return 200
+		}
+		if !known {
+			return 404
+		}
+		return 200
+	}
+	fx := newFixture(t, srv.URL)
+	fx.h.queue.Append(client.Item{Op: client.OpTaskCreate, SessionID: "s1", Body: json.RawMessage(`{"id":"t_abcdefghijk","title":"T"}`)})
+	fx.h.queue.Append(client.Item{Op: client.OpTaskState, SessionID: "s1", TaskID: "t_x", Body: json.RawMessage(`{"to":"done_proposed"}`)})
+	fx.h.queue.Append(client.Item{Op: client.OpTaskLink, SessionID: "s1", TaskID: "t_x", Body: json.RawMessage(`{"session_id":"s1"}`)})
+	if err := fx.h.run(context.Background(), []string{"flush"}); err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, r := range srv.requests() {
+		paths = append(paths, r.Path)
+	}
+	want := "/v1/tasks /v1/sessions /v1/tasks /v1/tasks/t_x/state /v1/tasks/t_x/sessions"
+	if got := strings.Join(paths, " "); got != want {
+		t.Errorf("paths = %s\nwant    %s", got, want)
+	}
+	if n := len(queued(t, fx.state)); n != 0 {
+		t.Errorf("queue has %d items, want 0", n)
+	}
+}

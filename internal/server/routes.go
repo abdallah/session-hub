@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
@@ -25,6 +26,7 @@ const (
 	accessApprove      = "approve"      // machine token, or the session cookie with X-Hub-Action: approve
 	accessMove         = "move"         // machine token, or the session cookie with X-Hub-Action: move
 	accessStart        = "start"        // machine token, or the session cookie with X-Hub-Action: start
+	accessTasks        = "tasks"        // machine token, or the session cookie with X-Hub-Action: tasks
 )
 
 // route is one method and path pattern of the API.
@@ -74,11 +76,20 @@ func (s *Server) routes() []route {
 		{"GET", "/v1/sessions/{id}/messages/next", accessWrite, s.writer(s.pollModMessage)},
 		{"POST", "/v1/messages/{id}/result", accessWrite, s.writer(s.postMessageResult)},
 		{"POST", "/v1/machines/{name}/start", accessStart, s.actor(api.HeaderActionStart, s.postStart)},
+		{"POST", "/v1/tasks", accessTasks, s.actor(api.HeaderActionTasks, s.createTask)},
+		{"POST", "/v1/tasks/review/ignore", accessTasks, s.actor(api.HeaderActionTasks, s.ignoreUntasked)},
+		{"POST", "/v1/tasks/{id}/state", accessTasks, s.actor(api.HeaderActionTasks, s.setTaskState)},
+		{"POST", "/v1/tasks/{id}/merge", accessTasks, s.actor(api.HeaderActionTasks, s.mergeTask)},
+		{"POST", "/v1/tasks/{id}/sessions", accessTasks, s.actor(api.HeaderActionTasks, s.linkTask)},
+		{"PATCH", "/v1/tasks/{id}", accessTasks, s.actor(api.HeaderActionTasks, s.editTask)},
 
 		{"GET", "/v1/sessions", accessRead, s.reader(s.listSessions)},
 		{"GET", "/v1/sessions/{id}", accessRead, s.reader(s.getSession)},
 		{"GET", "/v1/machines", accessRead, s.reader(s.listMachines)},
 		{"GET", "/v1/inbox", accessRead, s.reader(s.getInbox)},
+		{"GET", "/v1/tasks", accessRead, s.reader(s.listTasks)},
+		{"GET", "/v1/tasks/day", accessRead, s.reader(s.getTaskDay)},
+		{"GET", "/v1/tasks/review", accessRead, s.reader(s.getTaskReview)},
 		{"GET", "/v1/instructions", accessRead, s.reader(s.listInstructions)},
 		{"GET", "/v1/messages/{id}", accessRead, s.reader(s.getMessage)},
 		{"GET", "/v1/moves/{id}", accessRead, s.reader(s.getMove)},
@@ -87,6 +98,18 @@ func (s *Server) routes() []route {
 		{"GET", "/v1/web-sessions", accessMachine, s.writer(s.listWebSessions)},
 		{"DELETE", "/v1/web-sessions/{id}", accessMachine, s.writer(s.revokeWebSession)},
 	}
+}
+
+// tryHandle registers pattern and reports false if the mux rejects it as
+// conflicting with one already registered.
+func tryHandle(mux *http.ServeMux, pattern string, h http.HandlerFunc) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	mux.HandleFunc(pattern, h)
+	return true
 }
 
 // mux registers routes, a JSON 405 for a known path with the wrong method,
@@ -109,10 +132,20 @@ func (s *Server) mux() *http.ServeMux {
 		methods := allowed[p]
 		sort.Strings(methods)
 		allow := strings.Join(methods, ", ")
-		mux.HandleFunc(p, func(w http.ResponseWriter, r *http.Request) {
+		notAllowed := func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Allow", allow)
 			writeError(w, http.StatusMethodNotAllowed, "method "+r.Method+" not allowed; use "+allow)
-		})
+		}
+		if !tryHandle(mux, p, notAllowed) {
+			// A literal path next to a method-specific wildcard, such as
+			// /v1/tasks/day beside PATCH /v1/tasks/{id}, conflicts with a
+			// method-less pattern. Register the methods the path lacks.
+			for _, m := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"} {
+				if !slices.Contains(methods, m) && !(m == "HEAD" && slices.Contains(methods, "GET")) {
+					mux.HandleFunc(m+" "+p, notAllowed)
+				}
+			}
+		}
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint: "+r.URL.Path)

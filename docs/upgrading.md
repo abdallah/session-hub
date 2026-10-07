@@ -4,6 +4,24 @@ The general upgrade steps and how to roll back are in
 [`self-hosting.md`](self-hosting.md#upgrade). This page lists the releases
 that need more than that. Newest first.
 
+## Upgrade to tasks
+
+This release adds tasks and moves the database to schema version 13. Deploy
+the server first; it upgrades the database on its first start. If any
+version 13 binary has already opened the database, the old server refuses
+to start, so deploy the new server before its next restart.
+
+Old clients keep working against the new server; they don't use the task
+routes. A new client against an old server gets `404` from
+`sessionhub task`. The MCP task tools queue the call on that `404`, and the
+next drain drops it with a log line, so the task is lost. Install the new binary on every machine; Claude Code sessions
+started after that get the task tools, and running ones don't.
+
+To roll back, stop the server, restore the database backup as described in
+[self-hosting.md](self-hosting.md#upgrade), install the previous binary
+everywhere, and start the server. The version 12 binary refuses a version 13
+database.
+
 ## Upgrade to the Claude Code mod
 
 This release adds the sessionhub Claude Code mod and moves the database to

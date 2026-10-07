@@ -72,7 +72,7 @@ $ cat ~/.local/state/sessionhub/watcher.log
 2026/09/30 11:16:48 watcher started: pid 41476, herdr session "default", socket /home/me/.config/herdr/herdr.sock
 $ curl -sS -H 'Authorization: Bearer hub_r_<redacted>' http://127.0.0.1:8788/v1/sessions   # id, machine, herdr ids, status, state, title, branch
 39fdf11d bluebox default wG wG:p1 live done 'CMO read-only database access' develop
-47ebb3a2 bluebox default wC wC:p1 live idle 'Systemsdev-17893 CI job images from ECR' main
+47ebb3a2 bluebox default wC wC:p1 live idle 'OPS-5678 CI job images from ECR' main
 4f344a57 bluebox default wD wD:p1 live idle 'Big Workers for GitLab WPML' develop
 87d22816 bluebox default wF wF:p1 live idle 'MRs 391 and 392 review notes' develop
 ed0904a1 bluebox default wA wA:p1 live done 'Alertra checks validation and synthetic probes' develop

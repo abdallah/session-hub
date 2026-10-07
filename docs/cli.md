@@ -22,6 +22,11 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub rules [ls]` | The standing rules every session sees, one per line: number, text, and who added it. See below. |
 | `sessionhub rules add "<text>"` | Add a rule, 1 to 300 characters on one line. The list holds at most 2,000 characters. |
 | `sessionhub rules rm <id>` | Remove rule `<id>`. |
+| `sessionhub task add "<title>" [--ref X] [--url U] [--source S] [--now]` | Add a task. It starts as `todo`, or `in_progress` with `--now`. `--source` is `ticket`, `email`, `chat`, or `other` (default `other`). See below. |
+| `sessionhub task ls [--date YYYY-MM-DD]` | The three columns, **Todo**, **In progress**, and **Done**, for a day (default today) in the local time zone. |
+| `sessionhub task review` | The review queue: **Proposed**, **Awaiting done**, and **Sessions with no task**. |
+| `sessionhub task accept\|reject\|done\|drop\|start\|reopen <id> [--note T]` | Change a task's state. See below. |
+| `sessionhub task merge <id> --into <id>` | Merge a proposal into another task. |
 | `sessionhub send <id-or-prefix>... -m "<text>"` | Send a message to sessions. See below. |
 | `sessionhub send --machine <M> -m "<text>"` | Send a message to every live session on `<M>` that can take one. |
 | `sessionhub approve [--yes] <request-id\|prefix>` | Allow a pending permission prompt once, after it shows the request and asks. See below. |
@@ -319,6 +324,41 @@ up to 15 seconds and prints the delivery result of each queued one:
 `expired`. The watcher types a message only when the session's agent is
 idle or done. The command exits 1 when any target was refused or expired.
 At most 30 messages a minute leave one machine.
+
+## `sessionhub task`
+
+`sessionhub task` keeps your task list. It acts as you, not as an agent. See
+[Tasks](server.md#tasks) for the states.
+
+```
+sessionhub task add "Fix DNS for a customer" --ref "email from a customer" --source email --now
+sessionhub task ls
+sessionhub task start 3kQ9x
+sessionhub task done 3kQ9x --note "deployed"
+```
+
+| Command | Moves the task to |
+| --- | --- |
+| `accept` | `todo` |
+| `start` | `in_progress` |
+| `done` | `done` |
+| `drop` | `dropped` |
+| `reopen` | `todo` |
+| `reject` | `dropped` for a proposal, or `in_progress` for a done proposal. Any other state is an error. |
+
+`accept` takes a proposal, `reopen` takes a `done` or `dropped` task, and
+`start` also takes a proposal. The server refuses a move the state table
+doesn't allow with 409 and says why. Flags can come after the ID.
+
+`task ls` and `task review` print a short ID: the first 8 characters after
+`t_`. A verb accepts a unique prefix of it, or a full ID with or without the
+`t_`. A prefix matches the open tasks and today's columns. A task finished
+on an earlier day is in neither, so `task ls --date <past day>` prints full
+IDs, and you pass one to `reopen` or another verb. If a prefix matches more
+than one task, the command lists the candidates.
+
+`task add` fails with a conflict when an open task already has the same
+`--ref`.
 
 ## `sessionhub install-mod`
 

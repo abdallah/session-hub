@@ -100,7 +100,14 @@ and `queue.lock`.
   `herdr_sessions`, `report`, `title`, `digest`, and `blocked_on_clear`
   (`OpBlockedOnClear`, with `SessionID` and a body of `{"clears":
   "<question>"}`: it clears that question only, through `ClearBlockedOn`; an
-  item with no body clears only a mod-set block); `Body` is the JSON body of the matching API call.
+  item with no body clears only a mod-set block), and the three task ops:
+  `task_create` (`OpTaskCreate`, body `api.TaskIn` with a client-made `id`),
+  `task_state` (`OpTaskState`, body `api.TaskStateIn`), and `task_link`
+  (`OpTaskLink`, body `api.TaskLinkIn`). Each task op needs `SessionID`, and
+  `task_state` and `task_link` also need `TaskID`, the task the call acts on;
+  their bodies carry a client-made `event_id`, so a replay changes nothing
+  twice. `Replay` sets the body's `session_id` from `Item.SessionID`. `Body`
+  is the JSON body of the matching API call.
   `Replay` sends any of them. There is no op that sets a question: a set
   replayed later would block a session that was already answered, so
   `SetBlockedOn` with text is best effort.

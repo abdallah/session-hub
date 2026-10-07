@@ -37,6 +37,10 @@ name returns `-32602`; bad JSON returns `-32700`.
 | `forget` | `id: integer` |
 | `instructions` | none |
 | `send_to_sessions` | `session_ids: string[]`, `text: string` |
+| `list_tasks` | none |
+| `propose_task` | `title: string`, `source: string`, `ref?: string`, `ref_url?: string` |
+| `link_task` | `task_id: string` |
+| `propose_done` | `task_id: string`, `note?: string` |
 
 Results are one text content item. For `report_progress` and `set_title`,
 invalid arguments (a non-array list, an empty title) return a result with
@@ -66,6 +70,46 @@ characters. Every control character (C0, DEL, and C1, including tab and
 newline) becomes a space, and the result is trimmed. An item that is empty
 after cleaning is dropped, and a title that is empty after cleaning is an
 invalid-arguments error. Counts are in characters (runes), not bytes.
+
+## Tasks
+
+The task tools let a session tie its work to a task you see on the
+dashboard's **Tasks** tab. A session acts as an agent: it can propose a
+task, link itself to one, and propose one done. You decide the rest. See
+[Tasks](server.md#tasks) for the rules.
+
+- `list_tasks` returns one line per open task (proposed, todo, in progress,
+  or awaiting done): `<id> [<state>] <title> (<ref>)`. When the server is
+  unreachable it answers in plain text and does not set `isError`, because
+  listing is advice and never a blocker.
+- `propose_task` creates a `proposed` task and links the calling session.
+  `title` is required, up to 200 characters. `source` is required: `ticket`,
+  `email`, `chat`, or `other`; a missing or other value is an error result.
+  If an open task already has the same `ref` (ignoring case), the call
+  returns that task, links the session to it, and tells the agent not to
+  propose it again. If the call was queued, the server applies the same rule
+  on replay and keeps the queued task ID as a dropped task merged into the
+  open one, so `link_task` and `propose_done` on that ID act on the open
+  task.
+- `link_task` links the calling session to a task from `list_tasks`. A
+  `todo` task moves to `in_progress`; a task in any other state keeps its
+  state.
+- `propose_done` moves a `todo` or `in_progress` task to `done_proposed`,
+  with `note` (up to 500 characters) on the event. You confirm it. If the
+  server refuses the move, such as for a task that is already done, the
+  reply is plain text that names the server's reason, with `isError` false,
+  and the call is not queued, because a retry cannot change the answer.
+
+These tools fail open like `report_progress`. If the server is
+unreachable, the call goes to the offline queue and the tool reports that.
+Each queued call carries a client-made task or event ID, so a replay never
+creates a second task or repeats a state change. A call that needs the
+calling session's ID and does not have it sends nothing.
+
+The `initialize` instructions and `docs/CLAUDE-snippet.md` carry the rule
+for agents: for a clear human-level goal, call `list_tasks`, then
+`link_task` or `propose_task`; when the goal is finished, call
+`propose_done`; create no tasks for steps inside a goal.
 
 ## Session ID
 

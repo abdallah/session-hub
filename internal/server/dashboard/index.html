@@ -244,9 +244,46 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
 .perm-confirm p { margin: 0 0 4px; font-weight: 600; }
 .perm .actions { padding: 4px 0 0; }
 .perm .meta, .perm .inbox-error { margin: 4px 0 0; padding: 0; }
+.task-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 4px; }
+.task-bar input[type="date"] {
+  min-height: 44px; padding: 0 8px; font: inherit; color: var(--fg);
+  background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+}
+.task-bar .grow { flex: 1 1 auto; }
+.task-add { margin: 8px 0 0; }
+.task-add .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.task-add .row label { flex: 1 1 12rem; }
+.task-add .error { padding: 0; text-align: left; font-size: .85rem; margin: 0; }
+.review {
+  margin: 12px 0 0; padding: 4px 12px 8px; background: var(--card);
+  border: 1px solid var(--line); border-left: 5px solid var(--stale); border-radius: 8px; box-shadow: var(--shadow);
+}
+.review h2 { margin: 8px 0 4px; }
+.review h3 { font-size: .8rem; text-transform: uppercase; color: var(--muted); margin: 10px 0 2px; }
+.review-item { border-top: 1px solid var(--line); padding: 6px 0; }
+.review-item .actions { padding: 2px 0 0; gap: 4px; }
+.review-item select {
+  min-height: 44px; max-width: 100%; padding: 0 8px; font: inherit; font-size: .85rem; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+}
+.task-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+@media (max-width: 699px) { .task-cols { grid-template-columns: minmax(0, 1fr); } }
+.task-col h2 { margin: 16px 0 8px; }
+.task-card { padding: 8px 12px; border-left-color: var(--line); }
+.task-card.col-todo { border-left-color: var(--ended); }
+.task-card.col-in_progress { border-left-color: var(--accent); }
+.task-card.col-done { border-left-color: var(--live); }
+.task-card .t-title { font-weight: 600; }
+.task-card a, .review-item a { color: var(--accent); }
+.task-card ul { margin: 4px 0 0; padding-left: 18px; font-size: .85rem; }
+.task-card details > summary { cursor: pointer; color: var(--accent); font-size: .85rem; min-height: 44px; display: flex; align-items: center; }
+.task-card .actions { padding: 4px 0 0; gap: 4px; }
+.task-card .inbox-error, .review-item .inbox-error { padding: 4px 0 0; }
+.task-col .empty { padding: 8px; }
 /* A mouse or trackpad: smaller targets and hover states. Touch keeps 44px. */
 @media (hover: hover) and (pointer: fine) {
-  button, a.open, a.act, details.snooze > summary { min-height: 32px; }
+  button, a.open, a.act, details.snooze > summary, .task-bar input[type="date"], .review-item select { min-height: 32px; }
+  .task-card details > summary { min-height: 28px; }
   button.card-head, button.machine-head { min-height: 0; }
   details.digest > summary, details.ended > summary { min-height: 28px; }
   details.ended > summary { padding: 4px 0; }
@@ -273,6 +310,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
 <div class="controls">
   <div class="tabs" role="tablist" aria-label="Views">
     <button id="tab-inbox" class="tab" type="button" role="tab" aria-selected="false" aria-controls="inbox">Inbox</button>
+    <button id="tab-tasks" class="tab" type="button" role="tab" aria-selected="false" aria-controls="tasks">Tasks</button>
     <button id="tab-sessions" class="tab" type="button" role="tab" aria-selected="true" aria-controls="root">Sessions</button>
     <button id="tab-rules" class="tab" type="button" role="tab" aria-selected="false" aria-controls="rules">Rules</button>
   </div>
@@ -295,6 +333,38 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   <p id="start-status" class="start-status" aria-live="polite"></p>
 </section>
 <main id="inbox" hidden><p class="empty">Loading the inbox...</p></main>
+<main id="tasks" hidden>
+  <div class="task-bar">
+    <button id="task-prev" class="textbtn" type="button" aria-label="Previous day">&larr; Prev</button>
+    <input id="task-date" type="date" aria-label="Day">
+    <button id="task-next" class="textbtn" type="button" aria-label="Next day">Next &rarr;</button>
+    <button id="task-today" class="textbtn" type="button">Today</button>
+    <span class="grow"></span>
+    <button id="task-add-open" type="button" aria-expanded="false" aria-controls="task-add">Add task</button>
+  </div>
+  <section id="task-add" class="startbar task-add" hidden aria-label="Add a task">
+    <h2>Add a task</h2>
+    <label>Title <input id="task-title" type="text" maxlength="200" autocomplete="off"></label>
+    <div class="row">
+      <label>Ref <input id="task-ref" type="text" placeholder="SYS-123" autocomplete="off" spellcheck="false"></label>
+      <label>URL <input id="task-url" type="url" autocomplete="off" spellcheck="false"></label>
+      <label>Source <select id="task-source">
+        <option value="ticket">Ticket</option>
+        <option value="email">Email</option>
+        <option value="chat">Chat</option>
+        <option value="other" selected>Other</option>
+      </select></label>
+    </div>
+    <label class="check"><input id="task-now" type="checkbox"> Start now</label>
+    <div class="actions">
+      <button id="task-add-go" type="button">Add</button>
+      <button id="task-add-close" class="textbtn" type="button">Close</button>
+    </div>
+    <p id="task-add-status" class="error" aria-live="polite"></p>
+  </section>
+  <div id="task-review"></div>
+  <div id="task-board"><p class="empty">Loading tasks...</p></div>
+</main>
 <main id="root"><p class="empty">Loading sessions...</p></main>
 <main id="rules" hidden><p class="empty">Loading the rules...</p></main>
 <section id="sendbar" class="sendbar" hidden aria-label="Send a message">
@@ -386,6 +456,35 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   var CARDS_KEY = "sessionhub.openCards";
   var collapsed = loadMap(COLLAPSED_KEY); // machine name -> true while collapsed
   var openCards = loadMap(CARDS_KEY);     // session id -> true while its card is expanded
+  var tasksRoot = document.getElementById("tasks");
+  var tabTasks = document.getElementById("tab-tasks");
+  var taskDateEl = document.getElementById("task-date");
+  var taskPrev = document.getElementById("task-prev");
+  var taskNext = document.getElementById("task-next");
+  var taskTodayBtn = document.getElementById("task-today");
+  var taskAddOpen = document.getElementById("task-add-open");
+  var taskAdd = document.getElementById("task-add");
+  var taskTitle = document.getElementById("task-title");
+  var taskRef = document.getElementById("task-ref");
+  var taskURL = document.getElementById("task-url");
+  var taskSource = document.getElementById("task-source");
+  var taskNow = document.getElementById("task-now");
+  var taskAddGo = document.getElementById("task-add-go");
+  var taskAddClose = document.getElementById("task-add-close");
+  var taskAddStatus = document.getElementById("task-add-status");
+  var taskReviewEl = document.getElementById("task-review");
+  var taskBoard = document.getElementById("task-board");
+  var TASKS_DATE_KEY = "sessionhub.tasksDate";
+  var taskDate = "";        // the day the Tasks tab shows, YYYY-MM-DD
+  var lastDay = null;       // the last GET /v1/tasks/day, for taskDate
+  var dayError = "";        // why the last day read failed
+  var lastReview = { proposed: [], done_proposed: [], untasked: [] };
+  var openTasks = [];       // the last GET /v1/tasks?state=open, for Merge into
+  var taskBusy = {};        // task or session id -> true while a write for it is out
+  var taskErrors = {};      // task or session id -> why its last write failed
+  var openTaskMenus = {};   // task id -> true while its state menu is open
+  var openEvidence = {};    // task id -> true while its done items are shown
+  var mergePick = {};       // proposal id -> the merge target picked in its select
 
   // auth-state:begin
   var SIGNED_OUT = "You are signed out. Run sessionhub login --name <device> on a machine with sessionhub, then open the link it prints.";
@@ -701,10 +800,11 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   // firstTab is the tab the page opens on: Inbox when it has items.
   function firstTab(n) { return n > 0 ? "inbox" : "sessions"; }
 
-  // hashTab is the tab a URL fragment asks for: #inbox, #sessions, or
-  // #rules, else null. The Telegram alert's Open inbox button links to /#inbox.
+  // hashTab is the tab a URL fragment asks for: #inbox, #tasks, #sessions,
+  // or #rules, else null. The Telegram alert's Open inbox button links to /#inbox.
   function hashTab(hash) {
     if (hash === "#inbox") return "inbox";
+    if (hash === "#tasks") return "tasks";
     if (hash === "#sessions") return "sessions";
     if (hash === "#rules") return "rules";
     return null;
@@ -738,6 +838,130 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     };
   }
   // inbox-state:end
+
+  // tasks-state:begin
+  var TASK_COLUMNS = [
+    { key: "todo", label: "Todo" },
+    { key: "in_progress", label: "In progress" },
+    { key: "done", label: "Done" }
+  ];
+  var TASK_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+
+  // localDate is the browser's calendar date at now, as YYYY-MM-DD.
+  function localDate(now) {
+    var d = new Date(now);
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+
+  // validDate reports whether s is a real YYYY-MM-DD date.
+  function validDate(s) {
+    var m = typeof s === "string" && TASK_DATE.exec(s);
+    if (!m) return false;
+    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    return d.toISOString().slice(0, 10) === s;
+  }
+
+  // shiftDate is date moved by n calendar days.
+  function shiftDate(date, n) {
+    var m = TASK_DATE.exec(date);
+    return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + n)).toISOString().slice(0, 10);
+  }
+
+  // rememberedDate is the stored date (the one key of a loadMap map) when it
+  // is valid and not after today, else today.
+  function rememberedDate(m, today) {
+    var d = Object.keys(m || {})[0];
+    return validDate(d) && d <= today ? d : today;
+  }
+
+  // dateMap stores a date in the true-valued map loadMap and saveMap keep.
+  function dateMap(date) {
+    var m = {};
+    m[date] = true;
+    return m;
+  }
+
+  function taskDayURL(date, tz) {
+    return "/v1/tasks/day?date=" + encodeURIComponent(date) + "&tz=" + encodeURIComponent(tz);
+  }
+
+  // reviewCount is the tab badge: proposals and done proposals.
+  function reviewCount(rev) {
+    return ((rev && rev.proposed) || []).length + ((rev && rev.done_proposed) || []).length;
+  }
+
+  // taskMoves are the state changes a card offers, from the task's current
+  // state (today's view only). Proposals move from the review strip.
+  function taskMoves(state) {
+    var drop = { label: "Drop", to: "dropped" };
+    var reopen = [{ label: "Reopen", to: "todo" }, { label: "Reopen and start", to: "in_progress" }];
+    switch (state) {
+      case "todo": return [{ label: "Start", to: "in_progress" }, { label: "Done", to: "done" }, drop];
+      case "in_progress": return [{ label: "Back to todo", to: "todo" }, { label: "Done", to: "done" }, drop];
+      case "done_proposed": return [{ label: "Confirm done", to: "done" }, { label: "Not done", to: "in_progress" }, drop];
+      case "done": return reopen.concat([drop]);
+      case "dropped": return reopen;
+    }
+    return [];
+  }
+
+  // mergeTargets are the open tasks a proposal can merge into.
+  function mergeTargets(open, id) {
+    return (open || []).filter(function (t) {
+      return t && t.id !== id && t.state !== "proposed" && t.state !== "dropped";
+    });
+  }
+
+  // taskLink returns url when it is an http or https link, else null.
+  function taskLink(url) {
+    return typeof url === "string" && /^https?:\/\/[^\s]+$/.test(url) ? url : null;
+  }
+
+  // taskPost is every Tasks tab write.
+  function taskPost(path, body) {
+    return {
+      url: path,
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Hub-Action": "tasks" },
+        body: JSON.stringify(body),
+        cache: "no-store"
+      }
+    };
+  }
+
+  function addTaskBody(title, ref, url, source, now) {
+    return { title: title.trim(), ref: ref.trim(), ref_url: url.trim(), source: source || "other", state: now ? "in_progress" : "todo" };
+  }
+
+  // addTaskProblem is why the Add form cannot be sent, or "".
+  function addTaskProblem(title, url) {
+    if (!title.trim()) return "Enter a title.";
+    if (url.trim() && !taskLink(url.trim())) return "The URL must be an http or https link.";
+    return "";
+  }
+
+  // makeTaskBody creates a todo task from a session's title and links it.
+  function makeTaskBody(s) { return { title: s.title, session_id: s.id }; }
+
+  // taskColumns is the day's three columns in order.
+  function taskColumns(day) {
+    return TASK_COLUMNS.map(function (c) {
+      return { key: c.key, label: c.label, tasks: (day && day[c.key]) || [] };
+    });
+  }
+
+  function sessionLine(s) {
+    return (s.title || "(untitled)") + (s.machine ? " · " + s.machine : "");
+  }
+
+  // evidenceCount is how many done items a task's sessions reported that day.
+  function evidenceCount(sessions) {
+    return (sessions || []).reduce(function (n, s) { return n + ((s && s.done) || []).length; }, 0);
+  }
+  // tasks-state:end
 
   // actions-state:begin
   var RULES_MAX = 2000; // characters in all rules
@@ -1857,11 +2081,11 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   function syncAllButton(q) {
     allBtn.textContent = allCollapsed(allNames, collapsed) ? "Expand all" : "Collapse all";
     allBtn.disabled = q !== "";
-    allBtn.hidden = tab === "inbox" || tab === "rules" || signedOut || !allNames.length;
-    selectBtn.hidden = tab === "inbox" || tab === "rules" || signedOut;
-    newBtn.hidden = tab === "inbox" || tab === "rules" || signedOut;
+    allBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "rules" || signedOut || !allNames.length;
+    selectBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "rules" || signedOut;
+    newBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "rules" || signedOut;
     if (newBtn.hidden && !startBar.hidden) { startBar.hidden = true; newBtn.setAttribute("aria-expanded", "false"); }
-    filterEl.hidden = tab === "rules";
+    filterEl.hidden = tab === "rules" || tab === "tasks";
   }
 
   // inboxRow is one inbox item, shown like a phone notification: the title,
@@ -2079,12 +2303,346 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     inboxRoot.hidden = name !== "inbox";
     root.hidden = name !== "sessions";
     rulesRoot.hidden = name !== "rules";
+    tasksRoot.hidden = name !== "tasks";
     syncAllButton(filterEl.value.trim());
     tabInbox.setAttribute("aria-selected", name === "inbox" ? "true" : "false");
     tabSessions.setAttribute("aria-selected", name === "sessions" ? "true" : "false");
     tabRules.setAttribute("aria-selected", name === "rules" ? "true" : "false");
+    tabTasks.setAttribute("aria-selected", name === "tasks" ? "true" : "false");
     renderSendBar();
     if (name === "rules") loadRules();
+    if (name === "tasks") loadTasks();
+  }
+
+  // taskTZ is the browser's IANA time zone; the server cuts the day there.
+  function taskTZ() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; }
+  }
+
+  // taskRead is a Tasks tab read: the data, or null once signed out.
+  function taskRead(url) {
+    return fetch(url, { headers: { "Accept": "application/json" }, cache: "no-store" })
+      .then(function (resp) {
+        if (signedOut) return null;
+        if (resp.status === 401) { showSignedOut(); return null; }
+        if (!resp.ok) throw new Error("The server returned " + resp.status + ".");
+        return resp.json();
+      });
+  }
+
+  // loadTasks reads the shown day, the review queue, and the open tasks
+  // (the Merge into choices).
+  function loadTasks() {
+    if (signedOut) return;
+    if (!taskDate) taskDate = rememberedDate(loadMap(TASKS_DATE_KEY), localDate(Date.now()));
+    var date = taskDate;
+    taskRead(taskDayURL(date, taskTZ()))
+      .then(function (day) {
+        if (day === null || signedOut || date !== taskDate) return;
+        lastDay = day;
+        dayError = "";
+        renderTasks();
+      })
+      .catch(function (err) {
+        if (signedOut || date !== taskDate) return;
+        dayError = err.message || "Could not load the tasks.";
+        // Keep the last good render on a transient network error.
+        if (!lastDay) renderTasks();
+      });
+    loadReview();
+    taskRead("/v1/tasks?state=open")
+      .then(function (list) {
+        if (list === null || signedOut) return;
+        openTasks = list || [];
+        if (tab === "tasks") renderTasks();
+      })
+      .catch(function () { /* Merge into keeps the last list */ });
+  }
+
+  // loadReview reads the review queue, which also feeds the tab badge.
+  function loadReview() {
+    if (signedOut) return;
+    taskRead("/v1/tasks/review")
+      .then(function (rev) {
+        if (rev === null || signedOut) return;
+        lastReview = rev;
+        syncTaskBadge();
+        if (tab === "tasks") renderTasks();
+      })
+      .catch(function () { /* keep the last queue */ });
+  }
+
+  function syncTaskBadge() {
+    var n = reviewCount(lastReview);
+    tabTasks.textContent = n ? "Tasks (" + n + ")" : "Tasks";
+  }
+
+  // setTaskDate shows another day and remembers it in this browser.
+  function setTaskDate(date) {
+    if (!validDate(date) || date === taskDate) return;
+    taskDate = date;
+    saveMap(TASKS_DATE_KEY, dateMap(taskDate));
+    lastDay = null;
+    dayError = "";
+    openTaskMenus = {};
+    renderTasks();
+    loadTasks();
+  }
+
+  function showTaskAdd(open) {
+    taskAdd.hidden = !open;
+    taskAddOpen.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) taskTitle.focus();
+    else taskAddOpen.focus();
+  }
+
+  function addTask() {
+    var problem = addTaskProblem(taskTitle.value, taskURL.value);
+    if (problem) { taskAddStatus.textContent = problem; return; }
+    var body = addTaskBody(taskTitle.value, taskRef.value, taskURL.value, taskSource.value, taskNow.checked);
+    taskWrite("add", taskPost("/v1/tasks", body), function () {
+      taskTitle.value = "";
+      taskRef.value = "";
+      taskURL.value = "";
+      taskNow.checked = false;
+      showTaskAdd(false);
+    });
+  }
+
+  function taskStateRequest(id, to) {
+    return taskPost("/v1/tasks/" + encodeURIComponent(id) + "/state", { to: to });
+  }
+
+  // taskWrite sends one Tasks tab write. key is the task or session id it
+  // acts on (or "add"); a refusal, such as a 409 for a move the server does
+  // not allow, shows under that item.
+  function taskWrite(key, req, onOK) {
+    if (signedOut || taskBusy[key]) return;
+    taskBusy[key] = true;
+    delete taskErrors[key];
+    renderTasks();
+    fetch(req.url, req.init)
+      .then(function (resp) {
+        if (resp.status === 401) { showSignedOut(); return null; }
+        if (resp.ok) return {};
+        return resp.json().then(
+          function (body) { return { error: rcRefusal(resp.status, body) }; },
+          function () { return { error: rcRefusal(resp.status, null) }; });
+      }, function () { return { error: "Could not reach the sessionhub." }; })
+      .then(function (r) {
+        delete taskBusy[key];
+        if (r === null || signedOut) return;
+        if (r.error) taskErrors[key] = r.error;
+        else if (onOK) onOK();
+        renderTasks();
+        loadTasks();
+      });
+  }
+
+  // taskInfo adds a task's title, ref (linked when it has an http or https
+  // URL), source, and linked sessions to box.
+  function taskInfo(box, t) {
+    box.appendChild(el("div", "t-title", t.title));
+    var meta = el("div", "meta");
+    var href = taskLink(t.ref_url);
+    if (t.ref || href) {
+      if (href) {
+        var a = el("a", null, t.ref || "link");
+        a.href = href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        meta.appendChild(a);
+      } else {
+        meta.appendChild(document.createTextNode(t.ref));
+      }
+      meta.appendChild(document.createTextNode(" · "));
+    }
+    meta.appendChild(document.createTextNode(t.source || "other"));
+    box.appendChild(meta);
+    var sessions = t.sessions || [];
+    if (sessions.length) {
+      var ul = el("ul");
+      sessions.forEach(function (s) { ul.appendChild(el("li", null, sessionLine(s))); });
+      box.appendChild(ul);
+    }
+  }
+
+  // taskButton is a button that sends one write for key.
+  function taskButton(label, key, cls, send) {
+    var b = keyed(el("button", cls, label), "task:" + key + ":" + label);
+    b.type = "button";
+    b.disabled = !!taskBusy[key];
+    b.addEventListener("click", send);
+    return b;
+  }
+
+  function taskErrorEl(key) {
+    return taskErrors[key] ? el("p", "inbox-error", taskErrors[key]) : null;
+  }
+
+  // taskCard is one task in a column. The column, not task.state, places
+  // it: a past day shows where the task was then. Today's cards have a
+  // state menu; past days are read-only.
+  function taskCard(t, columnKey, readOnly) {
+    var c = el("article", "card task-card col-" + columnKey);
+    c.setAttribute("data-id", t.id);
+    taskInfo(c, t);
+    var n = evidenceCount(t.sessions);
+    if (n) {
+      var d = el("details");
+      d.open = !!openEvidence[t.id];
+      d.appendChild(el("summary", null, n === 1 ? "1 done item" : n + " done items"));
+      var ul = el("ul");
+      (t.sessions || []).forEach(function (s) {
+        (s.done || []).forEach(function (x) { ul.appendChild(el("li", null, x)); });
+      });
+      d.appendChild(ul);
+      d.addEventListener("toggle", function () { openEvidence[t.id] = d.open; });
+      c.appendChild(d);
+    }
+    var moves = readOnly ? [] : taskMoves(t.state);
+    if (moves.length) {
+      var act = el("div", "actions");
+      var menu = el("details", "snooze");
+      menu.open = !!openTaskMenus[t.id];
+      menu.appendChild(keyed(el("summary", null, "Move"), "taskmenu:" + t.id));
+      var list = el("div", "menu");
+      moves.forEach(function (m) {
+        list.appendChild(taskButton(m.label, t.id, null, function () {
+          delete openTaskMenus[t.id];
+          taskWrite(t.id, taskStateRequest(t.id, m.to));
+        }));
+      });
+      menu.appendChild(list);
+      menu.addEventListener("toggle", function () { openTaskMenus[t.id] = menu.open; });
+      act.appendChild(menu);
+      c.appendChild(act);
+    }
+    var err = taskErrorEl(t.id);
+    if (err) c.appendChild(err);
+    return c;
+  }
+
+  function proposalItem(t) {
+    var box = el("div", "review-item");
+    taskInfo(box, t);
+    var act = el("div", "actions");
+    act.appendChild(taskButton("Accept", t.id, null, function () { taskWrite(t.id, taskStateRequest(t.id, "todo")); }));
+    var targets = mergeTargets(openTasks, t.id);
+    if (targets.length) {
+      var sel = keyed(el("select"), "merge:" + t.id);
+      sel.setAttribute("aria-label", "Merge " + t.title + " into");
+      var none = el("option", null, "Merge into…");
+      none.value = "";
+      sel.appendChild(none);
+      targets.forEach(function (x) {
+        var o = el("option", null, x.title + (x.ref ? " (" + x.ref + ")" : ""));
+        o.value = x.id;
+        sel.appendChild(o);
+      });
+      sel.value = targets.some(function (x) { return x.id === mergePick[t.id]; }) ? mergePick[t.id] : "";
+      sel.disabled = !!taskBusy[t.id];
+      var merge = taskButton("Merge", t.id, "textbtn", function () {
+        taskWrite(t.id, taskPost("/v1/tasks/" + encodeURIComponent(t.id) + "/merge", { into: sel.value }));
+      });
+      merge.disabled = merge.disabled || !sel.value;
+      sel.addEventListener("change", function () {
+        mergePick[t.id] = sel.value;
+        merge.disabled = !!taskBusy[t.id] || !sel.value;
+      });
+      act.appendChild(sel);
+      act.appendChild(merge);
+    }
+    act.appendChild(taskButton("Reject", t.id, "textbtn", function () { taskWrite(t.id, taskStateRequest(t.id, "dropped")); }));
+    box.appendChild(act);
+    var err = taskErrorEl(t.id);
+    if (err) box.appendChild(err);
+    return box;
+  }
+
+  function doneProposedItem(t) {
+    var box = el("div", "review-item");
+    taskInfo(box, t);
+    var act = el("div", "actions");
+    act.appendChild(taskButton("Confirm done", t.id, null, function () { taskWrite(t.id, taskStateRequest(t.id, "done")); }));
+    act.appendChild(taskButton("Not done", t.id, "textbtn", function () { taskWrite(t.id, taskStateRequest(t.id, "in_progress")); }));
+    box.appendChild(act);
+    var err = taskErrorEl(t.id);
+    if (err) box.appendChild(err);
+    return box;
+  }
+
+  function untaskedItem(s) {
+    var box = el("div", "review-item");
+    box.appendChild(el("div", "t-title", s.title));
+    if (s.machine) box.appendChild(el("div", "meta", s.machine));
+    var act = el("div", "actions");
+    act.appendChild(taskButton("Make task", s.id, null, function () { taskWrite(s.id, taskPost("/v1/tasks", makeTaskBody(s))); }));
+    act.appendChild(taskButton("Ignore", s.id, "textbtn", function () {
+      taskWrite(s.id, taskPost("/v1/tasks/review/ignore", { session_id: s.id }));
+    }));
+    box.appendChild(act);
+    var err = taskErrorEl(s.id);
+    if (err) box.appendChild(err);
+    return box;
+  }
+
+  // reviewStrip is the review queue above the columns, or nothing when it
+  // is empty.
+  function reviewStrip() {
+    var prop = lastReview.proposed || [];
+    var dp = lastReview.done_proposed || [];
+    var un = lastReview.untasked || [];
+    var frag = document.createDocumentFragment();
+    if (!prop.length && !dp.length && !un.length) return frag;
+    var box = el("section", "review");
+    box.setAttribute("aria-label", "Review");
+    var h = el("h2", null, "Review");
+    h.appendChild(el("span", "count", String(prop.length + dp.length + un.length)));
+    box.appendChild(h);
+    [["Proposed", prop, proposalItem], ["Done?", dp, doneProposedItem], ["Sessions with no task", un, untaskedItem]].forEach(function (g) {
+      if (!g[1].length) return;
+      box.appendChild(el("h3", null, g[0]));
+      g[1].forEach(function (x) { box.appendChild(g[2](x)); });
+    });
+    frag.appendChild(box);
+    return frag;
+  }
+
+  // renderTasks draws the Tasks tab: the date bar, the review strip, and
+  // the day's three columns.
+  function renderTasks() {
+    syncTaskBadge();
+    if (!taskDate || signedOut) return;
+    var today = localDate(Date.now());
+    var readOnly = taskDate !== localDate(Date.now());
+    if (taskDateEl.value !== taskDate) taskDateEl.value = taskDate;
+    taskDateEl.max = today;
+    taskNext.disabled = taskDate >= today;
+    taskTodayBtn.disabled = !readOnly;
+    taskAddGo.disabled = !!taskBusy.add;
+    taskAddStatus.textContent = taskErrors.add || "";
+    var keep = focusedKey();
+    taskReviewEl.replaceChildren(reviewStrip());
+    var frag = document.createDocumentFragment();
+    if (!lastDay) {
+      frag.appendChild(el("p", dayError ? "error" : "empty", dayError || "Loading tasks..."));
+    } else {
+      if (readOnly) frag.appendChild(el("p", "meta", "A past day, as it ended. Read-only."));
+      var grid = el("div", "task-cols");
+      taskColumns(lastDay).forEach(function (column) {
+        var col = el("section", "task-col");
+        var h = el("h2", null, column.label);
+        h.appendChild(el("span", "count", String(column.tasks.length)));
+        col.appendChild(h);
+        if (!column.tasks.length) col.appendChild(el("p", "empty", "None."));
+        column.tasks.forEach(function (t) { col.appendChild(taskCard(t, column.key, readOnly)); });
+        grid.appendChild(col);
+      });
+      frag.appendChild(grid);
+    }
+    taskBoard.replaceChildren(frag);
+    if (keep && focusedKey() !== keep) focusKeyed(keep);
   }
 
   // loadRules reads the rules for the Rules tab.
@@ -2439,6 +2997,8 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     showTab("sessions");
     inboxRoot.replaceChildren();
     rulesRoot.replaceChildren();
+    tasksRoot.replaceChildren();
+    tabTasks.textContent = "Tasks";
     selected = {};
     sendBar.hidden = true;
     tabInbox.textContent = "Inbox";
@@ -2466,6 +3026,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
         renderInbox();
         renderSendBar();
         if (tab === "rules") loadRules();
+        if (tab === "tasks") loadTasks(); else loadReview();
         updated.textContent = "Updated " + new Date().toLocaleTimeString();
       })
       .catch(function (err) {
@@ -2515,9 +3076,21 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     inboxRoot.querySelectorAll("details.snooze[open]").forEach(function (d) {
       if (!d.contains(e.target)) d.open = false;
     });
+    tasksRoot.querySelectorAll("details.snooze[open]").forEach(function (d) {
+      if (!d.contains(e.target)) d.open = false;
+    });
   });
   tabInbox.addEventListener("click", function () { showTab("inbox"); });
   tabSessions.addEventListener("click", function () { showTab("sessions"); });
+  tabTasks.addEventListener("click", function () { showTab("tasks"); });
+  taskDateEl.addEventListener("change", function () { if (validDate(taskDateEl.value)) setTaskDate(taskDateEl.value); });
+  taskPrev.addEventListener("click", function () { setTaskDate(shiftDate(taskDate, -1)); });
+  taskNext.addEventListener("click", function () { setTaskDate(shiftDate(taskDate, 1)); });
+  taskTodayBtn.addEventListener("click", function () { setTaskDate(localDate(Date.now())); });
+  taskAddOpen.addEventListener("click", function () { showTaskAdd(taskAdd.hidden); });
+  taskAddClose.addEventListener("click", function () { showTaskAdd(false); });
+  taskAddGo.addEventListener("click", addTask);
+  taskTitle.addEventListener("keydown", function (e) { if (e.key === "Enter") addTask(); });
   tabRules.addEventListener("click", function () { showTab("rules"); });
   selectBtn.addEventListener("click", function () {
     selectMode = !selectMode;

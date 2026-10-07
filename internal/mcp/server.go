@@ -17,6 +17,12 @@ import (
 // Version is the serverInfo version reported to clients.
 const Version = "dev"
 
+// instructions is the MCP initialize instructions string. Keep it in step
+// with docs/CLAUDE-snippet.md.
+const instructions = "Call report_progress when you finish a task, start a long one, or are blocked. Call set_title once the session has a clear purpose. " +
+	"For a human-level goal (ticket, email or chat request, assigned bug), call list_tasks, then link_task or propose_task. " +
+	"When the goal is finished, call propose_done. No tasks for steps inside a goal."
+
 // Protocol versions this server speaks. The first is the default.
 var supportedVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
 
@@ -115,7 +121,7 @@ func (s *Server) dispatch(ctx context.Context, req rpcRequest) (any, *rpcError) 
 			"protocolVersion": version,
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
 			"serverInfo":      map[string]any{"name": "sessionhub", "version": Version},
-			"instructions":    "Call report_progress when you finish a task, start a long one, or are blocked. Call set_title once the session has a clear purpose.",
+			"instructions":    instructions,
 		}, nil
 	case "notifications/initialized", "notifications/cancelled":
 		return nil, nil
@@ -147,6 +153,14 @@ func (s *Server) dispatch(ctx context.Context, req rpcRequest) (any, *rpcError) 
 			return s.instructions(ctx, p.Arguments), nil
 		case "send_to_sessions":
 			return s.sendToSessions(ctx, p.Arguments), nil
+		case "list_tasks":
+			return s.listTasks(ctx, p.Arguments), nil
+		case "propose_task":
+			return s.proposeTask(ctx, p.Arguments), nil
+		case "link_task":
+			return s.linkTask(ctx, p.Arguments), nil
+		case "propose_done":
+			return s.proposeDone(ctx, p.Arguments), nil
 		}
 		return nil, &rpcError{Code: codeInvalidParams, Message: fmt.Sprintf("unknown tool %q", p.Name)}
 	}
@@ -239,6 +253,48 @@ var toolDefs = []map[string]any{
 				"text":        map[string]any{"type": "string", "description": "The message."},
 			},
 			"required": []string{"session_ids", "text"},
+		},
+	},
+	{
+		"name":        "list_tasks",
+		"description": "List the open human-level tasks (proposed, todo, in progress, awaiting done). Call it before propose_task so you link to an existing task instead of creating a duplicate.",
+		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+	},
+	{
+		"name":        "propose_task",
+		"description": "Propose a human-level task for this session's goal: a ticket, an email or chat request, a bug you were asked to fix. Write the title the way a person would name it in a standup, not an implementation step. The user accepts or rejects it.",
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"title":   map[string]any{"type": "string", "description": "The task title, at most 200 characters."},
+				"source":  map[string]any{"type": "string", "enum": []string{"ticket", "email", "chat", "other"}, "description": "Where the goal came from."},
+				"ref":     map[string]any{"type": "string", "description": "Optional reference, for example a ticket key. An open task with the same ref is reused."},
+				"ref_url": map[string]any{"type": "string", "description": "Optional http or https link to the reference."},
+			},
+			"required": []string{"title", "source"},
+		},
+	},
+	{
+		"name":        "link_task",
+		"description": "Link this session to an existing task from list_tasks. A todo task moves to in progress.",
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"task_id": map[string]any{"type": "string", "description": "The task id from list_tasks."},
+			},
+			"required": []string{"task_id"},
+		},
+	},
+	{
+		"name":        "propose_done",
+		"description": "Tell the user this task's goal is finished. The user confirms it. Do not call it for steps inside a task.",
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"task_id": map[string]any{"type": "string", "description": "The task id from list_tasks."},
+				"note":    map[string]any{"type": "string", "description": "Optional one-line result, for example the merge request."},
+			},
+			"required": []string{"task_id"},
 		},
 	},
 }

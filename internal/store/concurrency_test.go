@@ -227,9 +227,21 @@ func rollbackV11(t *testing.T, s *Store) {
 // to 11 or lower and reopen the file as an older release left it.
 func rollbackV12(t *testing.T, s *Store) {
 	t.Helper()
+	rollbackV13(t, s)
 	for _, c := range []string{"blocked_on", "context_percent", "usage_at", "live_cost_usd", "mod_seen_at"} {
 		if _, err := s.db.Exec("ALTER TABLE sessions DROP COLUMN " + c); err != nil {
 			t.Fatalf("drop sessions.%s: %v", c, err)
+		}
+	}
+}
+
+// rollbackV13 removes what schema v13 added, so a test can set user_version
+// to 12 or lower and reopen the file as an older release left it.
+func rollbackV13(t *testing.T, s *Store) {
+	t.Helper()
+	for _, tb := range []string{"task_session_ignores", "task_sessions", "task_events", "tasks"} {
+		if _, err := s.db.Exec("DROP TABLE " + tb); err != nil {
+			t.Fatalf("drop %s: %v", tb, err)
 		}
 	}
 }

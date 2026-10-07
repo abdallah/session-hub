@@ -98,15 +98,16 @@ func (h *handler) drain(ctx context.Context, c *client.Client, mk upsertFor) {
 }
 
 // sendItem replays one item through the shared client.Replay. For an event,
-// report, or title answered with 404 it upserts the session and retries the
-// item once.
+// report, title, or task op answered with 404 it upserts the session and
+// retries the item once.
 func sendItem(ctx context.Context, c *client.Client, it client.Item, mk upsertFor) error {
 	err := client.Replay(ctx, c, it)
 	if !client.IsNotFound(err) || mk == nil {
 		return err
 	}
 	switch it.Op {
-	case client.OpEvent, client.OpReport, client.OpTitle:
+	case client.OpEvent, client.OpReport, client.OpTitle,
+		client.OpTaskCreate, client.OpTaskState, client.OpTaskLink:
 	default:
 		return err
 	}

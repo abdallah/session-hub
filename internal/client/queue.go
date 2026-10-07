@@ -32,6 +32,7 @@ type Item struct {
 	Op        string          `json:"op"`
 	SessionID string          `json:"session_id,omitempty"`
 	PaneID    string          `json:"pane_id,omitempty"`
+	TaskID    string          `json:"task_id,omitempty"` // OpTaskState and OpTaskLink
 	Body      json.RawMessage `json:"body,omitempty"`
 	QueuedAt  time.Time       `json:"queued_at"`
 }

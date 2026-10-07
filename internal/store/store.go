@@ -19,6 +19,8 @@ var (
 	ErrNotFound     = errors.New("not found")
 	ErrInvalid      = errors.New("invalid")
 	ErrWrongMachine = errors.New("conflict")
+	// ErrConflict: a task change the task's state does not allow. 409.
+	ErrConflict = errors.New("conflict")
 	// ErrNotControllable: the session has no herdr pane, or its machine's
 	// watcher is offline. The server answers 409.
 	ErrNotControllable = errors.New("not controllable")
@@ -111,7 +113,7 @@ func (s *Store) Now() time.Time { return s.now().UTC() }
 // StaleAfter returns the configured staleness threshold.
 func (s *Store) StaleAfter() time.Duration { return s.staleAfter }
 
-const schemaVersion = 12
+const schemaVersion = 13
 
 const schemaV1 = `
 CREATE TABLE machines (
@@ -378,6 +380,47 @@ ALTER TABLE sessions ADD COLUMN live_cost_usd REAL;
 ALTER TABLE sessions ADD COLUMN mod_seen_at TEXT;                     -- the mod's last message poll
 `
 
+// schemaV13 adds tasks: what you track across sessions, their state history,
+// the sessions linked to them, and sessions the day view ignores.
+const schemaV13 = `
+CREATE TABLE tasks (
+	id          TEXT PRIMARY KEY,          -- t_ + 8 random bytes, base64url
+	title       TEXT NOT NULL,             -- at most 200 runes
+	ref         TEXT NOT NULL DEFAULT '',  -- at most 200 runes
+	ref_url     TEXT NOT NULL DEFAULT '',  -- http or https, at most 2000 bytes
+	source      TEXT NOT NULL,             -- ticket|email|chat|other
+	state       TEXT NOT NULL,             -- proposed|todo|in_progress|done_proposed|done|dropped
+	merged_into TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+	created_by  TEXT NOT NULL,             -- web:<name> | machine:<name> | session:<id>
+	created_at  TEXT NOT NULL,
+	updated_at  TEXT NOT NULL
+);
+CREATE INDEX tasks_state ON tasks(state, updated_at);
+CREATE TABLE task_events (
+	id         INTEGER PRIMARY KEY,
+	task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+	ts         TEXT NOT NULL,
+	from_state TEXT NOT NULL DEFAULT '',   -- '' for the creating event
+	to_state   TEXT NOT NULL,
+	actor      TEXT NOT NULL,
+	note       TEXT NOT NULL DEFAULT '',   -- at most 500 runes
+	client_id  TEXT UNIQUE                 -- te_<id> a client supplied; NULL otherwise
+);
+CREATE INDEX task_events_ts ON task_events(ts);
+CREATE INDEX task_events_task ON task_events(task_id, id);
+CREATE TABLE task_sessions (
+	task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+	session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+	linked_at  TEXT NOT NULL,
+	PRIMARY KEY (task_id, session_id)
+);
+CREATE INDEX task_sessions_session ON task_sessions(session_id);
+CREATE TABLE task_session_ignores (
+	session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+	ignored_at TEXT NOT NULL
+);
+`
+
 // afterVersionRead runs in migrate between the unlocked version read and the
 // transaction. Tests use it to line two opens up on the same stale version.
 var afterVersionRead = func() {}
@@ -470,6 +513,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if v < 12 {
 		if _, err := tx.ExecContext(ctx, schemaV12); err != nil {
 			return fmt.Errorf("migrate schema to v12: %w", err)
+		}
+	}
+	if v < 13 {
+		if _, err := tx.ExecContext(ctx, schemaV13); err != nil {
+			return fmt.Errorf("migrate schema to v13: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {

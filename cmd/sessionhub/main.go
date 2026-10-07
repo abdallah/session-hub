@@ -49,6 +49,7 @@ commands:
   login ls | rm <name|id>       list or sign out browsers
   inbox [--json|--watch]        list the sessions that need you
   inbox dismiss|snooze <id>     dismiss or snooze an inbox item
+  task add|ls|review|<verb> <id> manage tasks (accept, reject, start, done, drop, reopen, merge)
   rules [ls|add <text>|rm <id>] list or edit the standing rules
   send <id>... -m <text>        send a message to sessions (or --machine M)
   approve [--yes] <id>          allow a pending permission prompt once
@@ -91,6 +92,7 @@ var routes = map[string]handler{
 	"status":             cli.RunStatus,
 	"login":              cli.RunLogin,
 	"inbox":              cli.RunInbox,
+	"task":               cli.RunTask,
 	"rules":              cli.RunRules,
 	"send":               cli.RunSend,
 	"approve":            cli.RunApprove,

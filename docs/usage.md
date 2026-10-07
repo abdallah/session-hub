@@ -82,4 +82,28 @@
   and the command exits with status 130 and prints the `sessionhub move --status`
   command that checks it.
 
+## Tasks
+
+Tasks are a daily record of the work you would name in a standup: a ticket,
+an email request, a chat request. They are separate from the small steps a
+session reports with `report_progress`.
+
+- Open the dashboard's **Tasks** tab, or run `sessionhub task ls`, to see
+  **Todo**, **In progress**, and **Done** for a day. Todo tasks carry over to
+  each later day until you start, finish, or drop them. A past day is
+  rebuilt from the task's history, and it is read-only on the dashboard.
+- Add a task with **Add task** or `sessionhub task add "<title>"`. It starts
+  as todo, or in progress with `--now`.
+- A session proposes a task when it has a clear goal, and proposes it done
+  when the goal is finished. Nothing an agent proposes reaches **Done**
+  until you confirm it. The review strip on the **Tasks** tab, and
+  `sessionhub task review`, list the proposals and the sessions that have
+  no task. Accept, merge, or reject a proposal, and confirm or reject a done
+  proposal, from either place.
+- A task shows the sessions linked to it and the `done` items they reported
+  that day.
+- Agents follow the task rule in the `initialize` instructions of the MCP
+  server and in the `CLAUDE.md` snippet that `sessionhub join` prints
+  (`docs/CLAUDE-snippet.md`). See [`mcp.md`](mcp.md#tasks).
+
 Every command is documented in [`cli.md`](cli.md).

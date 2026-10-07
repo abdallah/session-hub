@@ -33,7 +33,7 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 		{"journal_mode", "wal"},
 		{"busy_timeout", "5000"},
 		{"foreign_keys", "1"},
-		{"user_version", "12"},
+		{"user_version", "13"},
 	}
 	for _, c := range checks {
 		var got string

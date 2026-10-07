@@ -89,6 +89,11 @@ The schema version is in `PRAGMA user_version`. `internal/store/store.go`
 upgrades an older database on start and refuses a newer one, so a rollback
 means restoring a backup (`docs/self-hosting.md`, "Upgrade").
 
+Tasks (`internal/store/tasks.go`, `taskday.go`) are shared data like the
+inbox triage: one list for you, written by the dashboard, the CLI, and
+agents through MCP. Past days are rebuilt from the `task_events` log
+(`docs/server.md`, "Tasks").
+
 ## The dashboard
 
 `internal/server` serves a single HTML page with inline CSS and JavaScript,

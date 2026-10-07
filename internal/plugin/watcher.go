@@ -574,8 +574,8 @@ func (w *watcher) resolve(it client.Item) (client.Item, bool) {
 }
 
 // send replays one resolved item. When the server does not know the session
-// of an event, report, or title (404), it upserts the session from what the
-// pane gives and retries once. Without that, an MCP report or title queued
+// of an event, report, title, or task op (404), it upserts the session from
+// what the pane gives and retries once. Without that, an MCP report or title queued
 // before the session's first upsert reached the server was dropped.
 func (w *watcher) send(ctx context.Context, c *client.Client, it client.Item) error {
 	err := client.Replay(ctx, c, it)
@@ -583,7 +583,8 @@ func (w *watcher) send(ctx context.Context, c *client.Client, it client.Item) er
 		return err
 	}
 	switch it.Op {
-	case client.OpEvent, client.OpReport, client.OpTitle:
+	case client.OpEvent, client.OpReport, client.OpTitle,
+		client.OpTaskCreate, client.OpTaskState, client.OpTaskLink:
 	default:
 		return err
 	}

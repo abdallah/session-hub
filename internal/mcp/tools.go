@@ -26,6 +26,10 @@ type hubAPI interface {
 	AddInstruction(ctx context.Context, text string) (api.Instruction, error)
 	DeleteInstruction(ctx context.Context, id int64) error
 	SendMessages(ctx context.Context, in api.MessagesIn) (api.MessagesOut, error)
+	OpenTasks(ctx context.Context) ([]api.Task, error)
+	CreateTask(ctx context.Context, in api.TaskIn) (api.Task, error)
+	SetTaskState(ctx context.Context, id string, in api.TaskStateIn) (api.Task, error)
+	LinkTask(ctx context.Context, id string, in api.TaskLinkIn) (api.Task, error)
 }
 
 type queuer interface {
@@ -152,18 +156,33 @@ func (s *Server) setTitle(ctx context.Context, args json.RawMessage) toolResult 
 // errors in a way a retry could fix, the call is queued and the tool still
 // succeeds.
 func (s *Server) send(ctx context.Context, id, op string, body []byte, what string, call func(hubAPI) error) toolResult {
+	return s.sendItem(ctx, client.Item{Op: op, SessionID: id, Body: body}, what, func(a hubAPI) (string, error) {
+		return "", call(a)
+	})
+}
+
+// sendItem is send for a queue item that can carry a task id. call returns
+// text appended to the success reply. A task item whose task the server
+// does not know after the session is registered is queued, because the
+// create may still be waiting in the queue.
+func (s *Server) sendItem(ctx context.Context, it client.Item, what string, call func(hubAPI) (string, error)) toolResult {
+	var detail string
 	a, err := s.API()
 	if err == nil {
-		err = call(a)
+		detail, err = call(a)
 		if client.IsNotFound(err) {
 			// Unknown session: register it minimally and retry once.
-			if err = a.UpsertSession(ctx, minimalSession(id)); err == nil {
-				err = call(a)
+			if err = a.UpsertSession(ctx, minimalSession(it.SessionID)); err == nil {
+				detail, err = call(a)
 			}
 		}
 	}
 	if err == nil {
-		return text(fmt.Sprintf("sessionhub: %s recorded.", what), false)
+		msg := fmt.Sprintf("sessionhub: %s recorded.", what)
+		if detail != "" {
+			msg += " " + detail
+		}
+		return text(msg, false)
 	}
 	log.Printf("%s: %v", what, err)
 	var se *client.StatusError
@@ -175,11 +194,19 @@ func (s *Server) send(ctx context.Context, id, op string, body []byte, what stri
 		}
 		return text(fmt.Sprintf("sessionhub: the server rejected the %s (%s). Continue with your work.", what, msg), false)
 	}
-	if qerr := s.Queue.Append(client.Item{Op: op, SessionID: id, Body: body, QueuedAt: time.Now().UTC()}); qerr != nil {
+	it.QueuedAt = time.Now().UTC()
+	if qerr := s.Queue.Append(it); qerr != nil {
 		log.Printf("queue: %v", qerr)
 		return text(fmt.Sprintf("sessionhub: the server is unreachable and the %s could not be queued. Continue with your work.", what), false)
 	}
-	return text(fmt.Sprintf("sessionhub: the server is unreachable, so the %s was queued and will be sent later.", what), false)
+	if client.IsNotFound(err) && (it.Op == client.OpTaskLink || it.Op == client.OpTaskState) {
+		return text(fmt.Sprintf("sessionhub: task `%s` is not on the server yet; queued.", it.TaskID), false)
+	}
+	msg := fmt.Sprintf("sessionhub: the server is unreachable, so the %s was queued and will be sent later.", what)
+	if it.Op == client.OpTaskCreate && it.TaskID != "" {
+		msg += " Task id: " + it.TaskID + "."
+	}
+	return text(msg, false)
 }
 
 func setSummary(pane, summary string) error {

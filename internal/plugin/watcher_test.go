@@ -685,6 +685,38 @@ func TestWatcherUpsertsOn404(t *testing.T) {
 	t.Logf("404 cases: 6, failures: %d", fails)
 }
 
+// The three task ops get the same upsert-and-retry on a 404.
+func TestWatcherUpsertsOn404ForTaskOps(t *testing.T) {
+	t0 := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		it   client.Item
+		path string
+	}{
+		{client.Item{Op: client.OpTaskCreate, Body: []byte(`{"id":"t_abcdefghijk","title":"T"}`)}, "/v1/tasks"},
+		{client.Item{Op: client.OpTaskState, TaskID: "t_x", Body: []byte(`{"to":"done_proposed"}`)}, "/v1/tasks/t_x/state"},
+		{client.Item{Op: client.OpTaskLink, TaskID: "t_x", Body: []byte(`{"session_id":"` + uuidA + `"}`)}, "/v1/tasks/t_x/sessions"},
+	} {
+		t.Run(c.it.Op, func(t *testing.T) {
+			e := newTestEnv(t)
+			ctx := context.Background()
+			c.it.ID, c.it.SessionID, c.it.QueuedAt = "i1", uuidA, t0
+			e.append(t, c.it)
+			e.w.pass(ctx, t0)
+			var got []string
+			for _, r := range e.sessionhub.requests() {
+				got = append(got, r.Method+" "+r.Path)
+			}
+			want := []string{"POST " + c.path, "POST /v1/sessions", "POST " + c.path}
+			if strings.Join(got, "|") != strings.Join(want, "|") {
+				t.Errorf("requests %v, want %v", got, want)
+			}
+			if n := len(queueItems(t, e.q)); n != 0 {
+				t.Errorf("%d items left, log:\n%s", n, e.logs)
+			}
+		})
+	}
+}
+
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }

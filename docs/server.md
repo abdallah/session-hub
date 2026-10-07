@@ -170,6 +170,15 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `POST /v1/instructions` | machine, or cookie with `X-Hub-Action: instructions` | `201`, the `Instruction` | Add a rule (`InstructionIn`). `400` invalid, `409` past 2,000 characters. |
 | `DELETE /v1/instructions/{id}` | machine, or cookie with `X-Hub-Action: instructions` | `204`; `404` unknown | Remove a rule. |
 | `POST /v1/messages` | machine, or cookie with `X-Hub-Action: send` | `200`, `MessagesOut` | Send a message to 1 to 20 sessions (`MessagesIn`). `429` past 30 a minute. See [Messages to sessions](#messages-to-sessions). |
+| `GET /v1/tasks?state=open` | read | `200`, `[]Task` | Open tasks (`proposed`, `todo`, `in_progress`, `done_proposed`). `open` is the default and the only value; another value is `400`. |
+| `POST /v1/tasks` | machine, or cookie with `X-Hub-Action: tasks` | `201` new, `200` existing; the `Task` | Create a task (`TaskIn`). See [Tasks](#tasks). |
+| `POST /v1/tasks/{id}/state` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the `Task` | Move a task (`TaskStateIn`: `to`, `note`, `session_id`, `event_id`). `409` for a move the actor may not make. |
+| `POST /v1/tasks/{id}/merge` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the target `Task` | Merge a proposal into another task (`TaskMergeIn`: `into`). `409` unless the source is `proposed`. |
+| `POST /v1/tasks/{id}/sessions` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the `Task` | Link a session (`TaskLinkIn`: `session_id`, `event_id`). |
+| `PATCH /v1/tasks/{id}` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the `Task` | Edit `title`, `ref`, `ref_url`, or `source` (`TaskEditIn`). Always acts as you. |
+| `GET /v1/tasks/day?date=YYYY-MM-DD&tz=Area/City` | read | `200`, `TaskDay` | The **Todo**, **In progress**, and **Done** columns for a day. `date` is required; a missing `tz` means UTC. `400` for a bad date or zone. |
+| `GET /v1/tasks/review` | read | `200`, `TaskReview` | Proposed tasks, done proposals, and sessions with no task. |
+| `POST /v1/tasks/review/ignore` | machine, or cookie with `X-Hub-Action: tasks` | `204` | Hide a session from **Sessions with no task** (`session_id`). |
 | `GET /v1/messages/{id}` | read | `200`, `Message` | One message and its delivery state. |
 | `POST /v1/sessions/{id}/permissions` | machine (the owning one) | `201`, `PermissionRequest` | The permission hook's request (`PermissionIn`). `410` for an ended session. See [Permission requests](#permission-requests). |
 | `GET /v1/permissions/{id}/decision?wait=30` | machine (the owning one) | `200` the request once it is not open; `204` none yet | The permission hook's long poll. |
@@ -940,6 +949,86 @@ until `until`. Both answer `204` and keep one row per session in
 - `{id}` is a full session ID. An unknown session is `404`. A session that is
   not in the inbox is stored anyway.
 - A triage write records no event and leaves `last_seen_at` alone.
+
+### Tasks
+
+A task is a unit of work you would name in a standup. Its state is
+`proposed`, `todo`, `in_progress`, `done_proposed`, `done`, or `dropped`.
+`source` is `ticket`, `email`, `chat`, or `other`. A title is up to 200
+characters, a `ref` up to 200, a `ref_url` an `http` or `https` URL of up to
+2,000 bytes, and a note up to 500. An ID is `t_` and 11 URL-safe base64
+characters; a client can supply one in `TaskIn.id`, and a repeat returns
+the stored task with `200`.
+
+Schema version 13 adds `tasks`, `task_events`, `task_sessions`, and
+`task_session_ignores`. Every state change writes the `tasks` row and one
+`task_events` row in the same transaction. The day view replays those events.
+
+**Who acts.** The server decides the actor from the credentials:
+
+- A dashboard cookie is you (`web:<name>`). Every write needs
+  `X-Hub-Action: tasks`.
+- A machine token with `session_id` in the body is that session, as an agent
+  (`session:<id>`). The session must belong to the calling machine, or the
+  call is `409`.
+- A machine token without `session_id` is you, as `machine:<name>`. The CLI
+  uses this. `merge`, `PATCH`, and `review/ignore` take no actor session, so
+  they always act as you; the `session_id` in a `review/ignore` body is the
+  session to hide.
+
+**Agent rights.** An agent can create a `proposed` task, link a session
+(which starts a `todo` task), and move a `todo` or `in_progress` task to
+`done_proposed`. It cannot do anything else. Linking a `proposed` task
+links the session and leaves the state alone.
+
+**Creating.** An agent's task is always `proposed`. You choose `todo` (the
+default) or `in_progress`. When an open task has the same non-empty `ref`
+(ignoring case), an agent's create links its session to that task and
+returns it with `200`; the same create from you is `409`. If that agent
+create carries an `id`, the server also stores it as a `dropped` task with
+`merged_into` set to the open task, so the ID the agent holds still
+resolves. A non-empty `session_id` is linked for any actor.
+
+**Transitions.** The server refuses any other move with `409`.
+
+| From | To | Who |
+|---|---|---|
+| `proposed` | `todo`, `in_progress`, `dropped` | You |
+| `todo` | `in_progress`, `done`, `dropped` | You |
+| `in_progress` | `todo`, `done`, `dropped` | You |
+| `todo`, `in_progress` | `done_proposed` | An agent |
+| `done_proposed` | `done`, `in_progress`, `dropped` | You |
+| `done`, `dropped` | `todo`, `in_progress` | You |
+| `done` | `dropped` | You |
+| `dropped` | `done` | You |
+
+You cannot move a task merged into another. An agent's state change or
+link on a merged task acts on its merge target instead, one hop only. A
+merge drops the proposal,
+sets `merged_into`, and moves the proposal's session links to the target,
+which can't be `proposed` or `dropped`.
+
+**Day view.** `TaskDay` has the `date`, the `tz`, and three columns. The day
+runs from 00:00 to 24:00 in `tz`; today ends now, and a later day is empty.
+
+| Column | Rule |
+|---|---|
+| `done` | The task has an event to `done` during the day and is `done` at the end of it. |
+| `in_progress` | The task was `in_progress` or `done_proposed` at any moment of the day, and is not in `done`. |
+| `todo` | The task is `todo` at the end of the day. |
+
+A task appears in the first column that matches. `proposed` and `dropped`
+tasks appear in none. Each task carries its linked sessions and the `done`
+items those sessions reported during the day.
+
+**Review.** `TaskReview` lists `proposed` and `done_proposed` tasks, oldest
+first, and the sessions with no task: sessions with a prompt in the last 7
+days and a title, linked to no task and not ignored.
+
+**Offline replay.** Agent calls fail open into the client's offline queue
+(`docs/client.md`). A replay is idempotent: a create repeats a client task
+ID, and a state or link call repeats an event ID, so it changes nothing
+the second time.
 
 ### Telegram alerts
 

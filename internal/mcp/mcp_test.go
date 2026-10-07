@@ -196,7 +196,7 @@ func TestProtocolTranscript(t *testing.T) {
 			t.Errorf("tool %v lacks description or object schema", m["name"])
 		}
 	}
-	if len(names) != 6 || names["report_progress"] == nil || names["set_title"] == nil || names["remember"] == nil ||
+	if len(names) != 10 || names["report_progress"] == nil || names["set_title"] == nil || names["remember"] == nil ||
 		names["forget"] == nil || names["instructions"] == nil || names["send_to_sessions"] == nil {
 		t.Errorf("tools = %v", names)
 	}

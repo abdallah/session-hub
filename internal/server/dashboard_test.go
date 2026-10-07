@@ -234,8 +234,8 @@ func TestDashboardWrites(t *testing.T) {
 		s    string
 		want int
 	}{
-		{"method:", 9},
-		{`method: "POST"`, 8},
+		{"method:", 10},
+		{`method: "POST"`, 9},
 		{`"X-Hub-Action": "start"`, 1},
 		{"// start-state:begin", 1},
 		{"// start-state:end", 1},
@@ -255,9 +255,9 @@ func TestDashboardWrites(t *testing.T) {
 		{`"X-Hub-Action": "remote-control"`, 1},
 		{`"X-Hub-Action": "sign-out"`, 1},
 		{`"/remote-control"`, 1},
-		{"fetch(", 17}, // the list, the inbox, the request, the session poll, the Details read, sign-out, triage,
+		{"fetch(", 19}, // the list, the inbox, the request, the session poll, the Details read, sign-out, triage,
 		// the rules read, a rules write, the send, a decision, the machines read, a move, the move poll,
-		// the New session panel's machines read, a start, and the start poll
+		// the New session panel's machines read, a start, the start poll, a Tasks read, and a Tasks write
 		{"// rc-state:begin", 1},
 		{"// rc-state:end", 1},
 		{"// auth-state:begin", 1},
@@ -1282,9 +1282,119 @@ process.stdout.write(JSON.stringify({
 	for _, want := range []string{`<button id="new" class="textbtn" type="button" aria-expanded="false" aria-controls="startbar" hidden>New session</button>`,
 		`fetch("/v1/starts/" + encodeURIComponent(id)`, "var why = startProblem(startMachine.value, startDir.value, startPrompt.value, startTrust.checked);",
 		`<input id="start-trust" type="checkbox">`,
-		"o.disabled = !c.ok;", "newBtn.hidden = tab === \"inbox\" || tab === \"rules\" || signedOut;", ".startbar[hidden] { display: none; }"} {
+		"o.disabled = !c.ok;", "newBtn.hidden = tab === \"inbox\" || tab === \"tasks\" || tab === \"rules\" || signedOut;", ".startbar[hidden] { display: none; }"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q", want)
+		}
+	}
+}
+
+// TestDashboardTasks checks the Tasks tab's markup and writes, and runs
+// the page's tasks-state block under node.
+func TestDashboardTasks(t *testing.T) {
+	page := string(dashboardHTML)
+	for _, c := range []struct {
+		s    string
+		want int
+	}{
+		{`<button id="tab-tasks" class="tab"`, 1},
+		{`<main id="tasks" hidden>`, 1},
+		{`"X-Hub-Action": "tasks"`, 1},
+		{"function renderTasks()", 1},
+		{`if (hash === "#tasks") return "tasks";`, 1},
+		{"// tasks-state:begin", 1},
+		{"// tasks-state:end", 1},
+		{"Intl.DateTimeFormat().resolvedOptions().timeZone", 1},
+	} {
+		if got := strings.Count(page, c.s); got != c.want {
+			t.Errorf("page has %q %d times, want %d", c.s, got, c.want)
+		}
+	}
+	// The tab sits between Inbox and Sessions.
+	in, tk, se := strings.Index(page, `id="tab-inbox"`), strings.Index(page, `id="tab-tasks"`), strings.Index(page, `id="tab-sessions"`)
+	if !(in < tk && tk < se) {
+		t.Errorf("tab order: inbox %d, tasks %d, sessions %d", in, tk, se)
+	}
+	for _, want := range []string{
+		`if (name === "tasks") loadTasks();`, "tasksRoot.hidden = name !== \"tasks\";",
+		`tabTasks.textContent = n ? "Tasks (" + n + ")" : "Tasks";`,
+		"saveMap(TASKS_DATE_KEY, dateMap(taskDate))", "taskDate = rememberedDate(loadMap(TASKS_DATE_KEY), localDate(Date.now()))",
+		"var readOnly = taskDate !== localDate(Date.now());", "column.key", // placement from the column
+		"@media (max-width: 699px)",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+
+	script := `
+var open = [
+  { id: "t_a", state: "proposed" }, { id: "t_b", state: "todo" }, { id: "t_c", state: "in_progress" },
+  { id: "t_d", state: "done_proposed" }, { id: "t_e", state: "dropped" }, { id: "t_f", state: "done" }
+];
+process.stdout.write(JSON.stringify({
+  local: localDate(Date.parse("2026-10-07T23:30:00Z")),
+  shift: [shiftDate("2026-10-07", -1), shiftDate("2026-03-01", -1), shiftDate("2026-12-31", 1), shiftDate("2024-02-28", 1)],
+  valid: [validDate("2026-10-07"), validDate("2026-02-30"), validDate("2026-1-07"), validDate(""), validDate(null)],
+  remembered: [rememberedDate({ "2026-10-05": true }, "2026-10-07"), rememberedDate({ "2026-10-09": true }, "2026-10-07"),
+    rememberedDate({}, "2026-10-07"), rememberedDate({ "bogus": true }, "2026-10-07")],
+  dateMap: dateMap("2026-10-05"),
+  dayURL: taskDayURL("2026-10-07", "Asia/Amman"),
+  count: [reviewCount({ proposed: [1, 2], done_proposed: [3], untasked: [4, 5, 6] }), reviewCount(null), reviewCount({})],
+  moves: ["todo", "in_progress", "done_proposed", "done", "dropped", "proposed", "odd"].map(taskMoves),
+  targets: mergeTargets(open, "t_a").map(function (t) { return t.id; }),
+  links: [taskLink("https://yt.example/issue/X-1"), taskLink("http://x.example/a"), taskLink("javascript:alert(1)"),
+    taskLink("https://a b"), taskLink(""), taskLink(null)],
+  post: taskPost("/v1/tasks/t_b/state", { to: "done" }),
+  add: [addTaskBody("  Fix it ", " X-1 ", " https://yt.example/X-1 ", "ticket", true), addTaskBody("Plain", "", "", "", false)],
+  addProblems: [addTaskProblem("", ""), addTaskProblem("  ", ""), addTaskProblem("ok", "ftp://x"), addTaskProblem("ok", ""),
+    addTaskProblem("ok", "https://ok.example")],
+  make: makeTaskBody({ id: "s1", title: "Rotate the CI token", machine: "tower" }),
+  columns: taskColumns({ todo: [{ id: "a" }], in_progress: null }).map(function (c) { return [c.key, c.label, c.tasks.length]; }),
+  sess: [sessionLine({ title: "T", machine: "tower" }), sessionLine({ title: "", machine: "tower" }), sessionLine({ title: "T" })],
+  evidence: [evidenceCount([{ done: ["a", "b"] }, { done: null }, { done: ["c"] }]), evidenceCount(null)]
+}));`
+	out := runBlocks(t, []string{"tasks-state"}, script, nil)
+	var got map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("node output %s: %v", out, err)
+	}
+	want := map[string]any{
+		"local":      "2026-10-07",
+		"shift":      []any{"2026-10-06", "2026-02-28", "2027-01-01", "2024-02-29"},
+		"valid":      []any{true, false, false, false, false},
+		"remembered": []any{"2026-10-05", "2026-10-07", "2026-10-07", "2026-10-07"},
+		"dateMap":    map[string]any{"2026-10-05": true},
+		"dayURL":     "/v1/tasks/day?date=2026-10-07&tz=Asia%2FAmman",
+		"count":      []any{3.0, 0.0, 0.0},
+		"moves": []any{
+			[]any{map[string]any{"label": "Start", "to": "in_progress"}, map[string]any{"label": "Done", "to": "done"}, map[string]any{"label": "Drop", "to": "dropped"}},
+			[]any{map[string]any{"label": "Back to todo", "to": "todo"}, map[string]any{"label": "Done", "to": "done"}, map[string]any{"label": "Drop", "to": "dropped"}},
+			[]any{map[string]any{"label": "Confirm done", "to": "done"}, map[string]any{"label": "Not done", "to": "in_progress"}, map[string]any{"label": "Drop", "to": "dropped"}},
+			[]any{map[string]any{"label": "Reopen", "to": "todo"}, map[string]any{"label": "Reopen and start", "to": "in_progress"}, map[string]any{"label": "Drop", "to": "dropped"}},
+			[]any{map[string]any{"label": "Reopen", "to": "todo"}, map[string]any{"label": "Reopen and start", "to": "in_progress"}},
+			[]any{},
+			[]any{},
+		},
+		"targets": []any{"t_b", "t_c", "t_d", "t_f"},
+		"links":   []any{"https://yt.example/issue/X-1", "http://x.example/a", nil, nil, nil, nil},
+		"post": map[string]any{"url": "/v1/tasks/t_b/state", "init": map[string]any{
+			"method":  "POST",
+			"headers": map[string]any{"Content-Type": "application/json", "X-Hub-Action": "tasks"},
+			"body":    `{"to":"done"}`, "cache": "no-store"}},
+		"add": []any{
+			map[string]any{"title": "Fix it", "ref": "X-1", "ref_url": "https://yt.example/X-1", "source": "ticket", "state": "in_progress"},
+			map[string]any{"title": "Plain", "ref": "", "ref_url": "", "source": "other", "state": "todo"},
+		},
+		"addProblems": []any{"Enter a title.", "Enter a title.", "The URL must be an http or https link.", "", ""},
+		"make":        map[string]any{"title": "Rotate the CI token", "session_id": "s1"},
+		"columns":     []any{[]any{"todo", "Todo", 1.0}, []any{"in_progress", "In progress", 0.0}, []any{"done", "Done", 0.0}},
+		"sess":        []any{"T · tower", "(untitled) · tower", "T"},
+		"evidence":    []any{3.0, 0.0},
+	}
+	for k, w := range want {
+		if !reflect.DeepEqual(got[k], w) {
+			t.Errorf("%s = %#v, want %#v", k, got[k], w)
 		}
 	}
 }

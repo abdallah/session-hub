@@ -18,6 +18,12 @@ const (
 	OpTitle  = "title"
 	// OpDigest: Body is api.DigestIn; needs Item.SessionID.
 	OpDigest = "digest"
+	// OpTaskCreate: Body is api.TaskIn; needs Item.SessionID.
+	OpTaskCreate = "task_create"
+	// OpTaskState: Body is api.TaskStateIn; needs Item.SessionID and Item.TaskID.
+	OpTaskState = "task_state"
+	// OpTaskLink: Body is api.TaskLinkIn; needs Item.SessionID and Item.TaskID.
+	OpTaskLink = "task_link"
 )
 
 // permanentError marks an item that can never be sent (bad body, unknown op).
@@ -39,6 +45,12 @@ func Replay(ctx context.Context, c *Client, it Item) error {
 	needID := func() error {
 		if it.SessionID == "" {
 			return &permanentError{fmt.Errorf("queue item %s (%s): no session_id", it.ID, it.Op)}
+		}
+		return nil
+	}
+	needTask := func() error {
+		if it.TaskID == "" {
+			return &permanentError{fmt.Errorf("queue item %s (%s): no task_id", it.ID, it.Op)}
 		}
 		return nil
 	}
@@ -91,6 +103,45 @@ func Replay(ctx context.Context, c *Client, it Item) error {
 			return err
 		}
 		return c.PutDigest(ctx, it.SessionID, v)
+	case OpTaskCreate:
+		var v api.TaskIn
+		if err := needID(); err != nil {
+			return err
+		}
+		if err := decode(&v); err != nil {
+			return err
+		}
+		v.SessionID = it.SessionID
+		_, err := c.CreateTask(ctx, v)
+		return err
+	case OpTaskState:
+		var v api.TaskStateIn
+		if err := needID(); err != nil {
+			return err
+		}
+		if err := needTask(); err != nil {
+			return err
+		}
+		if err := decode(&v); err != nil {
+			return err
+		}
+		v.SessionID = it.SessionID
+		_, err := c.SetTaskState(ctx, it.TaskID, v)
+		return err
+	case OpTaskLink:
+		var v api.TaskLinkIn
+		if err := needID(); err != nil {
+			return err
+		}
+		if err := needTask(); err != nil {
+			return err
+		}
+		if err := decode(&v); err != nil {
+			return err
+		}
+		v.SessionID = it.SessionID
+		_, err := c.LinkTask(ctx, it.TaskID, v)
+		return err
 	case OpBlockedOnClear:
 		if err := needID(); err != nil {
 			return err

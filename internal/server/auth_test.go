@@ -180,6 +180,24 @@ func TestAuthMatrix(t *testing.T) {
 		}
 		return "/v1/messages/" + res[0].ID + "/result"
 	}
+	// Tasks. Each request gets a fresh task in the state it needs, so a
+	// rejected request that wrote shows up in the snapshot.
+	taskN := 0
+	towerYou := store.Actor{Name: "machine:tower"}
+	newTask := func(agent bool) string {
+		taskN++
+		id := fmt.Sprintf("t_matrix%05d", taskN)
+		a := towerYou
+		if agent {
+			a = store.Actor{Name: "machine:tower", Agent: true, MachineID: e.machine(e.tokA).ID}
+		}
+		if _, _, err := e.st.CreateTask(ctx, api.TaskIn{ID: id, Title: "matrix task"}, a); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	mergeInto := newTask(false)
+	editTitle := "edited"
 	usagePct, usageCost := 37, 0.42
 
 	cases := map[string]authCase{
@@ -191,10 +209,30 @@ func TestAuthMatrix(t *testing.T) {
 		"POST /v1/messages/{id}/result":       {fresh: freshResult, body: api.MessageResultIn{State: api.MessageDelivered}, ok: 200, okB: 409},
 		"GET /v1/inbox":                       {path: "/v1/inbox", ok: 200},
 		"GET /v1/instructions":                {path: "/v1/instructions", ok: 200},
-		"POST /v1/instructions":               {path: "/v1/instructions", body: api.InstructionIn{Text: "Use British spelling."}, ok: 201},
-		"DELETE /v1/instructions/{id}":        {fresh: freshRule, ok: 204},
-		"POST /v1/messages":                   {path: "/v1/messages", body: api.MessagesIn{SessionIDs: []string{sid1}, Text: "hello"}, ok: 200},
-		"GET /v1/messages/{id}":               {path: "/v1/messages/" + sent[0].ID, ok: 200},
+		"GET /v1/tasks":                       {path: "/v1/tasks", ok: 200},
+		"GET /v1/tasks/day":                   {path: "/v1/tasks/day?date=2026-10-03&tz=Asia/Amman", ok: 200},
+		"GET /v1/tasks/review":                {path: "/v1/tasks/review", ok: 200},
+		"POST /v1/tasks":                      {path: "/v1/tasks", body: api.TaskIn{Title: "matrix create", SessionID: sid1}, ok: 201, okB: 409},
+		"POST /v1/tasks/review/ignore":        {path: "/v1/tasks/review/ignore", body: api.TaskLinkIn{SessionID: sid1}, ok: 204},
+		"POST /v1/tasks/{id}/state": {fresh: func() string { return "/v1/tasks/" + newTask(false) + "/state" },
+			body: api.TaskStateIn{To: api.TaskInProgress}, ok: 200},
+		"POST /v1/tasks/{id}/merge": {fresh: func() string {
+			taskN++
+			id := fmt.Sprintf("t_matrix%05d", taskN)
+			a := store.Actor{Name: "machine:tower", Agent: true, MachineID: e.machine(e.tokA).ID}
+			if _, _, err := e.st.CreateTask(ctx, api.TaskIn{ID: id, Title: "matrix proposal"}, a); err != nil {
+				t.Fatal(err)
+			}
+			return "/v1/tasks/" + id + "/merge"
+		}, body: api.TaskMergeIn{Into: mergeInto}, ok: 200},
+		"POST /v1/tasks/{id}/sessions": {fresh: func() string { return "/v1/tasks/" + newTask(false) + "/sessions" },
+			body: api.TaskLinkIn{SessionID: sid1}, ok: 200, okB: 409},
+		"PATCH /v1/tasks/{id}": {fresh: func() string { return "/v1/tasks/" + newTask(false) },
+			body: api.TaskEditIn{Title: &editTitle}, ok: 200},
+		"POST /v1/instructions":        {path: "/v1/instructions", body: api.InstructionIn{Text: "Use British spelling."}, ok: 201},
+		"DELETE /v1/instructions/{id}": {fresh: freshRule, ok: 204},
+		"POST /v1/messages":            {path: "/v1/messages", body: api.MessagesIn{SessionIDs: []string{sid1}, Text: "hello"}, ok: 200},
+		"GET /v1/messages/{id}":        {path: "/v1/messages/" + sent[0].ID, ok: 200},
 		"POST /v1/sessions/{id}/permissions": {path: "/v1/sessions/" + sid1 + "/permissions",
 			body: api.PermissionIn{ToolName: "Bash"}, ok: 201, okB: 409},
 		"GET /v1/permissions/{id}/decision": {path: "/v1/permissions/" + waitOn.ID + "/decision?wait=1", ok: 204, okB: 409},
@@ -292,6 +330,7 @@ func TestAuthMatrix(t *testing.T) {
 		{"cookie+approve", "", newSession, api.HeaderActionApprove},
 		{"cookie+move", "", newSession, api.HeaderActionMove},
 		{"cookie+start", "", newSession, api.HeaderActionStart},
+		{"cookie+tasks", "", newSession, api.HeaderActionTasks},
 		{"cookie+wrong action", "", newSession, "title"},
 		{"badcookie", "", "hub_s_wrong", ""},
 	}
@@ -305,6 +344,7 @@ func TestAuthMatrix(t *testing.T) {
 		accessApprove:      api.HeaderActionApprove,
 		accessMove:         api.HeaderActionMove,
 		accessStart:        api.HeaderActionStart,
+		accessTasks:        api.HeaderActionTasks,
 	}
 	expect := func(rt route, c authCase, tk string) []int {
 		switch {
