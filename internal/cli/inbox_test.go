@@ -276,3 +276,70 @@ func TestFailedJumper(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// The Claude Code mod's inbox pane reads `sessionhub inbox --json`
+// (internal/claudemod/mod/hooks/pane.jsx, parseInbox). This pins every field
+// it reads, by the JSON name it reads it under.
+func TestInboxJSONIsTheModContract(t *testing.T) {
+	in := inboxFixture()
+	in.Items[0].Session.BlockedOn = "Question: Which token?"
+	in.Items[0].Permission = &api.PermissionRequest{ID: "pr_AAAAAAAAAAAAAAAAAAAAAA", ToolName: "Bash",
+		ToolInput: json.RawMessage(`{"command":"make test"}`), Truncated: true}
+	out, err := runInbox(t, &fakeInbox{inbox: in}, 80, now, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Items []struct {
+			Group     *string  `json:"group"`
+			Since     *string  `json:"since"`
+			WaitingOn []string `json:"waiting_on"`
+			Session   *struct {
+				ID        *string `json:"id"`
+				Title     *string `json:"title"`
+				Machine   *string `json:"machine"`
+				BlockedOn *string `json:"blocked_on"`
+			} `json:"session"`
+			Permission *struct {
+				ID        *string         `json:"id"`
+				ToolName  *string         `json:"tool_name"`
+				ToolInput json.RawMessage `json:"tool_input"`
+				Truncated *bool           `json:"truncated"`
+			} `json:"permission"`
+		} `json:"items"`
+		Counts *struct {
+			Blocked  *int `json:"blocked"`
+			Waiting  *int `json:"waiting"`
+			Finished *int `json:"finished"`
+		} `json:"counts"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	// encoding/json matches names without regard to case; the mod does not.
+	for _, k := range []string{"items", "group", "since", "waiting_on", "session", "id", "title", "machine",
+		"blocked_on", "permission", "tool_name", "tool_input", "truncated", "counts", "blocked", "waiting", "finished"} {
+		if !strings.Contains(out, `"`+k+`":`) {
+			t.Errorf("--json has no %q key: %s", k, out)
+		}
+	}
+	if len(got.Items) != 4 || got.Counts == nil || got.Counts.Blocked == nil || got.Counts.Waiting == nil || got.Counts.Finished == nil {
+		t.Fatalf("items or counts missing: %s", out)
+	}
+	b := got.Items[0]
+	if b.Group == nil || *b.Group != "blocked" || b.Since == nil || b.Session == nil || b.Session.ID == nil ||
+		b.Session.Title == nil || b.Session.Machine == nil || b.Session.BlockedOn == nil || *b.Session.BlockedOn != "Question: Which token?" {
+		t.Errorf("blocked item: %s", out)
+	}
+	p := b.Permission
+	if p == nil || p.ID == nil || *p.ID != "pr_AAAAAAAAAAAAAAAAAAAAAA" || p.ToolName == nil || *p.ToolName != "Bash" ||
+		string(p.ToolInput) != `{"command":"make test"}` || p.Truncated == nil || !*p.Truncated {
+		t.Errorf("permission: %s", out)
+	}
+	if w := got.Items[1].WaitingOn; len(w) != 2 || w[0] != "review MR !12" {
+		t.Errorf("waiting_on: %v", w)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, *b.Since); err != nil {
+		t.Errorf("since %q does not parse as RFC 3339: %v", *b.Since, err)
+	}
+}
