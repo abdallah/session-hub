@@ -98,7 +98,7 @@ A merge moves spans to the target task, as it moves links.
 |---|---|---|---|
 | `POST /v1/notes` | machine | `NoteIn{id, text, session_id?}`; `id` is `te_` plus 22 base64url characters; `text` 1 to 500 runes | `200`, `NoteResult` |
 
-`400` for bad input, `403` for another machine's session, `404` for an
+`400` for bad input, `409` for another machine's session (as `propose_task`), `404` for an
 unknown session.
 
 `server.toml`:
