@@ -10,10 +10,12 @@ is doing from the sessionhub dashboard or the herdr sidebar without opening it.
   `note`.
 - Call `set_title` once the session has a clear purpose, and again if the
   purpose changes. Use a few words, for example "fix CI token rotation".
-- When a session has a clear human-level goal (a ticket, an email or chat
-  request, a bug you were asked to fix), call `list_tasks`, then `link_task`
-  if it is already there or `propose_task` if not. When that goal is
-  finished, call `propose_done`. Do not create tasks for steps inside a goal.
+- Record human-level work (a ticket, an email or chat request, a bug you
+  were asked to fix) with `sessionhub note "<text>"`: one note when you start, with the
+  ticket ref if there is one (`systemsdev-12345`, `MR !1234`), and one
+  starting with `done:` when you finish. sessionhub turns notes into tasks.
+  Use `propose_task` and `propose_done` only when you cannot run shell
+  commands. No notes for steps inside a piece of work.
 
 If a sessionhub tool reports that the server is unreachable, carry on with your work.
 The report is queued and sent later.

@@ -150,9 +150,9 @@ func TestTaskToolsListed(t *testing.T) {
 	}
 	want := map[string]string{
 		"list_tasks":   "List the open human-level tasks (proposed, todo, in progress, awaiting done). Call it before propose_task so you link to an existing task instead of creating a duplicate.",
-		"propose_task": "Propose a human-level task for this session's goal: a ticket, an email or chat request, a bug you were asked to fix. Write the title the way a person would name it in a standup, not an implementation step. The user accepts or rejects it.",
+		"propose_task": "Propose a human-level task for this session's goal: a ticket, an email or chat request, a bug you were asked to fix. Write the title the way a person would name it in a standup, not an implementation step. The user accepts or rejects it. Prefer sessionhub note: use this only when you cannot run shell commands.",
 		"link_task":    "Link this session to an existing task from list_tasks. A todo task moves to in progress.",
-		"propose_done": "Tell the user this task's goal is finished. The user confirms it. Do not call it for steps inside a task.",
+		"propose_done": "Tell the user this task's goal is finished. The user confirms it. Do not call it for steps inside a task. Prefer sessionhub note: use this only when you cannot run shell commands.",
 	}
 	for name, d := range want {
 		if desc[name] != d {
@@ -165,7 +165,7 @@ func TestInitializeInstructionsMentionTasks(t *testing.T) {
 	s, _, _ := newTestServer(t, "http://127.0.0.1:1", 1)
 	got := transcript(t, s, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
 	ins, _ := decode(t, got[0])["result"].(map[string]any)["instructions"].(string)
-	if !strings.Contains(ins, "list_tasks") || !strings.Contains(ins, "propose_done") {
+	if !strings.Contains(ins, "sessionhub note") || !strings.Contains(ins, "done:") || !strings.Contains(ins, "propose_task") {
 		t.Errorf("instructions = %q", ins)
 	}
 }

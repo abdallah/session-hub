@@ -20,8 +20,9 @@ const Version = "dev"
 // instructions is the MCP initialize instructions string. Keep it in step
 // with docs/CLAUDE-snippet.md.
 const instructions = "Call report_progress when you finish a task, start a long one, or are blocked. Call set_title once the session has a clear purpose. " +
-	"For a human-level goal (ticket, email or chat request, assigned bug), call list_tasks, then link_task or propose_task. " +
-	"When the goal is finished, call propose_done. No tasks for steps inside a goal."
+	"Record human-level work with sessionhub note (or worklog note, which calls it): one note when you start a piece of work, with its ticket ref (systemsdev-12345, MR !1234) if it has one, " +
+	"and one starting with done: when you finish it. sessionhub turns notes into tasks. " +
+	"Use list_tasks, link_task, propose_task, and propose_done only when you cannot run shell commands. No notes for steps inside a piece of work."
 
 // Protocol versions this server speaks. The first is the default.
 var supportedVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
@@ -262,7 +263,7 @@ var toolDefs = []map[string]any{
 	},
 	{
 		"name":        "propose_task",
-		"description": "Propose a human-level task for this session's goal: a ticket, an email or chat request, a bug you were asked to fix. Write the title the way a person would name it in a standup, not an implementation step. The user accepts or rejects it.",
+		"description": "Propose a human-level task for this session's goal: a ticket, an email or chat request, a bug you were asked to fix. Write the title the way a person would name it in a standup, not an implementation step. The user accepts or rejects it. Prefer sessionhub note: use this only when you cannot run shell commands.",
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -287,7 +288,7 @@ var toolDefs = []map[string]any{
 	},
 	{
 		"name":        "propose_done",
-		"description": "Tell the user this task's goal is finished. The user confirms it. Do not call it for steps inside a task.",
+		"description": "Tell the user this task's goal is finished. The user confirms it. Do not call it for steps inside a task. Prefer sessionhub note: use this only when you cannot run shell commands.",
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
