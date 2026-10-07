@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -28,7 +29,7 @@ type taskAPI interface {
 
 const taskUsage = `usage:
   sessionhub task add "title" [--ref X] [--url U] [--source S] [--now]
-  sessionhub task ls [--date YYYY-MM-DD]
+  sessionhub task ls [--date YYYY-MM-DD] [--json]
   sessionhub task review
   sessionhub task accept|reject|done|drop|start|reopen <id> [--note T]
   sessionhub task merge <id> --into <id>`
@@ -148,6 +149,7 @@ func localZone() string {
 func (e *env) taskLs(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("sessionhub task ls", flag.ContinueOnError)
 	date := fs.String("date", "", "day to show, YYYY-MM-DD (default today)")
+	asJSON := fs.Bool("json", false, "print the day view as JSON")
 	pos, err := parseInterspersed(fs, args)
 	if err != nil || len(pos) > 0 {
 		return fmt.Errorf("task ls: unexpected arguments\n%s", taskUsage)
@@ -161,6 +163,11 @@ func (e *env) taskLs(ctx context.Context, args []string) error {
 	d, err := e.tasks.TaskDay(ctx, *date, tz)
 	if err != nil {
 		return fmt.Errorf("task ls: %w", err)
+	}
+	if *asJSON {
+		enc := json.NewEncoder(e.out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(d)
 	}
 	// Past days list tasks that may be in neither the open list nor today's
 	// view, so the verbs only find them by full id.

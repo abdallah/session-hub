@@ -24,6 +24,8 @@ const (
 	OpTaskState = "task_state"
 	// OpTaskLink: Body is api.TaskLinkIn; needs Item.SessionID and Item.TaskID.
 	OpTaskLink = "task_link"
+	// OpNote: Body is api.NoteIn; Item.SessionID is optional.
+	OpNote = "note"
 )
 
 // permanentError marks an item that can never be sent (bad body, unknown op).
@@ -103,6 +105,13 @@ func Replay(ctx context.Context, c *Client, it Item) error {
 			return err
 		}
 		return c.PutDigest(ctx, it.SessionID, v)
+	case OpNote:
+		var v api.NoteIn
+		if err := decode(&v); err != nil {
+			return err
+		}
+		_, err := c.AddNote(ctx, v)
+		return err
 	case OpTaskCreate:
 		var v api.TaskIn
 		if err := needID(); err != nil {

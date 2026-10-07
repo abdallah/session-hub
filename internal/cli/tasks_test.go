@@ -3,7 +3,9 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -258,5 +260,19 @@ func TestTaskLsPastDayShowsFullIDs(t *testing.T) {
 	}
 	if !strings.Contains(out, "  t_aaaaaaaa111  old") {
 		t.Errorf("out = %q", out)
+	}
+}
+
+func TestTaskLsJSON(t *testing.T) {
+	f := taskFixture()
+	f.day = api.TaskDay{Date: "2026-09-30", TZ: "UTC", Todo: []api.Task{}, Done: []api.Task{},
+		InProgress: []api.Task{{ID: "t_dddddddd4444", Title: "working", State: api.TaskInProgress, ActiveSeconds: 90}}}
+	out, err := runTask(t, f, "ls", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got api.TaskDay
+	if err := json.Unmarshal([]byte(out), &got); err != nil || !reflect.DeepEqual(got, f.day) {
+		t.Errorf("json %q: %+v %v", out, got, err)
 	}
 }

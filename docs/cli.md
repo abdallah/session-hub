@@ -23,7 +23,8 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub rules add "<text>"` | Add a rule, 1 to 300 characters on one line. The list holds at most 2,000 characters. |
 | `sessionhub rules rm <id>` | Remove rule `<id>`. |
 | `sessionhub task add "<title>" [--ref X] [--url U] [--source S] [--now]` | Add a task. It starts as `todo`, or `in_progress` with `--now`. `--source` is `ticket`, `email`, `chat`, or `other` (default `other`). See below. |
-| `sessionhub task ls [--date YYYY-MM-DD]` | The three columns, **Todo**, **In progress**, and **Done**, for a day (default today) in the local time zone. |
+| `sessionhub task ls [--date YYYY-MM-DD] [--json]` | The three columns, **Todo**, **In progress**, and **Done**, for a day (default today) in the local time zone. `--json` prints the day view as is, with `active_seconds` per task and session. |
+| `sessionhub note <text>` | Send a worklog note. The session is `CLAUDE_CODE_SESSION_ID` when set. sessionhub routes it to a task: a ticket ref (`systemsdev-NNNNN`, `!NNNN`) picks that task, else the session's current task, else a new one; `done:`, `finished`, `closed`, or `close ` at the start marks it done. Prints `noted → <ref> <title> (<action>)`. If the server can't be reached, the note is queued and sent later (`queued: <text>`). `worklog note` calls it. |
 | `sessionhub task review` | The review queue: **Proposed**, **Awaiting done**, and **Sessions with no task**. |
 | `sessionhub task accept\|reject\|done\|drop\|start\|reopen <id> [--note T]` | Change a task's state. See below. |
 | `sessionhub task merge <id> --into <id>` | Merge a task into another; the first is dropped. |

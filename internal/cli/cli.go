@@ -27,11 +27,15 @@ type hubAPI interface {
 
 // env is everything a command needs; tests build their own.
 type env struct {
-	cfg     client.Config
-	api     hubAPI
-	login   loginAPI
-	inbox   inboxAPI
-	tasks   taskAPI
+	cfg   client.Config
+	api   hubAPI
+	login loginAPI
+	inbox inboxAPI
+	tasks taskAPI
+	notes noteAPI
+	queue noteQueue
+	// getenv reads the environment; sessionhub note takes the session from it.
+	getenv  func(string) string
 	actions actionsAPI
 	moves   moveAPI
 	starts  startAPI
@@ -67,7 +71,7 @@ func defaultEnv() (*env, error) {
 		return nil, err
 	}
 	c.SetTimeout(client.InteractiveTimeout)
-	return &env{cfg: cfg, api: c, login: c, inbox: c, tasks: c, actions: c, moves: c, starts: c, getwd: os.Getwd, pause: time.Sleep, width: termWidth, out: os.Stdout, now: time.Now,
+	return &env{cfg: cfg, api: c, login: c, inbox: c, tasks: c, notes: c, queue: client.DefaultQueue(), getenv: os.Getenv, actions: c, moves: c, starts: c, getwd: os.Getwd, pause: time.Sleep, width: termWidth, out: os.Stdout, now: time.Now,
 		isTerminal:    func() bool { return isTerminal(os.Stdin.Fd()) && isTerminal(os.Stdout.Fd()) },
 		in:            os.Stdin,
 		stdinTerminal: func() bool { return isTerminal(os.Stdin.Fd()) }}, nil

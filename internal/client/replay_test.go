@@ -31,6 +31,8 @@ func TestReplayEachOp(t *testing.T) {
 			"POST", "/v1/sessions/s1/title", `{"title":"T"}`},
 		{"digest", Item{Op: OpDigest, SessionID: "sess-1", Body: []byte(`{"as_of":"2026-09-30T10:00:00Z","tokens":{"input":1,"output":2,"cache_read":3,"cache_write":4}}`)},
 			"PUT", "/v1/sessions/sess-1/digest", `{"as_of":"2026-09-30T10:00:00Z","tokens":{"input":1,"output":2,"cache_read":3,"cache_write":4},"bad_lines":0}`},
+		{"note", Item{Op: OpNote, Body: []byte(`{"id":"te_AAAAAAAAAAA","text":"start x","session_id":"s1"}`)},
+			"POST", "/v1/notes", `{"id":"te_AAAAAAAAAAA","text":"start x","session_id":"s1"}`},
 		// A clear ignores any body: a queued item can never set a question.
 		{"blocked_on_clear", Item{Op: OpBlockedOnClear, SessionID: "s1", Body: []byte(`{"text":"Question: ok?"}`)},
 			"POST", "/v1/sessions/s1/blocked-on", `{"text":""}`},
