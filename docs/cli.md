@@ -434,9 +434,8 @@ is left out in two cases, where the pane says why instead:
   [`sessionhub approve` and `sessionhub deny`](#sessionhub-approve-and-sessionhub-deny)),
   so the pane says to allow it in the terminal.
 
-**Dismiss** dismisses what the inbox shows for that session when you press
-it: if the item changed since the pane last read the inbox, the newer item
-is the one dismissed.
+**Dismiss** passes the item's time with `--since`: if the session has a
+newer event than the pane shows, nothing is dismissed and the toast says so.
 
 While the pane is open, it runs `sessionhub inbox --json` every 15 seconds,
 30 seconds after a failed read, and right after each action or a press of
