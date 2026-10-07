@@ -108,6 +108,8 @@ func TestLoadConfigErrors(t *testing.T) {
 		{"public_url slash only", "", map[string]string{"SESSIONHUB_PUBLIC_URL": "/"}, "SESSIONHUB_PUBLIC_URL"},
 		{"public_url without host", `public_url = "https://"`, nil, "public_url"},
 		{"empty SESSIONHUB_LISTEN list", "", map[string]string{"SESSIONHUB_LISTEN": " , "}, "SESSIONHUB_LISTEN"},
+		{"task_ticket_url not http", `task_ticket_url = "ftp://yt/{ref}"`, nil, "task_ticket_url"},
+		{"task_mr_url without host", `task_mr_url = "https:///mr/{n}"`, nil, "task_mr_url"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -184,5 +186,13 @@ func TestConfigHidesTelegramToken(t *testing.T) {
 	}
 	if (Config{TelegramChatID: "42"}).AlertsEnabled() || (Config{TelegramBotToken: "x"}).AlertsEnabled() {
 		t.Error("alerts on with one setting missing")
+	}
+}
+
+func TestLoadConfigTaskURLs(t *testing.T) {
+	configEnv(t, "task_ticket_url = \"https://yt/issue/{ref}\"\ntask_mr_url = \"https://gl/mr/{n}\"\n")
+	cfg, err := LoadConfig()
+	if err != nil || cfg.TaskTicketURL != "https://yt/issue/{ref}" || cfg.TaskMRURL != "https://gl/mr/{n}" {
+		t.Errorf("%+v %v", cfg, err)
 	}
 }

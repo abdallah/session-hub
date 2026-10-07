@@ -33,6 +33,10 @@ type Config struct {
 	// (a wrong type). It never stops the server: alerts stay off and Run logs
 	// it once. An env override that fixes the setting clears it.
 	TelegramProblem string
+	// TaskTicketURL and TaskMRURL link a note's ref: {ref} is the ticket
+	// ref, {n} the merge request number. Empty means no link.
+	TaskTicketURL string
+	TaskMRURL     string
 	// Warnings are problems that do not stop the server: unknown
 	// telegram_* keys in server.toml, such as a misspelled name. Run logs
 	// each once at startup.
@@ -65,6 +69,8 @@ type fileConfig struct {
 	// Accepted now so a file that sets them loads; the notifier uses them.
 	TelegramBotToken telegramString `toml:"telegram_bot_token"`
 	TelegramChatID   telegramString `toml:"telegram_chat_id"`
+	TaskTicketURL    string         `toml:"task_ticket_url"`
+	TaskMRURL        string         `toml:"task_mr_url"`
 }
 
 // telegramString reads a Telegram setting written as a string ("-1001") or an
@@ -129,6 +135,15 @@ func LoadConfig() (Config, error) {
 		cfg.PublicURL = fc.PublicURL
 	}
 	cfg.LegacyReadToken = fc.ReadToken != ""
+	cfg.TaskTicketURL, cfg.TaskMRURL = strings.TrimSpace(fc.TaskTicketURL), strings.TrimSpace(fc.TaskMRURL)
+	for _, k := range []struct{ name, v string }{{"task_ticket_url", cfg.TaskTicketURL}, {"task_mr_url", cfg.TaskMRURL}} {
+		if k.v == "" {
+			continue
+		}
+		if u, err := url.Parse(k.v); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return cfg, fmt.Errorf("%s: %s %q must be an absolute http or https URL with a host", path, k.name, k.v)
+		}
+	}
 	cfg.TelegramBotToken = Secret(strings.TrimSpace(fc.TelegramBotToken.val))
 	cfg.TelegramChatID = strings.TrimSpace(fc.TelegramChatID.val)
 	tokenProblem, chatProblem := fc.TelegramBotToken.problem, fc.TelegramChatID.problem

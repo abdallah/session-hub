@@ -150,6 +150,19 @@ func TestNoteOtherMachine(t *testing.T) {
 	}
 }
 
+// A retry from another machine is refused, not answered from the first note.
+func TestNoteRetryOtherMachine(t *testing.T) {
+	e := newControlEnv(t)
+	id := nextNoteID()
+	if _, err := e.addNote("s1", "design Z", id); err != nil {
+		t.Fatal(err)
+	}
+	_, err := e.s.AddNote(context.Background(), api.NoteIn{ID: id, Text: "design Z", SessionID: "s1"}, tAgent("s1", e.bluebox), testRefURLs)
+	if !errors.Is(err, ErrWrongMachine) {
+		t.Errorf("%v, want ErrWrongMachine", err)
+	}
+}
+
 func TestNoteValidation(t *testing.T) {
 	e := newControlEnv(t)
 	for _, c := range []struct{ text, id string }{

@@ -46,6 +46,13 @@ func (c *Client) CreateTask(ctx context.Context, in api.TaskIn) (api.Task, error
 	return t, err
 }
 
+// AddNote sends a worklog note, which the server routes to a task.
+func (c *Client) AddNote(ctx context.Context, in api.NoteIn) (api.NoteResult, error) {
+	var r api.NoteResult
+	err := c.do(ctx, http.MethodPost, "/v1/notes", in, &r)
+	return r, err
+}
+
 // SetTaskState changes a task's state.
 func (c *Client) SetTaskState(ctx context.Context, id string, in api.TaskStateIn) (api.Task, error) {
 	var t api.Task

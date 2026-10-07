@@ -77,6 +77,7 @@ func (s *Server) routes() []route {
 		{"POST", "/v1/messages/{id}/result", accessWrite, s.writer(s.postMessageResult)},
 		{"POST", "/v1/machines/{name}/start", accessStart, s.actor(api.HeaderActionStart, s.postStart)},
 		{"POST", "/v1/tasks", accessTasks, s.actor(api.HeaderActionTasks, s.createTask)},
+		{"POST", "/v1/notes", accessTasks, s.actor(api.HeaderActionTasks, s.addNote)},
 		{"POST", "/v1/tasks/review/ignore", accessTasks, s.actor(api.HeaderActionTasks, s.ignoreUntasked)},
 		{"POST", "/v1/tasks/{id}/state", accessTasks, s.actor(api.HeaderActionTasks, s.setTaskState)},
 		{"POST", "/v1/tasks/{id}/merge", accessTasks, s.actor(api.HeaderActionTasks, s.mergeTask)},

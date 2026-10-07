@@ -66,6 +66,23 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request, p principal)
 	writeJSON(w, status, t)
 }
 
+// SetRefURLs sets the link templates for note refs.
+func (s *Server) SetRefURLs(u store.RefURLs) { s.refURLs = u }
+
+// addNote is POST /v1/notes: a worklog note goes to a task.
+func (s *Server) addNote(w http.ResponseWriter, r *http.Request, p principal) {
+	var in api.NoteIn
+	if !decode(w, r, &in) {
+		return
+	}
+	res, err := s.store.AddNote(r.Context(), in, actorOf(p, in.SessionID), s.refURLs)
+	if err != nil {
+		s.storeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 // setTaskState is POST /v1/tasks/{id}/state.
 func (s *Server) setTaskState(w http.ResponseWriter, r *http.Request, p principal) {
 	id, ok := taskPathID(w, r)

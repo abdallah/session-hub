@@ -63,11 +63,6 @@ func (s *Store) AddNote(ctx context.Context, in api.NoteIn, a Actor, urls RefURL
 		return api.NoteResult{}, err
 	}
 	defer tx.Rollback()
-	if seen, err := eventSeenTx(ctx, tx, in.ID); err != nil {
-		return api.NoteResult{}, err
-	} else if seen {
-		return earlierNote(ctx, tx, in.ID)
-	}
 	if in.SessionID != "" {
 		if err := checkAgentOwner(ctx, tx, a, in.SessionID); err != nil {
 			return api.NoteResult{}, err
@@ -75,6 +70,11 @@ func (s *Store) AddNote(ctx context.Context, in api.NoteIn, a Actor, urls RefURL
 		if err := sessionExistsTx(ctx, tx, in.SessionID); err != nil {
 			return api.NoteResult{}, err
 		}
+	}
+	if seen, err := eventSeenTx(ctx, tx, in.ID); err != nil {
+		return api.NoteResult{}, err
+	} else if seen {
+		return earlierNote(ctx, tx, in.ID)
 	}
 	id, from, err := noteTaskTx(ctx, tx, n, in.SessionID, now)
 	if err != nil {

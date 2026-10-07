@@ -22,6 +22,8 @@ const MaxBodyBytes = 64 << 10
 // Server serves the sessionhub HTTP API.
 type Server struct {
 	store *store.Store
+	// refURLs link the refs that notes name (SetRefURLs).
+	refURLs store.RefURLs
 	// publicURL is public_url without a trailing slash: the base of login
 	// links and the only Origin POST /login/{code} accepts.
 	publicURL string

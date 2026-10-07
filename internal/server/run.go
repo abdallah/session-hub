@@ -55,6 +55,7 @@ func runWithListeners(ctx context.Context, args []string, stderr io.Writer, preo
 	}
 	sessionhub := New(st, cfg.PublicURL, logger)
 	sessionhub.SetMoveDir(filepath.Join(filepath.Dir(cfg.DB), "moves"))
+	sessionhub.SetRefURLs(store.RefURLs{Ticket: cfg.TaskTicketURL, MR: cfg.TaskMRURL})
 	srv := &http.Server{
 		Handler:           sessionhub.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,

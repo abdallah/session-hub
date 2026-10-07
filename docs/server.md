@@ -46,6 +46,8 @@ because a Telegram setting never stops the server.
 | `stale_after` | `5m` | A Go duration. A session with no write for longer than this is `stale`. |
 | `telegram_bot_token` | none | A Telegram bot token, in quotes. An unquoted token (`123456:ABC...`) is a TOML syntax error and stops the server. With `telegram_chat_id`, turns on alerts for **Blocked** and **Waiting on you** inbox items. Never logged. |
 | `telegram_chat_id` | none | The chat the alerts go to, as a quoted string (`"-1001234567890"` for a group) or an integer. Any other type turns alerts off and logs why. |
+| `task_ticket_url` | none | Link for a ticket ref in a note; `{ref}` is the ref, for example `"https://example.youtrack.cloud/issue/{ref}"`. Must be an `http` or `https` URL with a host. |
+| `task_mr_url` | none | Link for a merge request ref (`!NNNN`) in a note; `{n}` is the number. Same rules. |
 
 Example:
 
@@ -172,6 +174,7 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `POST /v1/messages` | machine, or cookie with `X-Hub-Action: send` | `200`, `MessagesOut` | Send a message to 1 to 20 sessions (`MessagesIn`). `429` past 30 a minute. See [Messages to sessions](#messages-to-sessions). |
 | `GET /v1/tasks?state=open` | read | `200`, `[]Task` | Open tasks (`proposed`, `todo`, `in_progress`, `done_proposed`). `open` is the default and the only value; another value is `400`. |
 | `POST /v1/tasks` | machine, or cookie with `X-Hub-Action: tasks` | `201` new, `200` existing; the `Task` | Create a task (`TaskIn`). See [Tasks](#tasks). |
+| `POST /v1/notes` | machine, or cookie with `X-Hub-Action: tasks` | `200`, `NoteResult` (`task`, `action`: `created`, `joined`, or `done`) | Route a worklog note to a task (`NoteIn`: `id`, a `te_` ID that makes a retry a no-op; `text`, 1 to 500 characters; optional `session_id`). A ref (`systemsdev-NNNNN`, `!NNNN`) picks that task, else the session's current task, else a new one. A note starting with `done:`, `finished`, `closed`, or `close ` marks it done; any other puts it in progress. `409` for another machine's session, `404` for an unknown one. See [Tasks](#tasks). |
 | `POST /v1/tasks/{id}/state` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the `Task` | Move a task (`TaskStateIn`: `to`, `note`, `session_id`, `event_id`). `409` for a move the actor may not make. |
 | `POST /v1/tasks/{id}/merge` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the target `Task` | Merge a task into another (`TaskMergeIn`: `into`); the source is dropped and its sessions and spans move to the target. `409` when the source is dropped or merged; `400` when the target is proposed or dropped. |
 | `POST /v1/tasks/{id}/sessions` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the `Task` | Link a session (`TaskLinkIn`: `session_id`, `event_id`). |
