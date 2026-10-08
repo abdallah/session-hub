@@ -214,6 +214,19 @@ type Session struct {
 	ContextPercent *int       `json:"context_percent,omitempty"`
 	LiveCostUSD    *float64   `json:"live_cost_usd,omitempty"`
 	UsageAt        *time.Time `json:"usage_at,omitempty"`
+	// LastNote is the session's latest worklog note and the task it went
+	// to; nil when the session has written none.
+	LastNote *SessionNote `json:"last_note,omitempty"`
+}
+
+// SessionNote is a session's latest note (sessionhub note) and its task.
+type SessionNote struct {
+	TaskID    string    `json:"task_id"`
+	TaskTitle string    `json:"task_title"`
+	TaskRef   string    `json:"task_ref,omitempty"`
+	TaskState string    `json:"task_state"`
+	Text      string    `json:"text"`
+	At        time.Time `json:"at"`
 }
 
 type SessionDetail struct {

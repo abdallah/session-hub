@@ -198,7 +198,18 @@ func (s *Store) ListSessions(ctx context.Context, f ListFilter) ([]api.Session, 
 		}
 		out = append(out, x)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	notes, err := s.lastNotes(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].LastNote = notes[out[i].ID]
+	}
+	return out, nil
 }
 
 // GetSession returns the session with exactly this id.
@@ -207,6 +218,11 @@ func (s *Store) GetSession(ctx context.Context, id string) (api.Session, error) 
 	if errors.Is(err, sql.ErrNoRows) {
 		return x, fmt.Errorf("%w: session %s", ErrNotFound, id)
 	}
+	if err != nil {
+		return x, err
+	}
+	notes, err := s.lastNotes(ctx, id)
+	x.LastNote = notes[id]
 	return x, err
 }
 
