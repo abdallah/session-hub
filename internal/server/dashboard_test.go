@@ -1401,3 +1401,48 @@ process.stdout.write(JSON.stringify({
 		}
 	}
 }
+
+// TestDashboardNoteStates runs the page's note-state block under node: the
+// card's note line when a session has no report, or one older than its
+// latest note.
+func TestDashboardNoteStates(t *testing.T) {
+	note := func(state, text string) map[string]any {
+		return map[string]any{"task_id": "t_1", "task_title": "fix X", "task_ref": "systemsdev-1", "task_state": state,
+			"text": text, "at": "2026-10-02T14:05:30Z"}
+	}
+	sessions := []any{
+		map[string]any{},
+		map[string]any{"last_note": note("in_progress", "start fix X systemsdev-1")},
+		map[string]any{"last_note": note("todo", "x"), "latest_report": map[string]any{"ts": "2026-10-02T14:00:00Z"}},
+		map[string]any{"last_note": note("in_progress", "x"), "latest_report": map[string]any{"ts": "2026-10-02T14:10:00Z"}},
+		map[string]any{"last_note": note("in_progress", "x"), "latest_report": map[string]any{"ts": "2026-10-02T14:05:30Z"}},
+		map[string]any{"last_note": map[string]any{"task_title": "fix X", "task_state": "done", "text": "fix X", "at": "2026-10-02T09:01:00Z"}},
+		map[string]any{"last_note": note("dropped", "x")},
+	}
+	out := runBlocks(t, []string{"note-state"}, `
+process.stdout.write(JSON.stringify(input.map(noteLine)));`, sessions)
+	type line struct {
+		Label string `json:"label"`
+		Task  string `json:"task"`
+		At    string `json:"at"`
+		Text  string `json:"text"`
+	}
+	var got []*line
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("node output %s: %v", out, err)
+	}
+	want := []*line{
+		nil,
+		{"In flight:", "systemsdev-1 fix X", "14:05", "start fix X systemsdev-1"},
+		{"In flight:", "systemsdev-1 fix X", "14:05", "x"},
+		nil,
+		nil,
+		{"Done:", "fix X", "09:01", ""},
+		{"Note:", "systemsdev-1 fix X", "14:05", "x"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		g, _ := json.Marshal(got)
+		w, _ := json.Marshal(want)
+		t.Errorf("noteLine = %s, want %s", g, w)
+	}
+}

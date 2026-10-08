@@ -636,6 +636,31 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   }
   // insight-state:end
 
+  // note-state:begin
+  // noteLine is the card's line for the session's latest note, shown when
+  // it has no report or the report is older than the note:
+  // {label, task, at, text}, with at as HH:MM in local time and text "" when
+  // the note repeats the task title. null when the report wins.
+  function noteLine(s) {
+    var n = s && s.last_note;
+    if (!n) return null;
+    var at = new Date(n.at);
+    if (isNaN(at.getTime())) return null;
+    var r = s.latest_report;
+    if (r && !(new Date(r.ts).getTime() < at.getTime())) return null;
+    var label = "Note:";
+    if (["in_progress", "todo", "proposed", "done_proposed"].indexOf(n.task_state) !== -1) label = "In flight:";
+    else if (n.task_state === "done") label = "Done:";
+    function two(x) { return (x < 10 ? "0" : "") + x; }
+    return {
+      label: label,
+      task: (n.task_ref ? n.task_ref + " " : "") + (n.task_title || ""),
+      at: two(at.getHours()) + ":" + two(at.getMinutes()),
+      text: n.text && n.text !== n.task_title ? n.text : ""
+    };
+  }
+  // note-state:end
+
   // layout-state:begin
   // cleanMap keeps the keys of v whose value is true. What storage hands
   // back is never trusted as it is.
@@ -1613,6 +1638,19 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     return rp;
   }
 
+  // noteEl is the session's latest note and its task (noteLine), or null.
+  function noteEl(s) {
+    var n = noteLine(s);
+    if (!n) return null;
+    var dl = el("dl", "report");
+    dl.appendChild(el("dt", null, n.label));
+    var dd = el("dd", null, n.task + " ");
+    dd.appendChild(el("span", "meta", "· note " + n.at));
+    dl.appendChild(dd);
+    if (n.text) dl.appendChild(el("dd", "meta", n.text));
+    return dl;
+  }
+
   // blockedOnEl is the question a blocked session waits on, or null.
   function blockedOnEl(s) {
     if (!s.blocked_on) return null;
@@ -1721,6 +1759,8 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       }
       if (dl.childNodes.length) c.appendChild(dl);
     }
+    var nl = noteEl(s);
+    if (nl) c.appendChild(nl);
 
     var lp = promptEl(s, now);
     if (lp) c.appendChild(lp);
