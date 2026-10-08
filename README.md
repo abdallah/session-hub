@@ -25,10 +25,10 @@ CLI, or a Telegram message.
 - **Progress reports.** An MCP server gives each session `report_progress`
   and `set_title`, so you see what it has done, what is in flight, and what
   it is waiting on without opening it.
-- **Tasks.** The same MCP server gives each session `list_tasks`,
-  `propose_task`, `link_task`, and `propose_done`, so sessions tie their work
-  to tasks you accept and confirm on the dashboard's **Tasks** tab or with
-  `sessionhub task`.
+- **Tasks.** Sessions record work with `sessionhub note "<text>"`: one note
+  when they start, one starting with `done:` when they finish. sessionhub
+  groups notes by ticket ref into a daily task list with working time, on the
+  dashboard's **Tasks** tab or with `sessionhub task ls`.
 - **Get back in.** `sessionhub resume <id>` focuses the session, restarts it,
   or prints the `ssh` command for the machine it is on. You can also turn on
   Claude Code Remote Control and continue in the Claude app.
@@ -170,6 +170,11 @@ five minutes. When you want more machines, follow
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | How the pieces fit, for contributors. |
 
 ## Security
+
+The server authenticates every request itself: each machine has a bearer
+token, and a browser (a phone, say) signs in with a one-time link from
+`sessionhub login` that sets a 30-day secure cookie. A reverse proxy or
+tunnel adds TLS but no access control is delegated to it.
 
 The server can approve tool permissions and add instructions that every
 session reads. Treat its URL and the machine tokens like SSH keys. Read
