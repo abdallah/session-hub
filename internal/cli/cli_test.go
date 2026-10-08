@@ -387,3 +387,48 @@ func TestLsAndShowBlockedOnAndUsage(t *testing.T) {
 		t.Errorf("show without mod data:\n%s", out)
 	}
 }
+
+// TestShowLastNote shows the session's latest note when it has no report or
+// its report is older than the note, and the report alone otherwise.
+func TestShowLastNote(t *testing.T) {
+	at := now.Add(-10 * time.Minute)
+	note := &api.SessionNote{TaskID: "t_1", TaskTitle: "fix X", TaskRef: "systemsdev-1", TaskState: api.TaskInProgress,
+		Text: "start fix X systemsdev-1", At: at}
+	head := "In flight: systemsdev-1 fix X · note " + at.Local().Format("15:04")
+	older := &api.Report{TS: at.Add(-time.Minute), InFlight: []string{"old report"}}
+	newer := &api.Report{TS: at.Add(time.Minute), InFlight: []string{"new report"}}
+	for _, c := range []struct {
+		name   string
+		report *api.Report
+		note   *api.SessionNote
+		want   []string
+		absent []string
+	}{
+		{"no report", nil, note, []string{head, "    start fix X systemsdev-1"}, nil},
+		{"older report", older, note, []string{head, "old report"}, nil},
+		{"newer report", newer, note, []string{"new report"}, []string{"In flight:", "· note"}},
+		{"done, text same as title", nil, &api.SessionNote{TaskTitle: "fix X", TaskState: api.TaskDone, Text: "fix X", At: at},
+			[]string{"Done: fix X · note " + at.Local().Format("15:04") + "\n"}, []string{"    fix X"}},
+		{"no note", nil, nil, nil, []string{"· note"}},
+	} {
+		d := api.SessionDetail{Session: api.Session{ID: "aaaaaaaa-1111", Status: api.StatusLive, LastSeenAt: now,
+			LatestReport: c.report, LastNote: c.note}}
+		if c.report != nil {
+			d.Reports = []api.Report{*c.report}
+		}
+		out, err := run(t, &fakeAPI{detail: d}, client.Config{}, func(e *env) error { return e.show(context.Background(), []string{"aaaa"}) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range c.want {
+			if !strings.Contains(out, w) {
+				t.Errorf("%s: output lacks %q:\n%s", c.name, w, out)
+			}
+		}
+		for _, a := range c.absent {
+			if strings.Contains(out, a) {
+				t.Errorf("%s: output has %q:\n%s", c.name, a, out)
+			}
+		}
+	}
+}

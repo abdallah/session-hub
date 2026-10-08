@@ -270,6 +270,33 @@ func reportSummary(r *api.Report) string {
 	return "-"
 }
 
+// noteLines is the session's latest note when it has no report or the
+// report is older than the note: a head line such as "In flight:
+// systemsdev-1 fix X · note 14:05" (local time), and the note's text when
+// it differs from the task title. head is "" when the report wins.
+func noteLines(s api.Session) (head, text string) {
+	n := s.LastNote
+	if n == nil || (s.LatestReport != nil && !s.LatestReport.TS.Before(n.At)) {
+		return "", ""
+	}
+	label := "Note:"
+	switch n.TaskState {
+	case api.TaskInProgress, api.TaskTodo, api.TaskProposed, api.TaskDoneProposed:
+		label = "In flight:"
+	case api.TaskDone:
+		label = "Done:"
+	}
+	task := n.TaskTitle
+	if n.TaskRef != "" {
+		task = n.TaskRef + " " + task
+	}
+	head = label + " " + clean(task, 0) + " · note " + n.At.Local().Format("15:04")
+	if n.Text != n.TaskTitle {
+		text = clean(n.Text, 0)
+	}
+	return head, text
+}
+
 // sessionSummary is the REPORT column of sessionhub ls: what a blocked session
 // waits on, as its mod reported it, else reportSummary.
 func sessionSummary(s api.Session) string {
@@ -381,6 +408,12 @@ func renderDetail(w io.Writer, d api.SessionDetail, now time.Time) {
 		list("waiting on", r.WaitingOn)
 		if r.Note != "" {
 			fmt.Fprintf(w, "    %-11s %s\n", "note", clean(r.Note, 0))
+		}
+	}
+	if head, text := noteLines(d.Session); head != "" {
+		fmt.Fprintf(w, "  %s\n", head)
+		if text != "" {
+			fmt.Fprintf(w, "    %s\n", text)
 		}
 	}
 	fmt.Fprintf(w, "\nevents (%d, newest first)\n", len(d.Events))
