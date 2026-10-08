@@ -23,9 +23,16 @@ const (
 	// PermissionGrace: a herdr snapshot that shows a session out of
 	// blocked leaves a request this recent open, because the snapshot may
 	// have been built before the request arrived.
-	PermissionGrace   = 5 * time.Second
-	maxToolNameRunes  = 128
-	maxDecidedByRunes = 100
+	PermissionGrace = 5 * time.Second
+	// PermissionAbandonAfter: an open request with no decision poll for
+	// this long (counted from created_at until the first poll) is expired,
+	// because its hook is gone. The hook starts its next 30-second long poll
+	// at most a second after the last one ends, so a live hook polls about
+	// every 31 seconds; 75 seconds leaves room for one slow round trip. A
+	// failed poll ends the hook, so it never waits longer between polls.
+	PermissionAbandonAfter = 75 * time.Second
+	maxToolNameRunes       = 128
+	maxDecidedByRunes      = 100
 )
 
 var permissionIDRE = regexp.MustCompile(`^pr_[A-Za-z0-9_-]{22}$`)
@@ -36,19 +43,19 @@ func ValidPermissionID(id string) bool { return permissionIDRE.MatchString(id) }
 
 // permissionSelect reads a request, its machine's name, and its machine ID.
 const permissionSelect = `SELECT p.id, p.session_id, m.name, p.tool_name, p.tool_input, p.truncated, p.state,
-	p.decision, p.reason, p.decided_by, p.created_at, p.expires_at, p.decided_at, p.machine_id
+	p.decision, p.reason, p.decided_by, p.created_at, p.expires_at, p.decided_at, p.machine_id, p.polled_at
 FROM permission_requests p JOIN machines m ON m.id = p.machine_id`
 
 // scanPermission reads one permissionSelect row. An open request past
-// expires_at reads as expired.
+// expires_at, or abandoned (see abandoned), reads as expired.
 func scanPermission(sc scanner, now time.Time) (api.PermissionRequest, int64, error) {
 	var p api.PermissionRequest
 	var input, created, expires string
 	var truncated int
-	var decided sql.NullString
+	var decided, polled sql.NullString
 	var machineID int64
 	if err := sc.Scan(&p.ID, &p.SessionID, &p.Machine, &p.ToolName, &input, &truncated, &p.State,
-		&p.Decision, &p.Reason, &p.DecidedBy, &created, &expires, &decided, &machineID); err != nil {
+		&p.Decision, &p.Reason, &p.DecidedBy, &created, &expires, &decided, &machineID, &polled); err != nil {
 		return p, 0, err
 	}
 	p.ToolInput = json.RawMessage(input)
@@ -63,18 +70,30 @@ func scanPermission(sc scanner, now time.Time) (api.PermissionRequest, int64, er
 	if p.DecidedAt, err = parseNullTS(decided); err != nil {
 		return p, 0, err
 	}
-	if p.State == api.PermissionOpen && !now.Before(p.ExpiresAt) {
+	last := p.CreatedAt
+	if polled.Valid {
+		if last, err = parseTS(polled.String); err != nil {
+			return p, 0, err
+		}
+	}
+	if p.State == api.PermissionOpen && (!now.Before(p.ExpiresAt) || abandoned(last, now)) {
 		p.State = api.PermissionExpired
 	}
 	return p, machineID, nil
 }
 
+// abandoned reports whether a request whose hook last polled (or, never
+// polled, was created) at last has gone PermissionAbandonAfter without a
+// poll by now.
+func abandoned(last, now time.Time) bool { return !now.Before(last.Add(PermissionAbandonAfter)) }
+
 // expirePermissionsTx stores the expiry of every open request past
-// expires_at.
+// expires_at or abandoned.
 func expirePermissionsTx(ctx context.Context, tx *sql.Tx, now time.Time) error {
 	n := formatTS(now)
 	_, err := tx.ExecContext(ctx, `UPDATE permission_requests SET state = ?, updated_at = ?
-		WHERE state = ? AND expires_at <= ?`, api.PermissionExpired, n, api.PermissionOpen, n)
+		WHERE state = ? AND (expires_at <= ? OR COALESCE(polled_at, created_at) <= ?)`,
+		api.PermissionExpired, n, api.PermissionOpen, n, formatTS(now.Add(-PermissionAbandonAfter)))
 	return err
 }
 
@@ -159,6 +178,33 @@ func (s *Store) PermissionFor(ctx context.Context, machineID int64, id string) (
 		return api.PermissionRequest{}, fmt.Errorf("%w: request %s belongs to another machine", ErrWrongMachine, id)
 	}
 	return p, nil
+}
+
+// PollPermission records a decision poll from machineID, which must own
+// request id, and reads the request. The poll keeps an open request from
+// being abandoned; it does not reopen an expired one.
+func (s *Store) PollPermission(ctx context.Context, machineID int64, id string) (api.PermissionRequest, error) {
+	if !ValidPermissionID(id) {
+		return api.PermissionRequest{}, invalidf("request id %q: want pr_ and 22 base64url characters", id)
+	}
+	now := s.Now()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return api.PermissionRequest{}, err
+	}
+	defer tx.Rollback()
+	if err := expirePermissionsTx(ctx, tx, now); err != nil {
+		return api.PermissionRequest{}, err
+	}
+	nowS := formatTS(now)
+	if _, err := tx.ExecContext(ctx, `UPDATE permission_requests SET polled_at = ?, updated_at = ?
+		WHERE id = ? AND machine_id = ? AND state = ?`, nowS, nowS, id, machineID, api.PermissionOpen); err != nil {
+		return api.PermissionRequest{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return api.PermissionRequest{}, err
+	}
+	return s.PermissionFor(ctx, machineID, id)
 }
 
 func (s *Store) permission(ctx context.Context, id string) (api.PermissionRequest, int64, error) {
@@ -261,12 +307,13 @@ func (s *Store) DecidePermission(ctx context.Context, id string, in api.Decision
 	return s.GetPermission(ctx, id)
 }
 
-// openPermissions maps each session with an open, unexpired request to its
-// newest one.
+// openPermissions maps each session with an open, unexpired, unabandoned
+// request to its newest one.
 func (s *Store) openPermissions(ctx context.Context) (map[string]api.PermissionRequest, error) {
 	now := s.Now()
 	rows, err := s.db.QueryContext(ctx, permissionSelect+` WHERE p.state = ? AND p.expires_at > ?
-		ORDER BY p.created_at, p.rowid`, api.PermissionOpen, formatTS(now))
+		AND COALESCE(p.polled_at, p.created_at) > ?
+		ORDER BY p.created_at, p.rowid`, api.PermissionOpen, formatTS(now), formatTS(now.Add(-PermissionAbandonAfter)))
 	if err != nil {
 		return nil, err
 	}

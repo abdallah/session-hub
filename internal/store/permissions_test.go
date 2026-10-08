@@ -314,3 +314,132 @@ func TestDecidePermissionCutInput(t *testing.T) {
 		t.Errorf("deny: %+v %v", got, err)
 	}
 }
+
+// rollbackV15 removes what schema v15 added, so a test can set user_version
+// to 14 or lower and reopen the file as an older release left it.
+func rollbackV15(t *testing.T, s *Store) {
+	t.Helper()
+	if _, err := s.db.Exec("ALTER TABLE permission_requests DROP COLUMN polled_at"); err != nil {
+		t.Fatalf("drop permission_requests.polled_at: %v", err)
+	}
+}
+
+func TestMigrateV14ToV15(t *testing.T) {
+	s, path := openTemp(t)
+	rollbackV15(t, s)
+	if _, err := s.db.Exec("PRAGMA user_version = 14"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s2, err := Open(path, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	var v, n int
+	if err := s2.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != schemaVersion {
+		t.Fatalf("user_version %d %v, want %d", v, err, schemaVersion)
+	}
+	if err := s2.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('permission_requests') WHERE name = 'polled_at'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("permission_requests.polled_at missing")
+	}
+}
+
+// pollDecision is one decision poll from the hook on tower.
+func (e *controlEnv) pollDecision(id string) api.PermissionRequest {
+	e.t.Helper()
+	p, err := e.s.PollPermission(context.Background(), e.tower.ID, id)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return p
+}
+
+// TestPermissionPolledStaysOpen: a hook that polls every 30 s keeps its
+// request open.
+func TestPermissionPolledStaysOpen(t *testing.T) {
+	e := newControlEnv(t)
+	ctx := context.Background()
+	e.session(e.tower, "s1", "w1:p1")
+	p := e.permission("s1", "Bash", `{"command":"x"}`)
+	for i := range 10 { // 5 minutes of 30 s long polls
+		if got := e.pollDecision(p.ID); got.State != api.PermissionOpen {
+			t.Fatalf("poll %d: %s, want open", i, got.State)
+		}
+		e.clock.Advance(30 * time.Second)
+	}
+	if got, _ := e.s.GetPermission(ctx, p.ID); got.State != api.PermissionOpen {
+		t.Errorf("after 5 minutes of polls: %s, want open", got.State)
+	}
+	if n := e.count(`SELECT COUNT(*) FROM permission_requests WHERE polled_at = ?`, formatTS(e.clock.Now().Add(-30*time.Second))); n != 1 {
+		t.Errorf("polled_at is not the last poll")
+	}
+	perms, err := e.s.openPermissions(ctx)
+	if err != nil || perms["s1"].ID != p.ID {
+		t.Errorf("openPermissions: %v %v, want %s", perms, err, p.ID)
+	}
+	if _, err := e.s.DecidePermission(ctx, p.ID, api.DecisionIn{Decision: api.DecisionAllow}, "web:phone"); err != nil {
+		t.Errorf("decide a polled request: %v", err)
+	}
+}
+
+// TestPermissionAbandoned: a request nothing polls for PermissionAbandonAfter
+// is expired.
+func TestPermissionAbandoned(t *testing.T) {
+	e := newControlEnv(t)
+	ctx := context.Background()
+	e.session(e.tower, "s1", "w1:p1")
+	polled := e.permission("s1", "Bash", `{"command":"x"}`)
+	never := e.permission("s1", "Bash", `{"command":"y"}`)
+	e.clock.Advance(time.Second)
+	e.pollDecision(polled.ID)
+	e.clock.Advance(PermissionAbandonAfter - 2*time.Second)
+	for _, id := range []string{polled.ID, never.ID} {
+		if got, _ := e.s.GetPermission(ctx, id); got.State != api.PermissionOpen {
+			t.Fatalf("%s before the cutoff: %s, want open", id, got.State)
+		}
+	}
+	e.clock.Advance(time.Second) // never: 75 s since created
+	if got, _ := e.s.GetPermission(ctx, never.ID); got.State != api.PermissionExpired {
+		t.Errorf("never polled for 75 s: %s, want expired", got.State)
+	}
+	if got, _ := e.s.GetPermission(ctx, polled.ID); got.State != api.PermissionOpen {
+		t.Errorf("polled 74 s ago: %s, want open", got.State)
+	}
+	e.clock.Advance(2 * time.Second) // polled: 76 s since its poll
+	if got, _ := e.s.GetPermission(ctx, polled.ID); got.State != api.PermissionExpired {
+		t.Errorf("no poll for 76 s: %s, want expired", got.State)
+	}
+	if perms, err := e.s.openPermissions(ctx); err != nil || len(perms) != 0 {
+		t.Errorf("openPermissions: %v %v, want none", perms, err)
+	}
+	// A late poll does not bring the request back.
+	if got := e.pollDecision(polled.ID); got.State != api.PermissionExpired {
+		t.Errorf("poll after abandon: %s, want expired", got.State)
+	}
+	if _, err := e.s.DecidePermission(ctx, never.ID, api.DecisionIn{Decision: api.DecisionAllow}, "web:phone"); !errors.Is(err, ErrGone) {
+		t.Errorf("decide abandoned: %v, want ErrGone", err)
+	}
+	if n := e.count(`SELECT COUNT(*) FROM permission_requests WHERE state = 'expired'`); n != 2 {
+		t.Errorf("stored expired rows %d, want 2", n)
+	}
+}
+
+func TestPollPermissionOwner(t *testing.T) {
+	e := newControlEnv(t)
+	ctx := context.Background()
+	e.session(e.tower, "s1", "w1:p1")
+	p := e.permission("s1", "Bash", `{"command":"x"}`)
+	if _, err := e.s.PollPermission(ctx, e.bluebox.ID, p.ID); !errors.Is(err, ErrWrongMachine) {
+		t.Errorf("bluebox polls tower's request: %v, want ErrWrongMachine", err)
+	}
+	if n := e.count(`SELECT COUNT(*) FROM permission_requests WHERE polled_at IS NOT NULL`); n != 0 {
+		t.Errorf("another machine's poll set polled_at")
+	}
+	if _, err := e.s.PollPermission(ctx, e.tower.ID, "pr_AAAAAAAAAAAAAAAAAAAAAA"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown request: %v, want ErrNotFound", err)
+	}
+	if _, err := e.s.PollPermission(ctx, e.tower.ID, "nope"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("bad id: %v, want ErrInvalid", err)
+	}
+}

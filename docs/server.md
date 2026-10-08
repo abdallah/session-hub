@@ -696,7 +696,12 @@ over 8 KiB it is stored as a JSON string of its first 8,000 bytes and
 
 The hook then holds `GET /v1/permissions/{id}/decision?wait=N` open (owning
 machine, `N` from 1 to 30, default 30). It answers `200` with the request as
-soon as its state is not `open`, else `204` after the wait.
+soon as its state is not `open`, else `204` after the wait. Each poll stores
+the time in `polled_at`. An open request with no poll for 75 seconds
+(counted from `created_at` until the first poll) is `expired`: its hook is
+gone, for example after a crash or a reboot, so nothing would act on an
+answer. A live hook polls about every 31 seconds. A late poll does not reopen
+the request.
 
 `POST /v1/permissions/{id}/decide` with `{"decision": "allow"|"deny",
 "reason": "..."}` decides once. A machine token, or the session cookie with
@@ -717,7 +722,7 @@ States:
 |---|---|
 | `open` | waiting for an answer, at most 10 minutes |
 | `decided` | allowed or denied from sessionhub |
-| `expired` | 10 minutes passed |
+| `expired` | 10 minutes passed, or 75 seconds without a decision poll |
 | `answered_locally` | the session left `blocked`: the prompt was answered in the terminal |
 | `closed` | the session ended |
 
@@ -1284,8 +1289,9 @@ Schema version 8 adds three tables:
   handed it.
 - `permission_requests`: one row per permission prompt a hook posted, with
   the tool name and input (compact JSON, at most 8 KiB), the `state` (`open`,
-  `decided`, `expired`, `answered_locally`, `closed`), and the decision,
-  reason, and who decided.
+  `decided`, `expired`, `answered_locally`, `closed`), the decision,
+  reason, and who decided, and `polled_at`, the hook's last decision poll
+  (null until the first).
 
 Messages and permission requests are deleted with their session or machine.
 

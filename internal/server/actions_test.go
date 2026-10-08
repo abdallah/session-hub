@@ -249,6 +249,51 @@ func TestPermissionDecisionRoutes(t *testing.T) {
 	}
 }
 
+// A decision poll keeps its request open; a request nothing polls for
+// store.PermissionAbandonAfter answers like an expired one.
+func TestPermissionAbandonedRoutes(t *testing.T) {
+	e := newEnv(t)
+	timers := &fakeTimers{}
+	e.server.after = timers.after
+	e.server.permCheck = 5 * time.Millisecond
+	e.controllable(sid1, "p1")
+	post := func() api.PermissionRequest {
+		var p api.PermissionRequest
+		e.must(201, "POST", "/v1/sessions/"+sid1+"/permissions", e.tokA, api.PermissionIn{ToolName: "Bash"}, &p)
+		return p
+	}
+
+	// Polled 60 s after it was created: open 60 s after the poll, 120 s
+	// after it was created.
+	polled := post()
+	e.clock.Advance(60 * time.Second)
+	wait := e.getAsync(e.tokA, "/v1/permissions/"+polled.ID+"/decision?wait=5")
+	timers.await(t, 1)
+	timers.fire(0)
+	if r := recv(t, wait); r.code != 204 {
+		t.Fatalf("poll: %d %s, want 204", r.code, r.body)
+	}
+	e.clock.Advance(60 * time.Second)
+	if code, body := e.act("POST", "/v1/permissions/"+polled.ID+"/decide", api.HeaderActionApprove, api.DecisionIn{Decision: api.DecisionAllow}); code != 200 {
+		t.Errorf("decide a polled request: %d %s, want 200", code, body)
+	}
+
+	// Never polled: gone after store.PermissionAbandonAfter, as an expired
+	// request is.
+	never := post()
+	e.clock.Advance(store.PermissionAbandonAfter + time.Second)
+	code, body := e.act("POST", "/v1/permissions/"+never.ID+"/decide", api.HeaderActionApprove, api.DecisionIn{Decision: api.DecisionAllow})
+	if code != 410 || !strings.Contains(string(body), "is expired") {
+		t.Errorf("decide an abandoned request: %d %s, want 410 expired", code, body)
+	}
+	// Its hook, back late, reads it as expired at once.
+	wait = e.getAsync(e.tokA, "/v1/permissions/"+never.ID+"/decision?wait=30")
+	var got api.PermissionRequest
+	if r := recv(t, wait); r.code != 200 || json.Unmarshal(r.body, &got) != nil || got.State != api.PermissionExpired {
+		t.Errorf("late poll: %d %s, want 200 expired", r.code, r.body)
+	}
+}
+
 // wakeKeys is how many wake-up channels the sessionhub holds.
 func (e *env) wakeKeys() int {
 	e.server.control.mu.Lock()

@@ -27,6 +27,7 @@ func (e *controlEnv) task(in api.TaskIn, a Actor) api.Task {
 // rollbackV14 removes what schema v14 added.
 func rollbackV14(t *testing.T, s *Store) {
 	t.Helper()
+	rollbackV15(t, s)
 	if _, err := s.db.Exec("DROP TABLE task_spans"); err != nil {
 		t.Fatalf("drop task_spans: %v", err)
 	}
@@ -45,8 +46,8 @@ func TestMigrateV13ToV14(t *testing.T) {
 	}
 	defer s2.Close()
 	var v, n int
-	if err := s2.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 14 {
-		t.Fatalf("user_version %d %v, want 14", v, err)
+	if err := s2.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != schemaVersion {
+		t.Fatalf("user_version %d %v, want %d", v, err, schemaVersion)
 	}
 	if err := s2.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='task_spans'`).Scan(&n); err != nil || n != 1 {
 		t.Errorf("task_spans missing")

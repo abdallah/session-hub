@@ -98,7 +98,9 @@ reaches a session at its next prompt after the next refresh.
 (cut to 8 KiB with `api.CapToolInput`), `cwd`, and `permission_suggestions`
 (dropped over 4 KiB) to `POST /v1/sessions/{id}/permissions`, then holds
 `GET /v1/permissions/{id}/decision?wait=30` open in a loop for up to 10
-minutes, with at least a second between two polls. It runs outside the 5 s
+minutes, with at least a second between two polls. A request the hook stops
+polling for 75 seconds expires, so a hook that dies (a crash or a reboot)
+stops showing **Allow** and **Deny** within that time. It runs outside the 5 s
 deadline of the other hooks. It handles subagent calls too, because their
 prompt shows in the same terminal. Claude Code shows its own dialog
 meanwhile; an answer there wins, and the server then marks the request

@@ -113,7 +113,7 @@ func (s *Store) Now() time.Time { return s.now().UTC() }
 // StaleAfter returns the configured staleness threshold.
 func (s *Store) StaleAfter() time.Duration { return s.staleAfter }
 
-const schemaVersion = 14
+const schemaVersion = 15
 
 const schemaV1 = `
 CREATE TABLE machines (
@@ -433,6 +433,11 @@ CREATE TABLE task_spans (
 CREATE INDEX task_spans_task ON task_spans(task_id);
 `
 
+// schemaV15 adds permission_requests.polled_at, the time of the hook's last
+// decision poll (NULL: never polled). A request whose hook stopped polling
+// expires early; see PermissionAbandonAfter.
+const schemaV15 = `ALTER TABLE permission_requests ADD COLUMN polled_at TEXT;`
+
 // afterVersionRead runs in migrate between the unlocked version read and the
 // transaction. Tests use it to line two opens up on the same stale version.
 var afterVersionRead = func() {}
@@ -535,6 +540,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if v < 14 {
 		if _, err := tx.ExecContext(ctx, schemaV14); err != nil {
 			return fmt.Errorf("migrate schema to v14: %w", err)
+		}
+	}
+	if v < 15 {
+		if _, err := tx.ExecContext(ctx, schemaV15); err != nil {
+			return fmt.Errorf("migrate schema to v15: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {

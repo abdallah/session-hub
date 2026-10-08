@@ -165,8 +165,9 @@ func (s *Server) waitDecision(w http.ResponseWriter, r *http.Request, p principa
 	}
 	defer s.control.release(slot)
 	// Check the owner and the state before the timer starts, so a refused
-	// or settled request answers at once.
-	req, err := s.store.PermissionFor(r.Context(), p.machine.ID, id)
+	// or settled request answers at once. The poll records that the hook
+	// still waits (see store.PermissionAbandonAfter).
+	req, err := s.store.PollPermission(r.Context(), p.machine.ID, id)
 	if err != nil {
 		s.storeError(w, err)
 		return
