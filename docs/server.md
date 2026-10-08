@@ -235,8 +235,9 @@ time since the session was last seen, and a state badge such as
 from the inbox item's `since`. Tap the header to expand the card; it then
 shows the agent state with `context NN%` when the session's mod reported its
 context window fill, what a blocked session waits on (**Blocked on:**, from
-its mod), the working directory and branch, the recap, the latest report, the
-last prompt, the summary line, **Details**, the resume command with **Copy**,
+its mod), the working directory and branch, the recap, the latest report,
+the latest note when the session has no report or the report is older (see
+`last_note` below), the last prompt, the summary line, **Details**, the resume command with **Copy**,
 and the Remote Control row. The headers are buttons, so **Tab**, **Enter**,
 and **Space** work too.
 
@@ -520,6 +521,18 @@ The `Session` from a list or a write carries `recap`, `recap_at`,
 `cost_usd`, and `output_tokens`). `summary` is absent until a machine sends a
 digest. `GET /v1/sessions/{id}` adds the whole stored digest as `digest`, with
 `received_at`.
+
+A `Session` from `GET /v1/sessions` or `GET /v1/sessions/{id}` also carries
+`last_note`: the session's latest note (`sessionhub note`), the newest task
+event with a client ID whose actor is `session:<id>`, by `ts` then ID. Its
+fields are `task_id`, `task_title`, `task_ref` (omitted when empty),
+`task_state`, `text`, and `at`. It is absent when the session has written no
+note. When the session has no `latest_report`, or the report's `ts` is
+before `at`, the dashboard card and `sessionhub show` show one line for it:
+**In flight:** when `task_state` is `in_progress`, `todo`, `proposed`, or
+`done_proposed`, **Done:** when it is `done`, else **Note:**; then the task
+ref and title, `· note HH:MM` in local time, and the note text below when it
+differs from the title.
 
 ### The herdr snapshot
 

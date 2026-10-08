@@ -51,6 +51,20 @@ server answers 409 and the error lists the candidate IDs.
 The report summary shows the first in-flight item (`doing:`), else the first
 waiting-on item (`waiting:`), else the last done item (`done:`), else the note.
 
+If the session has no report, or its latest report is older than its latest
+note (`sessionhub note`), `sessionhub show` prints that note under the
+reports, for example:
+
+```
+  In flight: systemsdev-1 fix X · note 14:05
+    start fix X systemsdev-1
+```
+
+The label is `In flight:` while the note's task is open, `Done:` when it is
+done, and `Note:` when it is dropped. The time is local. The second line is
+the note text, left out when it equals the task title. See `last_note` in
+[server.md](server.md).
+
 Every string from the server or herdr passes through one helper
 (`internal/cli/termtext`) before it reaches the terminal: control characters
 (including escape sequences' `ESC`) and Unicode bidirectional controls are
