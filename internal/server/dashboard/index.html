@@ -1031,8 +1031,14 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     return "last active " + Math.floor(h / 24) + "d ago";
   }
 
-  function sessionLine(s) {
-    return (s.title || "(untitled)") + (s.machine ? " · " + s.machine : "");
+  // sessionLine is what a linked session did for the task: its latest note
+  // for it, without a leading "<ref>:", else the session's title.
+  function sessionLine(s, ref) {
+    var what = s.last_note || "";
+    if (what && ref && what.slice(0, ref.length + 1).toLowerCase() === ref.toLowerCase() + ":") {
+      what = what.slice(ref.length + 1).trim();
+    }
+    return (what || s.title || "(untitled)") + (s.machine ? " · " + s.machine : "");
   }
 
   // evidenceCount is how many done items a task's sessions reported that day.
@@ -2560,7 +2566,11 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     var sessions = t.sessions || [];
     if (sessions.length) {
       var ul = el("ul");
-      sessions.forEach(function (s) { ul.appendChild(el("li", null, sessionLine(s))); });
+      sessions.forEach(function (s) {
+        var li = el("li", null, sessionLine(s, t.ref));
+        if (s.last_note && s.title) li.title = "Session: " + s.title;
+        ul.appendChild(li);
+      });
       box.appendChild(ul);
     }
   }

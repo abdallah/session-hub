@@ -182,6 +182,9 @@ func (s *Store) fillDay(ctx context.Context, t *api.Task, start, next, cutoff, n
 		if err != nil {
 			return err
 		}
+		if ss.LastNote, ss.LastNoteAt, err = s.sessionTaskNote(ctx, ss.ID, t.ID, end); err != nil {
+			return err
+		}
 		ss.ActiveSeconds = seconds(clip(ps, start, next))
 		t.ActiveSeconds += ss.ActiveSeconds
 		if n := len(ps); n > 0 && !ps[n-1].to.Before(cutoff) && (t.LastActiveAt == nil || ps[n-1].to.After(*t.LastActiveAt)) {
@@ -197,6 +200,26 @@ func (s *Store) fillDay(ctx context.Context, t *api.Task, start, next, cutoff, n
 		t.WaitingOn = append(t.WaitingOn, ss.WaitingOn...)
 	}
 	return nil
+}
+
+// sessionTaskNote is session id's latest note routed to task at or before
+// end, or "" and nil.
+func (s *Store) sessionTaskNote(ctx context.Context, id, task string, end time.Time) (string, *time.Time, error) {
+	var note, ts string
+	err := s.db.QueryRowContext(ctx, `SELECT note, ts FROM task_events
+		WHERE task_id = ? AND actor = ? AND client_id IS NOT NULL AND note != '' AND ts <= ?
+		ORDER BY ts DESC, id DESC LIMIT 1`, task, "session:"+id, formatTS(end)).Scan(&note, &ts)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil, nil
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	at, err := parseTS(ts)
+	if err != nil {
+		return "", nil, err
+	}
+	return note, &at, nil
 }
 
 // sessionWaiting is the waiting_on of session id's latest report in

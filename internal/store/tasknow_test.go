@@ -113,3 +113,38 @@ func TestTaskDayWaitingOtherTask(t *testing.T) {
 		t.Errorf("B: waiting_on %v, want one", got.WaitingOn)
 	}
 }
+
+func TestTaskDaySessionNote(t *testing.T) {
+	e := newControlEnv(t)
+	e.session(e.tower, "s1", "")
+	e.session(e.tower, "s2", "")
+	e.at(5, 9)
+	a := e.note("s1", "systemsdev-17906: canary tags").Task
+	e.clock.Advance(time.Minute)
+	e.note("s1", "systemsdev-17953: WAF rules")
+	e.clock.Advance(time.Minute)
+	e.note("s1", "systemsdev-17906: failure test")
+	e.clock.Advance(time.Minute)
+	e.note("s1", "systemsdev-17953: more WAF")
+	e.clock.Advance(time.Minute)
+	e.note("s2", "systemsdev-17906: review")
+	got := find(e.day(5), a.ID)
+	notes := map[string]string{}
+	for _, ss := range got.Sessions {
+		notes[ss.ID] = ss.LastNote
+		if ss.LastNote != "" && ss.LastNoteAt == nil {
+			t.Errorf("%s: note without a time", ss.ID)
+		}
+	}
+	if notes["s1"] != "systemsdev-17906: failure test" || notes["s2"] != "systemsdev-17906: review" {
+		t.Errorf("notes %v, want each session's latest note for this task", notes)
+	}
+	// A past day ends before later notes.
+	e.at(6, 9)
+	e.note("s1", "systemsdev-17906: next day")
+	for _, ss := range find(e.day(5), a.ID).Sessions {
+		if ss.ID == "s1" && ss.LastNote != "systemsdev-17906: failure test" {
+			t.Errorf("Oct 5 view: s1 note %q, want the one from that day", ss.LastNote)
+		}
+	}
+}

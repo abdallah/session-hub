@@ -1362,7 +1362,9 @@ process.stdout.write(JSON.stringify({
   minutes: [taskMinutes(0), taskMinutes(59), taskMinutes(720), taskMinutes(4680), sectionMinutes([{ active_seconds: 600 }, {}])],
   ago: [lastActive("2026-10-07T10:00:00Z", Date.parse("2026-10-09T11:00:00Z")), lastActive("2026-10-09T08:00:00Z", Date.parse("2026-10-09T11:00:00Z")),
     lastActive("2026-10-09T10:30:00Z", Date.parse("2026-10-09T11:00:00Z")), lastActive(null, 0)],
-  sess: [sessionLine({ title: "T", machine: "tower" }), sessionLine({ title: "", machine: "tower" }), sessionLine({ title: "T" })],
+  sess: [sessionLine({ title: "T", machine: "tower" }), sessionLine({ title: "", machine: "tower" }), sessionLine({ title: "T" }),
+    sessionLine({ title: "WAF", machine: "blu", last_note: "SYSTEMSDEV-17906: failure test" }, "systemsdev-17906"),
+    sessionLine({ title: "WAF", last_note: "done: canaries applied" }, "systemsdev-17906")],
   evidence: [evidenceCount([{ done: ["a", "b"] }, { done: null }, { done: ["c"] }]), evidenceCount(null)]
 }));`
 	out := runBlocks(t, []string{"tasks-state"}, script, nil)
@@ -1409,7 +1411,7 @@ process.stdout.write(JSON.stringify({
 		},
 		"minutes":  []any{"", "", "12m", "1h 18m", "10m"},
 		"ago":      []any{"last active 2d ago", "last active 3h ago", "last active just now", ""},
-		"sess":     []any{"T · tower", "(untitled) · tower", "T"},
+		"sess":     []any{"T · tower", "(untitled) · tower", "T", "failure test · blu", "done: canaries applied"},
 		"evidence": []any{3.0, 0.0},
 	}
 	for k, w := range want {

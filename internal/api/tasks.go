@@ -52,6 +52,10 @@ type TaskSession struct {
 	ActiveSeconds int64 `json:"active_seconds"`
 	// WaitingOn is the session's part of Task.WaitingOn.
 	WaitingOn []string `json:"waiting_on,omitempty"`
+	// LastNote is the session's latest note routed to this task by the
+	// day's end, and LastNoteAt its time; the day view fills them.
+	LastNote   string     `json:"last_note,omitempty"`
+	LastNoteAt *time.Time `json:"last_note_at,omitempty"`
 }
 
 // TaskIn is the body of a task create. ID is optional; a client that

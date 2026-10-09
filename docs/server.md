@@ -1047,6 +1047,7 @@ items those sessions reported during the day, and these fields:
 | `active_seconds` | The task's working time during the day, per task and per session. |
 | `last_active_at` | The end of the task's latest working time in the last 3 days. Omitted if there is none. |
 | `now` | Today only: `last_active_at` is within the last 15 minutes. |
+| `last_note`, `last_note_at` | Per session: its latest note routed to this task by the day's end. The dashboard shows it in place of the session title, without a leading `<ref>:`. |
 | `waiting_on` | Not on `done` tasks. The `waiting_on` of a linked session's latest report in the last 3 days, if the session was on this task at that report and has not worked for more than 2 minutes since. Per task and per session. |
 
 **Review.** `TaskReview` lists `proposed` and `done_proposed` tasks, oldest
