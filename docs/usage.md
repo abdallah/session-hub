@@ -90,10 +90,19 @@ Tasks are a daily record of the work you would name in a standup: a ticket,
 an email request, a chat request. They are separate from the small steps a
 session reports with `report_progress`.
 
-- Open the dashboard's **Tasks** tab, or run `sessionhub task ls`, to see
-  **Todo**, **In progress**, and **Done** for a day. Todo tasks carry over to
-  each later day until you start, finish, or drop them. A past day is
-  rebuilt from the task's history, and it is read-only on the dashboard.
+- Open the dashboard's **Tasks** tab, or run `sessionhub task ls`, to see a
+  day in sections, each task with its working time:
+  - **Now**: worked on in the last 15 minutes.
+  - **Waiting on**: its session's latest report waits on someone or
+    something, and the session has not worked since.
+  - **Done**, **Touched, not finished**, and **Todo**.
+  - **Carried over**: open, with no time that day. It is collapsed on the
+    dashboard. A task leaves it after 3 days with no activity; a note routed
+    to it brings it back.
+
+  Todo tasks carry over to each later day until you start, finish, or drop
+  them. A past day is rebuilt from the task's history, and it is read-only
+  on the dashboard.
 - Add a task with **Add task** or `sessionhub task add "<title>"`. It starts
   as todo, or in progress with `--now`.
 - A session proposes a task when it has a clear goal, and proposes it done

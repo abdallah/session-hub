@@ -98,26 +98,42 @@ func TestTaskAdd(t *testing.T) {
 }
 
 func TestTaskLs(t *testing.T) {
+	old := time.Date(2026, 9, 30, 9, 0, 0, 0, time.UTC)
 	f := &fakeTasks{day: api.TaskDay{Date: "2026-10-03",
-		Todo:       []api.Task{{ID: "t_aaaaaaaa1111", Title: "queued", Ref: "SYS-2"}},
-		InProgress: []api.Task{{ID: "t_bbbbbbbb2222", Title: "working \x1b[31mred"}},
-		Done:       []api.Task{{ID: "t_cccccccc3333", Title: "shipped", Ref: "SYS-3"}}}}
+		Todo: []api.Task{{ID: "t_aaaaaaaa1111", Title: "queued", Ref: "SYS-2"}},
+		InProgress: []api.Task{
+			{ID: "t_bbbbbbbb2222", Title: "working \x1b[31mred", ActiveSeconds: 600, Now: true},
+			{ID: "t_dddddddd4444", Title: "review", ActiveSeconds: 120, WaitingOn: []string{"Eran: !133"}},
+			{ID: "t_eeeeeeee5555", Title: "small", ActiveSeconds: 60},
+			{ID: "t_ffffffff6666", Title: "big", ActiveSeconds: 4680},
+			{ID: "t_gggggggg7777", Title: "stale", LastActiveAt: &old},
+		},
+		Done: []api.Task{{ID: "t_cccccccc3333", Title: "shipped", Ref: "SYS-3", ActiveSeconds: 900}}}}
 	t.Setenv("TZ", "Asia/Amman")
 	out, err := runTask(t, f, "ls", "--date", "2026-10-03")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `Todo (1)
+	want := `Now (1)  10m
+  bbbbbbbb  working [31mred  10m
+
+Waiting on (1)  2m
+  dddddddd  review  2m  waiting: Eran: !133
+
+Done (1)  15m
+  cccccccc  shipped  SYS-3  15m
+
+Touched, not finished (2)  1h 19m
+  ffffffff  big  1h 18m
+  eeeeeeee  small  1m
+
+Todo (1)
   aaaaaaaa  queued  SYS-2
 
-In progress (1)
-  bbbbbbbb  working [31mred
-
-Done (1)
-  cccccccc  shipped  SYS-3
-`
-	if out != want {
-		t.Errorf("out:\n%s\nwant:\n%s", out, want)
+Carried over (1)
+  gggggggg  stale  last active `
+	if !strings.HasPrefix(out, want) {
+		t.Errorf("out:\n%s\nwant prefix:\n%s", out, want)
 	}
 	if f.dayArgs[0] != "2026-10-03 Asia/Amman" {
 		t.Errorf("day args = %v", f.dayArgs)

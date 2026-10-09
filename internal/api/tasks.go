@@ -32,6 +32,13 @@ type Task struct {
 	// ActiveSeconds is the working time of its sessions on the day; the
 	// day view fills it.
 	ActiveSeconds int64 `json:"active_seconds"`
+	// The day view fills the rest. LastActiveAt is the end of the task's
+	// latest working time in the last 3 days. Now is set on today's view
+	// when that is within the last 15 minutes. WaitingOn is what its
+	// sessions' latest reports wait on, unless they worked since.
+	LastActiveAt *time.Time `json:"last_active_at,omitempty"`
+	Now          bool       `json:"now,omitempty"`
+	WaitingOn    []string   `json:"waiting_on,omitempty"`
 }
 
 // TaskSession is a session linked to a task.
@@ -43,6 +50,8 @@ type TaskSession struct {
 	// ActiveSeconds is the session's working time for this task on the
 	// day; the day view fills it.
 	ActiveSeconds int64 `json:"active_seconds"`
+	// WaitingOn is the session's part of Task.WaitingOn.
+	WaitingOn []string `json:"waiting_on,omitempty"`
 }
 
 // TaskIn is the body of a task create. ID is optional; a client that

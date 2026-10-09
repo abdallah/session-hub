@@ -267,9 +267,12 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   min-height: 44px; max-width: 100%; padding: 0 8px; font: inherit; font-size: .85rem; color: var(--fg);
   background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
 }
-.task-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
-@media (max-width: 699px) { .task-cols { grid-template-columns: minmax(0, 1fr); } }
-.task-col h2 { margin: 16px 0 8px; }
+.task-sections { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; max-width: 900px; }
+.task-col h2 { margin: 16px 0 8px; display: flex; align-items: baseline; gap: 8px; }
+.task-col h2 .meta { font-weight: normal; }
+.task-col details.carried > summary { cursor: pointer; list-style-position: inside; }
+.task-col details.carried > summary h2 { display: inline-flex; }
+.task-card .t-waiting { font-size: .85rem; color: var(--stale); padding-top: 2px; }
 .task-card { padding: 8px 12px; border-left-color: var(--line); }
 .task-card.col-todo { border-left-color: var(--ended); }
 .task-card.col-in_progress { border-left-color: var(--accent); }
@@ -485,6 +488,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   var taskErrors = {};      // task or session id -> why its last write failed
   var openTaskMenus = {};   // task id -> true while its state menu is open
   var openEvidence = {};    // task id -> true while its done items are shown
+  var openCarried = false;  // true while the Carried over section is open
   var openUntasked = false; // true while Sessions with no task is expanded
   var mergePick = {};       // proposal id -> the merge target picked in its select
 
@@ -867,10 +871,15 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   // inbox-state:end
 
   // tasks-state:begin
-  var TASK_COLUMNS = [
-    { key: "todo", label: "Todo" },
-    { key: "in_progress", label: "In progress" },
-    { key: "done", label: "Done" }
+  // TASK_SECTIONS is the day view's order. column is the day view list a
+  // section draws from; carried starts collapsed.
+  var TASK_SECTIONS = [
+    { key: "now", label: "Now", column: "in_progress" },
+    { key: "waiting", label: "Waiting on", column: "in_progress" },
+    { key: "done", label: "Done", column: "done" },
+    { key: "touched", label: "Touched, not finished", column: "in_progress" },
+    { key: "todo", label: "Todo", column: "todo" },
+    { key: "carried", label: "Carried over", column: "in_progress", collapsed: true }
   ];
   var TASK_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -973,11 +982,53 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   // makeTaskBody creates a todo task from a session's title and links it.
   function makeTaskBody(s) { return { title: s.title, session_id: s.id }; }
 
-  // taskColumns is the day's three columns in order.
-  function taskColumns(day) {
-    return TASK_COLUMNS.map(function (c) {
-      return { key: c.key, label: c.label, tasks: (day && day[c.key]) || [] };
+  // sectionOf is the TASK_SECTIONS key for task t from the day view list
+  // column.
+  function sectionOf(t, column) {
+    if (column !== "in_progress") return column;
+    if (t.now) return "now";
+    if ((t.waiting_on || []).length) return "waiting";
+    if (t.active_seconds > 0) return "touched";
+    return "carried";
+  }
+
+  // taskSections splits the day view into TASK_SECTIONS, each sorted by
+  // the day's time, most first; carried over by last activity, newest first.
+  function taskSections(day) {
+    var by = {};
+    TASK_SECTIONS.forEach(function (c) { by[c.key] = []; });
+    ["todo", "in_progress", "done"].forEach(function (column) {
+      ((day && day[column]) || []).forEach(function (t) { by[sectionOf(t, column)].push(t); });
     });
+    return TASK_SECTIONS.map(function (c) {
+      var tasks = by[c.key].slice();
+      tasks.sort(c.key === "carried"
+        ? function (a, b) { return (b.last_active_at || b.updated_at || "").localeCompare(a.last_active_at || a.updated_at || ""); }
+        : function (a, b) { return (b.active_seconds || 0) - (a.active_seconds || 0); });
+      return { key: c.key, label: c.label, column: c.column, collapsed: !!c.collapsed, tasks: tasks };
+    });
+  }
+
+  // taskMinutes is a working time in seconds as "1h 18m", "12m", or "".
+  function taskMinutes(sec) {
+    var m = Math.floor((sec || 0) / 60);
+    if (!m) return "";
+    return m >= 60 ? Math.floor(m / 60) + "h " + (m % 60) + "m" : m + "m";
+  }
+
+  // sectionMinutes is the total working time of a section's tasks.
+  function sectionMinutes(tasks) {
+    return taskMinutes(tasks.reduce(function (n, t) { return n + (t.active_seconds || 0); }, 0));
+  }
+
+  // lastActive is "last active 2d ago" for an ISO time before now, or "".
+  function lastActive(iso, now) {
+    var t = Date.parse(iso || "");
+    if (isNaN(t)) return "";
+    var h = Math.floor((now - t) / 3600000);
+    if (h < 1) return "last active just now";
+    if (h < 24) return "last active " + h + "h ago";
+    return "last active " + Math.floor(h / 24) + "d ago";
   }
 
   function sessionLine(s) {
@@ -2500,7 +2551,12 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       meta.appendChild(document.createTextNode(" · "));
     }
     meta.appendChild(document.createTextNode(t.source || "other"));
+    var mins = taskMinutes(t.active_seconds);
+    if (mins) meta.appendChild(document.createTextNode(" · " + mins));
+    var ago = t.active_seconds ? "" : lastActive(t.last_active_at, Date.now());
+    if (ago) meta.appendChild(document.createTextNode(" · " + ago));
     box.appendChild(meta);
+    if ((t.waiting_on || []).length) box.appendChild(el("div", "t-waiting", "Waiting on: " + t.waiting_on.join("; ")));
     var sessions = t.sessions || [];
     if (sessions.length) {
       var ul = el("ul");
@@ -2672,7 +2728,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   }
 
   // renderTasks draws the Tasks tab: the date bar, the review strip, and
-  // the day's three columns.
+  // the day's sections.
   function renderTasks() {
     syncTaskBadge();
     if (!taskDate || signedOut) return;
@@ -2691,14 +2747,30 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       frag.appendChild(el("p", dayError ? "error" : "empty", dayError || "Loading tasks..."));
     } else {
       if (readOnly) frag.appendChild(el("p", "meta", "A past day, as it ended. Read-only."));
-      var grid = el("div", "task-cols");
-      taskColumns(lastDay).forEach(function (column) {
+      var grid = el("div", "task-sections");
+      taskSections(lastDay).forEach(function (section) {
+        if (!section.tasks.length && (section.collapsed || section.key === "waiting" || section.key === "todo")) return;
         var col = el("section", "task-col");
-        var h = el("h2", null, column.label);
-        h.appendChild(el("span", "count", String(column.tasks.length)));
-        col.appendChild(h);
-        if (!column.tasks.length) col.appendChild(el("p", "empty", "None."));
-        column.tasks.forEach(function (t) { col.appendChild(taskCard(t, column.key, readOnly)); });
+        var h = el("h2", null, section.label);
+        h.appendChild(el("span", "count", String(section.tasks.length)));
+        var mins = section.key === "carried" ? "" : sectionMinutes(section.tasks);
+        if (mins) h.appendChild(el("span", "meta", mins));
+        var body = col;
+        if (section.collapsed) {
+          var more = el("details", "carried");
+          more.open = !!openCarried;
+          var sum = el("summary");
+          sum.appendChild(h);
+          more.appendChild(sum);
+          more.appendChild(el("p", "meta", "Open tasks with no time today. They drop off after 3 days with no activity; a note brings one back."));
+          more.addEventListener("toggle", function () { openCarried = more.open; });
+          col.appendChild(more);
+          body = more;
+        } else {
+          col.appendChild(h);
+        }
+        if (!section.tasks.length) body.appendChild(el("p", "empty", "None."));
+        section.tasks.forEach(function (t) { body.appendChild(taskCard(t, section.column, readOnly)); });
         grid.appendChild(col);
       });
       frag.appendChild(grid);

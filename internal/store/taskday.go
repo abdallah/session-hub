@@ -16,6 +16,18 @@ import (
 // the "Sessions with no task" list.
 const untaskedWindow = 7 * 24 * time.Hour
 
+const (
+	// carryWindow is how long an in-progress task stays in the day view
+	// with no event, span, or working time.
+	carryWindow = 3 * 24 * time.Hour
+	// nowWindow is how recent working time must be for a task to count as
+	// what you work on now.
+	nowWindow = 15 * time.Minute
+	// waitingSlack is how long a session may keep working after a report
+	// before its waiting_on counts as stale.
+	waitingSlack = 2 * time.Minute
+)
+
 type taskEv struct {
 	ts time.Time
 	to string
@@ -113,7 +125,9 @@ func (s *Store) TaskDay(ctx context.Context, date string, loc *time.Location) (a
 		cols[c] = append(cols[c], placed{id, evs[len(evs)-1].ts})
 	}
 
-	fill := func(dst *[]api.Task, ps []placed) error {
+	end := minTime(next, now)
+	cutoff := end.Add(-carryWindow)
+	fill := func(dst *[]api.Task, ps []placed, ages bool) error {
 		sort.SliceStable(ps, func(i, j int) bool {
 			if !ps[i].last.Equal(ps[j].last) {
 				return ps[i].last.After(ps[j].last)
@@ -125,15 +139,19 @@ func (s *Store) TaskDay(ctx context.Context, date string, loc *time.Location) (a
 			if err != nil {
 				return err
 			}
-			for i := range t.Sessions {
-				if t.Sessions[i].Done, err = s.dayReportItems(ctx, t.Sessions[i].ID, start, next, now); err != nil {
-					return err
-				}
-				if t.Sessions[i].ActiveSeconds, err = s.taskSeconds(ctx, t.Sessions[i].ID, t.ID, start, next, now); err != nil {
-					return err
-				}
-				t.ActiveSeconds += t.Sessions[i].ActiveSeconds
+			if err := s.fillDay(ctx, &t, start, next, cutoff, now); err != nil {
+				return err
 			}
+			if ages && p.last.Before(cutoff) && t.LastActiveAt == nil {
+				spanned, err := s.spannedSince(ctx, t.ID, cutoff, end)
+				if err != nil {
+					return err
+				}
+				if !spanned {
+					continue
+				}
+			}
+			t.Now = next.After(now) && t.LastActiveAt != nil && !t.LastActiveAt.Before(now.Add(-nowWindow))
 			*dst = append(*dst, t)
 		}
 		return nil
@@ -142,11 +160,105 @@ func (s *Store) TaskDay(ctx context.Context, date string, loc *time.Location) (a
 		name string
 		dst  *[]api.Task
 	}{{"todo", &out.Todo}, {"in_progress", &out.InProgress}, {"done", &out.Done}} {
-		if err := fill(c.dst, cols[c.name]); err != nil {
+		if err := fill(c.dst, cols[c.name], c.name == "in_progress"); err != nil {
 			return out, err
 		}
 	}
 	return out, nil
+}
+
+// fillDay fills t's day fields for the day [start, next): each session's
+// report evidence, working seconds and waiting_on, and the task's totals.
+// Working time before cutoff does not set LastActiveAt.
+func (s *Store) fillDay(ctx context.Context, t *api.Task, start, next, cutoff, now time.Time) error {
+	end := minTime(next, now)
+	for i := range t.Sessions {
+		ss := &t.Sessions[i]
+		var err error
+		if ss.Done, err = s.dayReportItems(ctx, ss.ID, start, next, now); err != nil {
+			return err
+		}
+		ps, err := s.taskPeriods(ctx, ss.ID, t.ID, minTime(start, cutoff), next, now)
+		if err != nil {
+			return err
+		}
+		ss.ActiveSeconds = seconds(clip(ps, start, next))
+		t.ActiveSeconds += ss.ActiveSeconds
+		if n := len(ps); n > 0 && !ps[n-1].to.Before(cutoff) && (t.LastActiveAt == nil || ps[n-1].to.After(*t.LastActiveAt)) {
+			last := ps[n-1].to
+			t.LastActiveAt = &last
+		}
+		if t.State == api.TaskDone {
+			continue
+		}
+		if ss.WaitingOn, err = s.sessionWaiting(ctx, ss.ID, t.ID, cutoff, end, now); err != nil {
+			return err
+		}
+		t.WaitingOn = append(t.WaitingOn, ss.WaitingOn...)
+	}
+	return nil
+}
+
+// sessionWaiting is the waiting_on of session id's latest report in
+// [cutoff, end], if the session was on task then and has not worked since.
+func (s *Store) sessionWaiting(ctx context.Context, id, task string, cutoff, end, now time.Time) ([]string, error) {
+	var ts, raw string
+	err := s.db.QueryRowContext(ctx, `SELECT ts, waiting_on_json FROM reports WHERE session_id = ? AND ts >= ? AND ts <= ? ORDER BY ts DESC, id DESC LIMIT 1`,
+		id, formatTS(cutoff), formatTS(end)).Scan(&ts, &raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var waiting []string
+	if err := json.Unmarshal([]byte(raw), &waiting); err != nil {
+		return nil, fmt.Errorf("stored report list: %w", err)
+	}
+	if len(waiting) == 0 {
+		return nil, nil
+	}
+	at, err := parseTS(ts)
+	if err != nil {
+		return nil, err
+	}
+	spans, err := s.sessionSpans(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(spans) > 0 {
+		cur := spans[0].task // time before the first span is the first span's
+		for _, sp := range spans {
+			if !sp.at.After(at) {
+				cur = sp.task
+			}
+		}
+		if cur != task {
+			return nil, nil
+		}
+	}
+	ps, err := workingPeriods(ctx, s.db, id, at, end.Add(time.Nanosecond), now)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range ps {
+		if p.to.After(at.Add(waitingSlack)) {
+			return nil, nil
+		}
+	}
+	return waiting, nil
+}
+
+// spannedSince reports whether a session started working for task in
+// [from, to].
+func (s *Store) spannedSince(ctx context.Context, task string, from, to time.Time) (bool, error) {
+	var one int
+	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM task_spans WHERE task_id = ? AND started_at >= ? AND started_at <= ? LIMIT 1`,
+		task, formatTS(from), formatTS(to)).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // dayReportItems returns the done items of session id's reports made in

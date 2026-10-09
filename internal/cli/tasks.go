@@ -172,22 +172,115 @@ func (e *env) taskLs(ctx context.Context, args []string) error {
 	// Past days list tasks that may be in neither the open list nor today's
 	// view, so the verbs only find them by full id.
 	full := *date < e.now().Format("2006-01-02")
-	e.taskSection("Todo", d.Todo, false, full)
-	e.taskSection("In progress", d.InProgress, true, full)
-	e.taskSection("Done", d.Done, true, full)
+	first := true
+	for _, sec := range daySections(d) {
+		if len(sec.tasks) == 0 {
+			continue
+		}
+		if !first {
+			fmt.Fprintln(e.out)
+		}
+		first = false
+		head := fmt.Sprintf("%s (%d)", sec.heading, len(sec.tasks))
+		if m := minutes(sumSeconds(sec.tasks)); m != "" && sec.key != "carried" {
+			head += "  " + m
+		}
+		fmt.Fprintln(e.out, head)
+		for _, t := range sec.tasks {
+			fmt.Fprintln(e.out, cut(dayLine(t, full, e.now()), e.width()))
+		}
+	}
+	if first {
+		fmt.Fprintln(e.out, "no tasks")
+	}
 	return nil
 }
 
-// taskSection prints a heading with a count and one line per task. blank
-// puts an empty line before the heading.
-func (e *env) taskSection(heading string, tasks []api.Task, blank, full bool) {
-	if blank {
-		fmt.Fprintln(e.out)
+type daySection struct {
+	key, heading string
+	tasks        []api.Task
+}
+
+// daySections splits a day view like the dashboard: Now, Waiting on, Done,
+// Touched, Todo, Carried over. Each is sorted by the day's time, most
+// first; Carried over by last activity, newest first.
+func daySections(d api.TaskDay) []daySection {
+	secs := []daySection{{key: "now", heading: "Now"}, {key: "waiting", heading: "Waiting on"},
+		{key: "done", heading: "Done", tasks: d.Done}, {key: "touched", heading: "Touched, not finished"},
+		{key: "todo", heading: "Todo", tasks: d.Todo}, {key: "carried", heading: "Carried over"}}
+	idx := map[string]int{}
+	for i, s := range secs {
+		idx[s.key] = i
 	}
-	fmt.Fprintf(e.out, "%s (%d)\n", heading, len(tasks))
-	for _, t := range tasks {
-		fmt.Fprintln(e.out, cut(taskLine(t, full), e.width()))
+	for _, t := range d.InProgress {
+		k := "carried"
+		switch {
+		case t.Now:
+			k = "now"
+		case len(t.WaitingOn) > 0:
+			k = "waiting"
+		case t.ActiveSeconds > 0:
+			k = "touched"
+		}
+		secs[idx[k]].tasks = append(secs[idx[k]].tasks, t)
 	}
+	for i := range secs {
+		ts := append([]api.Task(nil), secs[i].tasks...)
+		if secs[i].key == "carried" {
+			sort.SliceStable(ts, func(a, b int) bool { return lastActiveAt(ts[a]).After(lastActiveAt(ts[b])) })
+		} else {
+			sort.SliceStable(ts, func(a, b int) bool { return ts[a].ActiveSeconds > ts[b].ActiveSeconds })
+		}
+		secs[i].tasks = ts
+	}
+	return secs
+}
+
+func lastActiveAt(t api.Task) time.Time {
+	if t.LastActiveAt != nil {
+		return *t.LastActiveAt
+	}
+	return t.UpdatedAt
+}
+
+func sumSeconds(ts []api.Task) int64 {
+	var n int64
+	for _, t := range ts {
+		n += t.ActiveSeconds
+	}
+	return n
+}
+
+// minutes is a working time as "1h 18m", "12m", or "".
+func minutes(sec int64) string {
+	m := sec / 60
+	switch {
+	case m == 0:
+		return ""
+	case m >= 60:
+		return fmt.Sprintf("%dh %dm", m/60, m%60)
+	}
+	return fmt.Sprintf("%dm", m)
+}
+
+// dayLine is taskLine plus the day's time, what the task waits on, or, with
+// no time that day, when it was last active.
+func dayLine(t api.Task, full bool, now time.Time) string {
+	line := taskLine(t, full)
+	if m := minutes(t.ActiveSeconds); m != "" {
+		line += "  " + m
+	} else if t.LastActiveAt != nil {
+		h := int(now.Sub(*t.LastActiveAt).Hours())
+		if h < 24 {
+			line += fmt.Sprintf("  last active %dh ago", h)
+		} else {
+			line += fmt.Sprintf("  last active %dd ago", h/24)
+		}
+	}
+	if len(t.WaitingOn) > 0 {
+		line += "  waiting: " + clean(strings.Join(t.WaitingOn, "; "), 0)
+	}
+	return line
 }
 
 func (e *env) taskReview(ctx context.Context, args []string) error {

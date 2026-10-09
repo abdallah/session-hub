@@ -1029,18 +1029,25 @@ merge drops the source task (any state but `dropped`),
 sets `merged_into`, and moves its session links and spans to the target,
 which can't be `proposed` or `dropped`.
 
-**Day view.** `TaskDay` has the `date`, the `tz`, and three columns. The day
+**Day view.** `TaskDay` has the `date`, the `tz`, and three columns, which the dashboard and `task ls` split into sections. The day
 runs from 00:00 to 24:00 in `tz`; today ends now, and a later day is empty.
 
 | Column | Rule |
 |---|---|
 | `done` | The task has an event to `done` during the day and is `done` at the end of it. |
-| `in_progress` | The task was `in_progress` or `done_proposed` at any moment of the day, and is not in `done`. |
+| `in_progress` | The task was `in_progress` or `done_proposed` at any moment of the day, and is not in `done`. It is left out if it has no event, span, or working time in the 3 days before the day's end (now, for today). |
 | `todo` | The task is `todo` at the end of the day. |
 
 A task appears in the first column that matches. `proposed` and `dropped`
 tasks appear in none. Each task carries its linked sessions and the `done`
-items those sessions reported during the day.
+items those sessions reported during the day, and these fields:
+
+| Field | Meaning |
+|---|---|
+| `active_seconds` | The task's working time during the day, per task and per session. |
+| `last_active_at` | The end of the task's latest working time in the last 3 days. Omitted if there is none. |
+| `now` | Today only: `last_active_at` is within the last 15 minutes. |
+| `waiting_on` | Not on `done` tasks. The `waiting_on` of a linked session's latest report in the last 3 days, if the session was on this task at that report and has not worked for more than 2 minutes since. Per task and per session. |
 
 **Review.** `TaskReview` lists `proposed` and `done_proposed` tasks, oldest
 first, and the sessions with no task: sessions with a prompt in the last 7

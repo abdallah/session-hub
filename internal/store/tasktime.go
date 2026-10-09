@@ -147,25 +147,24 @@ func (s *Store) sessionSpans(ctx context.Context, id string) ([]span, error) {
 	return out, rows.Err()
 }
 
-// taskSeconds is session id's working seconds for task in [from, to). With
-// no spans, all its working time counts. Otherwise each moment belongs to
-// the latest span at or before it, and the time before the first span to
-// the first span's task.
-func (s *Store) taskSeconds(ctx context.Context, id, task string, from, to, now time.Time) (int64, error) {
+// taskPeriods is session id's working time for task in [from, to). With no
+// spans, all its working time counts. Otherwise each moment belongs to the
+// latest span at or before it, and the time before the first span to the
+// first span's task.
+func (s *Store) taskPeriods(ctx context.Context, id, task string, from, to, now time.Time) ([]period, error) {
 	ps, err := workingPeriods(ctx, s.db, id, from, to, now)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	spans, err := s.sessionSpans(ctx, id)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	var total time.Duration
+	if len(spans) == 0 {
+		return ps, nil
+	}
+	var out []period
 	for _, p := range ps {
-		if len(spans) == 0 {
-			total += p.to.Sub(p.from)
-			continue
-		}
 		for i, sp := range spans {
 			if sp.task != task {
 				continue
@@ -181,9 +180,18 @@ func (s *Store) taskSeconds(ctx context.Context, id, task string, from, to, now 
 				lo = p.from
 			}
 			if hi.After(lo) {
-				total += hi.Sub(lo)
+				out = append(out, period{lo, hi})
 			}
 		}
 	}
-	return int64(total / time.Second), nil
+	return merge(out), nil
+}
+
+// seconds is the total length of ps.
+func seconds(ps []period) int64 {
+	var total time.Duration
+	for _, p := range ps {
+		total += p.to.Sub(p.from)
+	}
+	return int64(total / time.Second)
 }

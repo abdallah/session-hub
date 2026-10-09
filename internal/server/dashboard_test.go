@@ -1319,8 +1319,8 @@ func TestDashboardTasks(t *testing.T) {
 		`if (name === "tasks") loadTasks();`, "tasksRoot.hidden = name !== \"tasks\";",
 		`tabTasks.textContent = n ? "Tasks (" + n + ")" : "Tasks";`,
 		"saveMap(TASKS_DATE_KEY, dateMap(taskDate))", "taskDate = rememberedDate(loadMap(TASKS_DATE_KEY), localDate(Date.now()))",
-		"var readOnly = taskDate !== localDate(Date.now());", "column.key", // placement from the column
-		"@media (max-width: 699px)",
+		"var readOnly = taskDate !== localDate(Date.now());", "section.column", // placement from the column
+		`var more = el("details", "carried");`,
 		// Sessions with no task: collapsed, outside the Review count, and an Ignore all button.
 		`h.appendChild(el("span", "count", String(prop.length + dp.length)));`,
 		`var more = el("details", "untasked");`, `"Ignore all"`, "session_ids: un.map(function (s) { return s.id; })",
@@ -1353,7 +1353,15 @@ process.stdout.write(JSON.stringify({
   addProblems: [addTaskProblem("", ""), addTaskProblem("  ", ""), addTaskProblem("ok", "ftp://x"), addTaskProblem("ok", ""),
     addTaskProblem("ok", "https://ok.example")],
   make: makeTaskBody({ id: "s1", title: "Rotate the CI token", machine: "tower" }),
-  columns: taskColumns({ todo: [{ id: "a" }], in_progress: null }).map(function (c) { return [c.key, c.label, c.tasks.length]; }),
+  sections: taskSections({ todo: [{ id: "a" }], in_progress: [
+    { id: "n", now: true, active_seconds: 60, waiting_on: ["x"] },
+    { id: "w", waiting_on: ["Eran"] },
+    { id: "t1", active_seconds: 120 }, { id: "t2", active_seconds: 600 },
+    { id: "c1", last_active_at: "2026-10-07T10:00:00Z" }, { id: "c2", last_active_at: "2026-10-08T10:00:00Z" }
+  ], done: null }).map(function (c) { return [c.key, c.column, c.collapsed, c.tasks.map(function (t) { return t.id; })]; }),
+  minutes: [taskMinutes(0), taskMinutes(59), taskMinutes(720), taskMinutes(4680), sectionMinutes([{ active_seconds: 600 }, {}])],
+  ago: [lastActive("2026-10-07T10:00:00Z", Date.parse("2026-10-09T11:00:00Z")), lastActive("2026-10-09T08:00:00Z", Date.parse("2026-10-09T11:00:00Z")),
+    lastActive("2026-10-09T10:30:00Z", Date.parse("2026-10-09T11:00:00Z")), lastActive(null, 0)],
   sess: [sessionLine({ title: "T", machine: "tower" }), sessionLine({ title: "", machine: "tower" }), sessionLine({ title: "T" })],
   evidence: [evidenceCount([{ done: ["a", "b"] }, { done: null }, { done: ["c"] }]), evidenceCount(null)]
 }));`
@@ -1391,9 +1399,18 @@ process.stdout.write(JSON.stringify({
 		},
 		"addProblems": []any{"Enter a title.", "Enter a title.", "The URL must be an http or https link.", "", ""},
 		"make":        map[string]any{"title": "Rotate the CI token", "session_id": "s1"},
-		"columns":     []any{[]any{"todo", "Todo", 1.0}, []any{"in_progress", "In progress", 0.0}, []any{"done", "Done", 0.0}},
-		"sess":        []any{"T · tower", "(untitled) · tower", "T"},
-		"evidence":    []any{3.0, 0.0},
+		"sections": []any{
+			[]any{"now", "in_progress", false, []any{"n"}},
+			[]any{"waiting", "in_progress", false, []any{"w"}},
+			[]any{"done", "done", false, []any{}},
+			[]any{"touched", "in_progress", false, []any{"t2", "t1"}},
+			[]any{"todo", "todo", false, []any{"a"}},
+			[]any{"carried", "in_progress", true, []any{"c2", "c1"}},
+		},
+		"minutes":  []any{"", "", "12m", "1h 18m", "10m"},
+		"ago":      []any{"last active 2d ago", "last active 3h ago", "last active just now", ""},
+		"sess":     []any{"T · tower", "(untitled) · tower", "T"},
+		"evidence": []any{3.0, 0.0},
 	}
 	for k, w := range want {
 		if !reflect.DeepEqual(got[k], w) {
