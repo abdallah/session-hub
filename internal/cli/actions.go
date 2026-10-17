@@ -24,6 +24,9 @@ type actionsAPI interface {
 	SendMessages(ctx context.Context, in api.MessagesIn) (api.MessagesOut, error)
 	GetMessage(ctx context.Context, id string) (api.Message, error)
 	DecidePermission(ctx context.Context, id string, in api.DecisionIn) (api.PermissionRequest, error)
+	ListKnowledge(ctx context.Context, state, scope string) ([]api.Knowledge, error)
+	ProposeKnowledge(ctx context.Context, in api.KnowledgeIn) (api.KnowledgeAdded, error)
+	SearchKnowledge(ctx context.Context, query, scope string) ([]api.Knowledge, error)
 }
 
 var _ actionsAPI = (*client.Client)(nil)

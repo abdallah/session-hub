@@ -28,6 +28,10 @@ type fakeActions struct {
 	decided   []string // "id decision reason"
 	decideErr error
 	inbox     api.Inbox
+	kList     []string
+	kEntries  []api.Knowledge
+	kSimilar  []api.Knowledge
+	kProposed []api.KnowledgeIn
 }
 
 func (f *fakeActions) ListSessions(_ context.Context, live bool, machine string) ([]api.Session, error) {

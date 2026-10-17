@@ -52,6 +52,7 @@ commands:
   task add|ls|review|<verb> <id> manage tasks (accept, reject, start, done, drop, reopen, merge)
   note <text>                   record a worklog note; sessionhub turns it into a task
   rules [ls|add <text>|rm <id>] list or edit the standing rules
+  knowledge [ls|add|search]     list, propose, or search knowledge entries
   send <id>... -m <text>        send a message to sessions (or --machine M)
   approve [--yes] <id>          allow a pending permission prompt once
   deny [--yes] <id> [reason]    deny a pending permission prompt
@@ -96,6 +97,7 @@ var routes = map[string]handler{
 	"task":               cli.RunTask,
 	"note":               cli.RunNote,
 	"rules":              cli.RunRules,
+	"knowledge":          cli.RunKnowledge,
 	"send":               cli.RunSend,
 	"approve":            cli.RunApprove,
 	"deny":               cli.RunDeny,
