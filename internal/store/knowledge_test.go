@@ -332,3 +332,21 @@ func TestKnowledgeSimilar(t *testing.T) {
 		t.Errorf("similar for short words: %+v", none.Similar)
 	}
 }
+
+// TestListKnowledgeAllActive: the dashboard reads every active entry in one
+// list, so the oldest, which are the ones due for review, are never cut.
+func TestListKnowledgeAllActive(t *testing.T) {
+	e := newControlEnv(t)
+	const n = 250
+	first := addK(t, e.s, api.KnowledgeIn{Kind: "fact", Scope: "global", Text: "entry 0"}, "web:phone", true).Entry
+	for i := 1; i < n; i++ {
+		addK(t, e.s, api.KnowledgeIn{Kind: "fact", Scope: "global", Text: fmt.Sprintf("entry %d", i)}, "web:phone", true)
+	}
+	list, err := e.s.ListKnowledge(context.Background(), api.KnowledgeActive, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != n || list[len(list)-1].ID != first.ID {
+		t.Errorf("listed %d entries, want %d ending with the oldest (id %d)", len(list), n, first.ID)
+	}
+}

@@ -25,8 +25,9 @@ const (
 	MaxActiveKnowledge = 500
 	// MaxProposedKnowledge caps proposals waiting for a decision.
 	MaxProposedKnowledge = 100
-	// maxKnowledgeList caps ListKnowledge.
-	maxKnowledgeList = 200
+	// maxKnowledgeList caps ListKnowledge at the active limit, so an
+	// unfiltered active list holds every active entry.
+	maxKnowledgeList = MaxActiveKnowledge
 	// defaultFactEvery is every for a fact or decision that sets none.
 	defaultFactEvery = 20
 	// maxClientIDRunes caps client_id and source_session.
@@ -282,7 +283,7 @@ func (s *Store) execOne(ctx context.Context, id int64, q string, args ...any) er
 	return nil
 }
 
-// ListKnowledge returns up to 200 entries, newest first. An empty state,
+// ListKnowledge returns up to 500 entries (MaxActiveKnowledge), newest first. An empty state,
 // scope, or query matches all; query is an FTS5 query over text and why,
 // and orders the result by rank.
 func (s *Store) ListKnowledge(ctx context.Context, state, scope, query string) ([]api.Knowledge, error) {
