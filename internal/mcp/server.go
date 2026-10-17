@@ -22,7 +22,8 @@ const Version = "dev"
 const instructions = "Call report_progress when you finish a task, start a long one, or are blocked. Call set_title once the session has a clear purpose. " +
 	"Record human-level work with sessionhub note (or worklog note, which calls it): one note when you start a piece of work, with its ticket ref (systemsdev-12345, MR !1234) if it has one, " +
 	"and one starting with done: when you finish it. sessionhub turns notes into tasks. " +
-	"Use list_tasks, link_task, propose_task, and propose_done only when you cannot run shell commands. No notes for steps inside a piece of work."
+	"Use list_tasks, link_task, propose_task, and propose_done only when you cannot run shell commands. No notes for steps inside a piece of work. " +
+	"Propose knowledge with propose_knowledge when the user corrects a fact about the environment, states a convention, or a decision is made. Search knowledge before asking the user where something is."
 
 // Protocol versions this server speaks. The first is the default.
 var supportedVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
@@ -162,6 +163,12 @@ func (s *Server) dispatch(ctx context.Context, req rpcRequest) (any, *rpcError) 
 			return s.linkTask(ctx, p.Arguments), nil
 		case "propose_done":
 			return s.proposeDone(ctx, p.Arguments), nil
+		case "propose_knowledge":
+			return s.proposeKnowledge(ctx, p.Arguments), nil
+		case "search_knowledge":
+			return s.searchKnowledge(ctx, p.Arguments), nil
+		case "confirm_knowledge":
+			return s.confirmKnowledge(ctx, p.Arguments), nil
 		}
 		return nil, &rpcError{Code: codeInvalidParams, Message: fmt.Sprintf("unknown tool %q", p.Name)}
 	}
@@ -296,6 +303,46 @@ var toolDefs = []map[string]any{
 				"note":    map[string]any{"type": "string", "description": "Optional one-line result, for example the merge request."},
 			},
 			"required": []string{"task_id"},
+		},
+	},
+	{
+		"name": "propose_knowledge",
+		"description": "Propose a knowledge entry for the user to approve. Call it when the user corrects a fact about the environment, " +
+			"states a convention, or a decision is made. Pick the narrowest true scope. Write names of secrets only, never values. " +
+			"The result lists near-duplicates, so propose a replacement with replaces instead of a second entry.",
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"kind":     map[string]any{"type": "string", "enum": []string{"convention", "fact", "decision"}, "description": "What the entry is."},
+				"scope":    map[string]any{"type": "string", "description": "global, repo:<origin URL or host/path>, ticket:<ref>, or machine:<name>."},
+				"text":     map[string]any{"type": "string", "description": "The entry, in one line, at most 300 characters."},
+				"why":      map[string]any{"type": "string", "description": "Optional reason, at most 200 characters."},
+				"replaces": map[string]any{"type": "integer", "description": "Optional number of an entry this one replaces."},
+			},
+			"required": []string{"kind", "scope", "text"},
+		},
+	},
+	{
+		"name":        "search_knowledge",
+		"description": "Search the approved knowledge entries (at most 20). Call it before asking the user where something is or how something is done.",
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{"type": "string", "description": "Words to search for."},
+				"scope": map[string]any{"type": "string", "description": "Optional scope to search within."},
+			},
+			"required": []string{"query"},
+		},
+	},
+	{
+		"name":        "confirm_knowledge",
+		"description": "Confirm that a knowledge entry you used is still true. Call it only after you checked.",
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id": map[string]any{"type": "integer", "description": "The entry number from search_knowledge."},
+			},
+			"required": []string{"id"},
 		},
 	},
 }

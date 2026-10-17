@@ -30,6 +30,9 @@ type hubAPI interface {
 	CreateTask(ctx context.Context, in api.TaskIn) (api.Task, error)
 	SetTaskState(ctx context.Context, id string, in api.TaskStateIn) (api.Task, error)
 	LinkTask(ctx context.Context, id string, in api.TaskLinkIn) (api.Task, error)
+	ProposeKnowledge(ctx context.Context, in api.KnowledgeIn) (api.KnowledgeAdded, error)
+	SearchKnowledge(ctx context.Context, query, scope string) ([]api.Knowledge, error)
+	ConfirmKnowledge(ctx context.Context, id int64) error
 }
 
 type queuer interface {
