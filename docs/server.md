@@ -315,7 +315,9 @@ The **Knowledge** tab (see [Knowledge](#knowledge)) has three lists and an add b
 A count badge shows on the tab label while proposals wait.
 
 - **Proposed** lists each proposal's kind, scope, text, `why`, and proposing
-  session, oldest first, with **Approve**, **Edit**, and **Reject**.
+  session, oldest first, with **Approve**, **Edit**, and **Reject**. A proposal
+  that would retire another entry shows `replaces #N: <text>`, or `replaces #N`
+  when that entry is not proposed or active.
 - **Review** lists active entries not confirmed for 90 days, with **Confirm**
   and **Retire**.
 - **Active** groups the other active entries by scope, global first, with a

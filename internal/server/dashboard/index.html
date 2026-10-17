@@ -1101,6 +1101,15 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     };
   }
 
+  // knReplaces is the line a proposal card shows for the entry that
+  // approving it retires: "replaces #N: <text>", or "replaces #N" when the
+  // entry is not in list. "" when it replaces nothing.
+  function knReplaces(k, list) {
+    if (!k.replaces) return "";
+    var t = (list || []).filter(function (o) { return o && o.id === k.replaces; })[0];
+    return "replaces #" + k.replaces + (t ? ": " + t.text : "");
+  }
+
   function knowledgeRequest(path, method, body) {
     var init = { method: method, headers: { "X-Hub-Action": "knowledge" }, cache: "no-store" };
     if (body) {
@@ -2937,6 +2946,8 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     if (knError) top.appendChild(el("p", "error", knError));
     knSection(top, "Proposed", view.proposed.map(function (k) {
       var li = knRow(k, knMeta(k));
+      var rep = knReplaces(k, lastKnowledge);
+      if (rep) li.appendChild(el("span", "rule-by", rep));
       var ed = knEdit[k.id];
       if (ed) {
         var form = el("div", "rule-add");
