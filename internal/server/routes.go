@@ -21,12 +21,14 @@ const (
 	accessSignOut = "sign-out" // the session cookie with X-Hub-Action: sign-out only
 	accessTriage  = "triage"   // machine token, or the session cookie with X-Hub-Action: triage
 
-	accessInstructions = "instructions" // machine token, or the session cookie with X-Hub-Action: instructions
-	accessSend         = "send"         // machine token, or the session cookie with X-Hub-Action: send
-	accessApprove      = "approve"      // machine token, or the session cookie with X-Hub-Action: approve
-	accessMove         = "move"         // machine token, or the session cookie with X-Hub-Action: move
-	accessStart        = "start"        // machine token, or the session cookie with X-Hub-Action: start
-	accessTasks        = "tasks"        // machine token, or the session cookie with X-Hub-Action: tasks
+	accessInstructions = "instructions"  // machine token, or the session cookie with X-Hub-Action: instructions
+	accessSend         = "send"          // machine token, or the session cookie with X-Hub-Action: send
+	accessApprove      = "approve"       // machine token, or the session cookie with X-Hub-Action: approve
+	accessMove         = "move"          // machine token, or the session cookie with X-Hub-Action: move
+	accessStart        = "start"         // machine token, or the session cookie with X-Hub-Action: start
+	accessTasks        = "tasks"         // machine token, or the session cookie with X-Hub-Action: tasks
+	accessKnowledge    = "knowledge"     // machine token, or the session cookie with X-Hub-Action: knowledge
+	accessKnowledgeWeb = "knowledge-web" // the session cookie with X-Hub-Action: knowledge only
 )
 
 // route is one method and path pattern of the API.
@@ -83,6 +85,10 @@ func (s *Server) routes() []route {
 		{"POST", "/v1/tasks/{id}/merge", accessTasks, s.actor(api.HeaderActionTasks, s.mergeTask)},
 		{"POST", "/v1/tasks/{id}/sessions", accessTasks, s.actor(api.HeaderActionTasks, s.linkTask)},
 		{"PATCH", "/v1/tasks/{id}", accessTasks, s.actor(api.HeaderActionTasks, s.editTask)},
+		{"POST", "/v1/knowledge", accessKnowledge, s.actor(api.HeaderActionKnowledge, s.addKnowledge)},
+		{"POST", "/v1/knowledge/{id}/confirm", accessKnowledge, s.actor(api.HeaderActionKnowledge, s.confirmKnowledge)},
+		{"POST", "/v1/knowledge/{id}/decide", accessKnowledgeWeb, s.webOnly(api.HeaderActionKnowledge, s.decideKnowledge)},
+		{"DELETE", "/v1/knowledge/{id}", accessKnowledgeWeb, s.webOnly(api.HeaderActionKnowledge, s.retireKnowledge)},
 
 		{"GET", "/v1/sessions", accessRead, s.reader(s.listSessions)},
 		{"GET", "/v1/sessions/{id}", accessRead, s.reader(s.getSession)},
@@ -91,6 +97,8 @@ func (s *Server) routes() []route {
 		{"GET", "/v1/tasks", accessRead, s.reader(s.listTasks)},
 		{"GET", "/v1/tasks/day", accessRead, s.reader(s.getTaskDay)},
 		{"GET", "/v1/tasks/review", accessRead, s.reader(s.getTaskReview)},
+		{"GET", "/v1/knowledge", accessRead, s.reader(s.listKnowledge)},
+		{"GET", "/v1/knowledge/local", accessWrite, s.writer(s.knowledgeLocal)},
 		{"GET", "/v1/instructions", accessRead, s.reader(s.listInstructions)},
 		{"GET", "/v1/messages/{id}", accessRead, s.reader(s.getMessage)},
 		{"GET", "/v1/moves/{id}", accessRead, s.reader(s.getMove)},

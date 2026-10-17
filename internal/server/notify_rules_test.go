@@ -85,7 +85,7 @@ func TestRuleAddedWithAlertsOffSendsNothing(t *testing.T) {
 	t.Cleanup(func() { telegramAPI = old })
 	var logs syncBuffer
 	// No Telegram settings: alerts are off.
-	stop, onRule := startAlerts(context.Background(), e.st, Config{PublicURL: "https://sessionhub.example.test"}, log.New(&logs, "", 0))
+	stop, onRule, _ := startAlerts(context.Background(), e.st, Config{PublicURL: "https://sessionhub.example.test"}, log.New(&logs, "", 0))
 	defer stop()
 	e.server.ruleAdded = onRule
 	e.must(201, "POST", "/v1/instructions", e.tokA, api.InstructionIn{Text: "Never push to main."}, nil)

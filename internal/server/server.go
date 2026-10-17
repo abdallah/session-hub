@@ -37,6 +37,9 @@ type Server struct {
 	// ruleAdded is called with each stored rule; it must not block. Run sets
 	// it to the Telegram notifier when alerts are on.
 	ruleAdded func(api.Instruction)
+	// knowledgeProposed is called with each entry a machine newly proposes;
+	// it must not block. Run sets it to the Telegram notifier.
+	knowledgeProposed func(api.Knowledge)
 	// moveDir holds sealed move bundles; "" turns the bundle routes off.
 	moveDir string
 }
@@ -215,6 +218,18 @@ func (s *Server) browserAction(action string, h authedHandler) http.Handler {
 	return s.actor(action, func(w http.ResponseWriter, r *http.Request, p principal) {
 		if p.web == nil {
 			writeError(w, http.StatusForbidden, "only a signed-in browser can sign out; revoke a browser session with `sessionhub login rm`")
+			return
+		}
+		h(w, r, p)
+	})
+}
+
+// webOnly is actor for routes only the dashboard may call. A machine token
+// gets 403.
+func (s *Server) webOnly(action string, h authedHandler) http.Handler {
+	return s.actor(action, func(w http.ResponseWriter, r *http.Request, p principal) {
+		if p.web == nil {
+			writeError(w, http.StatusForbidden, "only the dashboard can do this; a machine proposes with POST /v1/knowledge")
 			return
 		}
 		h(w, r, p)

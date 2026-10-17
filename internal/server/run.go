@@ -88,8 +88,9 @@ func runWithListeners(ctx context.Context, args []string, stderr io.Writer, preo
 	defer stop()
 	// Deferred after st.Close, so it runs first: the notifier stops before
 	// the database closes, on every way out.
-	stopAlerts, onRule := startAlerts(ctx, st, cfg, logger)
+	stopAlerts, onRule, onKnowledge := startAlerts(ctx, st, cfg, logger)
 	sessionhub.ruleAdded = onRule
+	sessionhub.knowledgeProposed = onKnowledge
 	defer stopAlerts()
 	sweepCtx, stopSweep := context.WithCancel(ctx)
 	sweepDone := make(chan struct{})

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,23 @@ func TestAuthMatrix(t *testing.T) {
 			t.Fatal(err)
 		}
 		return fmt.Sprintf("/v1/instructions/%d", r.ID)
+	}
+
+	freshKnowledge := func(suffix string) func() string {
+		return func() string {
+			out, err := e.st.AddKnowledge(ctx, api.KnowledgeIn{Kind: "fact", Scope: "global", Text: "Matrix entry."}, "tower", suffix != "decide")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if suffix == "decide" { // decide needs a proposal; confirm and retire take any entry
+				return "/v1/knowledge/" + strconv.FormatInt(out.Entry.ID, 10) + "/decide"
+			}
+			p := "/v1/knowledge/" + strconv.FormatInt(out.Entry.ID, 10)
+			if suffix != "" {
+				p += "/" + suffix
+			}
+			return p
+		}
 	}
 
 	// Moves. Both machines have a key and polled. Each upload and result
@@ -230,10 +248,16 @@ func TestAuthMatrix(t *testing.T) {
 			body: api.TaskLinkIn{SessionID: sid1}, ok: 200, okB: 409},
 		"PATCH /v1/tasks/{id}": {fresh: func() string { return "/v1/tasks/" + newTask(false) },
 			body: api.TaskEditIn{Title: &editTitle}, ok: 200},
-		"POST /v1/instructions":        {path: "/v1/instructions", body: api.InstructionIn{Text: "Use British spelling."}, ok: 201},
-		"DELETE /v1/instructions/{id}": {fresh: freshRule, ok: 204},
-		"POST /v1/messages":            {path: "/v1/messages", body: api.MessagesIn{SessionIDs: []string{sid1}, Text: "hello"}, ok: 200},
-		"GET /v1/messages/{id}":        {path: "/v1/messages/" + sent[0].ID, ok: 200},
+		"GET /v1/knowledge":               {path: "/v1/knowledge", ok: 200},
+		"GET /v1/knowledge/local":         {path: "/v1/knowledge/local", ok: 200},
+		"POST /v1/knowledge":              {path: "/v1/knowledge", body: api.KnowledgeIn{Kind: "fact", Scope: "global", Text: "Matrix fact."}, ok: 201},
+		"POST /v1/knowledge/{id}/confirm": {fresh: freshKnowledge("confirm"), ok: 204},
+		"POST /v1/knowledge/{id}/decide":  {fresh: freshKnowledge("decide"), body: api.KnowledgeDecisionIn{Decision: "approve"}, ok: 200},
+		"DELETE /v1/knowledge/{id}":       {fresh: freshKnowledge(""), ok: 204},
+		"POST /v1/instructions":           {path: "/v1/instructions", body: api.InstructionIn{Text: "Use British spelling."}, ok: 201},
+		"DELETE /v1/instructions/{id}":    {fresh: freshRule, ok: 204},
+		"POST /v1/messages":               {path: "/v1/messages", body: api.MessagesIn{SessionIDs: []string{sid1}, Text: "hello"}, ok: 200},
+		"GET /v1/messages/{id}":           {path: "/v1/messages/" + sent[0].ID, ok: 200},
 		"POST /v1/sessions/{id}/permissions": {path: "/v1/sessions/" + sid1 + "/permissions",
 			body: api.PermissionIn{ToolName: "Bash"}, ok: 201, okB: 409},
 		"GET /v1/permissions/{id}/decision": {path: "/v1/permissions/" + waitOn.ID + "/decision?wait=1", ok: 204, okB: 409},
@@ -332,6 +356,7 @@ func TestAuthMatrix(t *testing.T) {
 		{"cookie+move", "", newSession, api.HeaderActionMove},
 		{"cookie+start", "", newSession, api.HeaderActionStart},
 		{"cookie+tasks", "", newSession, api.HeaderActionTasks},
+		{"cookie+knowledge", "", newSession, api.HeaderActionKnowledge},
 		{"cookie+wrong action", "", newSession, "title"},
 		{"badcookie", "", "hub_s_wrong", ""},
 	}
@@ -346,6 +371,8 @@ func TestAuthMatrix(t *testing.T) {
 		accessMove:         api.HeaderActionMove,
 		accessStart:        api.HeaderActionStart,
 		accessTasks:        api.HeaderActionTasks,
+		accessKnowledge:    api.HeaderActionKnowledge,
+		accessKnowledgeWeb: api.HeaderActionKnowledge,
 	}
 	expect := func(rt route, c authCase, tk string) []int {
 		switch {
@@ -356,6 +383,8 @@ func TestAuthMatrix(t *testing.T) {
 			return []int{http.StatusUnauthorized} // the cookie never authorizes a machine route
 		case actionFor[rt.access] != "" && strings.HasPrefix(tk, "cookie") && tk != "cookie+"+actionFor[rt.access]:
 			return []int{http.StatusForbidden} // the cookie only with the route's own X-Hub-Action
+		case rt.access == accessKnowledgeWeb && strings.HasPrefix(tk, "machine"):
+			return []int{http.StatusForbidden} // only the dashboard decides and retires
 		case rt.access == accessSignOut && tk != "cookie+sign-out":
 			return []int{http.StatusForbidden} // only a browser ends its own session
 		case tk == "machineB" && c.okB != 0:

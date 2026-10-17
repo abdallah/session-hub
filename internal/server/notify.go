@@ -63,6 +63,7 @@ type notifier struct {
 	lastLog   time.Time            // when the last failure line was written
 	ticked    bool                 // the first tick has read the inbox
 	rules     chan api.Instruction // rules added, waiting for a rule-added alert
+	proposals chan api.Knowledge   // knowledge proposed, waiting for an alert
 }
 
 // rejectedError is a Bot API answer other than success or HTTP 429: the
@@ -83,8 +84,9 @@ func newNotifier(st alertStore, cfg Config, logger *log.Logger) *notifier {
 		http: &http.Client{Timeout: telegramTimeout, CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		}},
-		log:   logger,
-		rules: make(chan api.Instruction, ruleQueueSize),
+		log:       logger,
+		rules:     make(chan api.Instruction, ruleQueueSize),
+		proposals: make(chan api.Knowledge, ruleQueueSize),
 	}
 }
 
@@ -94,14 +96,14 @@ func newNotifier(st alertStore, cfg Config, logger *log.Logger) *notifier {
 //
 // onRule hands a stored rule to the notifier without blocking. It does
 // nothing when alerts are off.
-func startAlerts(ctx context.Context, st alertStore, cfg Config, logger *log.Logger) (stop func(), onRule func(api.Instruction)) {
+func startAlerts(ctx context.Context, st alertStore, cfg Config, logger *log.Logger) (stop func(), onRule func(api.Instruction), onKnowledge func(api.Knowledge)) {
 	if cfg.TelegramProblem != "" {
 		logger.Printf("telegram alerts are off: %s", cfg.TelegramProblem)
-		return func() {}, func(api.Instruction) {}
+		return func() {}, func(api.Instruction) {}, func(api.Knowledge) {}
 	}
 	if !cfg.AlertsEnabled() {
 		logger.Printf("telegram alerts are off: set telegram_bot_token and telegram_chat_id in server.toml to turn them on")
-		return func() {}, func(api.Instruction) {}
+		return func() {}, func(api.Instruction) {}, func(api.Knowledge) {}
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	n := newNotifier(st, cfg, logger)
@@ -116,7 +118,7 @@ func startAlerts(ctx context.Context, st alertStore, cfg Config, logger *log.Log
 	return func() {
 		cancel()
 		<-done
-	}, n.enqueueRule
+	}, n.enqueueRule, n.enqueueKnowledge
 }
 
 // run ticks at once, then on every tick, until ctx ends.
@@ -130,6 +132,8 @@ func (n *notifier) run(ctx context.Context, ticks <-chan time.Time) {
 			n.tick(ctx)
 		case r := <-n.rules:
 			n.sendRule(ctx, r)
+		case k := <-n.proposals:
+			n.sendKnowledge(ctx, k)
 		}
 	}
 }
@@ -415,4 +419,44 @@ func ruleMessage(r api.Instruction, publicURL string) (string, []inlineButton) {
 		"added by " + termtext.Clean(r.CreatedBy, 0) + " · rule " + strconv.FormatInt(r.ID, 10),
 	}
 	return strings.Join(lines, "\n"), []inlineButton{{Text: "Open rules", URL: publicURL + "/#rules"}}
+}
+
+// enqueueKnowledge hands a proposal to the notifier. It never blocks: when
+// the queue is full it drops the alert and logs one line.
+func (n *notifier) enqueueKnowledge(k api.Knowledge) {
+	select {
+	case n.proposals <- k:
+	default:
+		n.logf(context.Background(), n.st.Now(), "telegram alerts: too many proposal alerts waiting, dropped the alert for entry %d", k.ID)
+	}
+}
+
+// sendKnowledge sends the alert for one proposal: one attempt, no retry.
+func (n *notifier) sendKnowledge(ctx context.Context, k api.Knowledge) {
+	now := n.st.Now()
+	if now.Before(n.notBefore) {
+		n.logf(ctx, now, "telegram alerts: waiting out HTTP 429, no alert for entry %d", k.ID)
+		return
+	}
+	text, buttons := knowledgeMessage(k, n.publicURL)
+	retry, err := n.send(ctx, text, buttons)
+	if err == nil {
+		return
+	}
+	if retry > 0 {
+		n.notBefore = now.Add(retry)
+	}
+	n.logf(ctx, now, "telegram alerts: send failed for the alert for entry %d: %v", k.ID, err)
+}
+
+// knowledgeMessage is the text and button for a proposal. A session writes
+// the text, so it is cleaned.
+func knowledgeMessage(k api.Knowledge, publicURL string) (string, []inlineButton) {
+	lines := []string{
+		"💡 Knowledge proposed",
+		termtext.Clean(k.Kind, 0) + " · " + termtext.Clean(k.Scope, 0),
+		termtext.Clean(k.Text, alertRuleRunes),
+		"proposed by " + termtext.Clean(k.CreatedBy, 0) + " · entry " + strconv.FormatInt(k.ID, 10),
+	}
+	return strings.Join(lines, "\n"), []inlineButton{{Text: "Open knowledge", URL: publicURL + "/#knowledge"}}
 }

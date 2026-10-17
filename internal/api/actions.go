@@ -14,6 +14,7 @@ import (
 const (
 	// X-Hub-Action values the dashboard sends with these writes.
 	HeaderActionInstructions = "instructions" // POST /v1/instructions, DELETE /v1/instructions/{id}
+	HeaderActionKnowledge    = "knowledge"    // POST /v1/knowledge, POST /v1/knowledge/{id}/{decide,confirm}, DELETE /v1/knowledge/{id}
 	HeaderActionSend         = "send"         // POST /v1/messages
 	HeaderActionApprove      = "approve"      // POST /v1/permissions/{id}/decide
 
