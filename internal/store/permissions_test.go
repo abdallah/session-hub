@@ -319,6 +319,7 @@ func TestDecidePermissionCutInput(t *testing.T) {
 // to 14 or lower and reopen the file as an older release left it.
 func rollbackV15(t *testing.T, s *Store) {
 	t.Helper()
+	rollbackV16(t, s)
 	if _, err := s.db.Exec("ALTER TABLE permission_requests DROP COLUMN polled_at"); err != nil {
 		t.Fatalf("drop permission_requests.polled_at: %v", err)
 	}

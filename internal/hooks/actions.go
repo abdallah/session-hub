@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,6 +89,7 @@ func (h *handler) printContext() error {
 	var in struct {
 		HookEventName string `json:"hook_event_name"`
 		AgentID       string `json:"agent_id"`
+		SessionID     string `json:"session_id"`
 	}
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return fmt.Errorf("hook context: bad stdin JSON: %w", err)
@@ -100,6 +104,9 @@ func (h *handler) printContext() error {
 	if err != nil {
 		return nil
 	}
+	if in.HookEventName == "UserPromptSubmit" {
+		list.Instructions = dueRules(list.Instructions, h.countPrompt(in.SessionID, list.Instructions))
+	}
 	block := ContextBlock(list)
 	if block == "" {
 		return nil
@@ -108,6 +115,65 @@ func (h *handler) printContext() error {
 	out.HookSpecificOutput.HookEventName = in.HookEventName
 	out.HookSpecificOutput.AdditionalContext = block
 	return writeHookOutput(h.stdout, out)
+}
+
+// promptCountDir holds one prompt counter per session, in the state dir.
+const promptCountDir = "prompt-counts"
+
+// promptCountTTL is how long an untouched counter is kept.
+const promptCountTTL = 7 * 24 * time.Hour
+
+// dueRules keeps the rules sent with prompt n of a session: every rule
+// with no every, and each periodic rule on every Nth prompt. n < 1 (no
+// counter) keeps only the rules with no every.
+func dueRules(rules []api.Instruction, n int) []api.Instruction {
+	var out []api.Instruction
+	for _, r := range rules {
+		if r.Every <= 0 || (n > 0 && n%r.Every == 0) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// countPrompt adds one to the session's prompt counter and returns the new
+// count, or 0 when no rule is periodic or the counter cannot be kept.
+func (h *handler) countPrompt(sessionID string, rules []api.Instruction) int {
+	periodic := false
+	for _, r := range rules {
+		periodic = periodic || r.Every > 0
+	}
+	if !periodic || sessionID == "" || sessionID != filepath.Base(sessionID) || strings.HasPrefix(sessionID, ".") {
+		return 0
+	}
+	dir := filepath.Join(h.stateDir, promptCountDir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return 0
+	}
+	path := filepath.Join(dir, sessionID)
+	raw, _ := os.ReadFile(path)
+	n, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+	n++
+	if os.WriteFile(path, []byte(strconv.Itoa(n)), 0o600) != nil {
+		return 0
+	}
+	if n == 1 {
+		pruneCounters(dir, h.now().Add(-promptCountTTL))
+	}
+	return n
+}
+
+// pruneCounters removes counters last written before cutoff.
+func pruneCounters(dir string, cutoff time.Time) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if info, err := e.Info(); err == nil && info.ModTime().Before(cutoff) {
+			os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
 }
 
 // refreshInstructions is `sessionhub hook refresh-instructions`, which

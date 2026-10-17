@@ -24,7 +24,7 @@ func TestActionCallsRequestShape(t *testing.T) {
 	}{
 		{"rules", "GET", "/v1/instructions", "", "", func() error { _, err := c.Instructions(ctx); return err }},
 		{"add rule", "POST", "/v1/instructions", "", `{"text":"Be brief."}`,
-			func() error { _, err := c.AddInstruction(ctx, "Be brief."); return err }},
+			func() error { _, err := c.AddInstruction(ctx, api.InstructionIn{Text: "Be brief."}); return err }},
 		{"remove rule", "DELETE", "/v1/instructions/7", "", "", func() error { return c.DeleteInstruction(ctx, 7) }},
 		{"send", "POST", "/v1/messages", "", `{"session_ids":["a","b"],"text":"hi","from_session":"s1"}`,
 			func() error {

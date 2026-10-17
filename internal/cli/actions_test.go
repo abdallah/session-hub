@@ -62,11 +62,11 @@ func (f *fakeActions) Instructions(context.Context) (api.InstructionList, error)
 	return api.InstructionList{Instructions: f.rules, Version: "v"}, nil
 }
 
-func (f *fakeActions) AddInstruction(_ context.Context, text string) (api.Instruction, error) {
+func (f *fakeActions) AddInstruction(_ context.Context, in api.InstructionIn) (api.Instruction, error) {
 	if f.addErr != nil {
 		return api.Instruction{}, f.addErr
 	}
-	r := api.Instruction{ID: int64(len(f.rules) + 1), Text: text, CreatedBy: "tower"}
+	r := api.Instruction{ID: int64(len(f.rules) + 1), Text: in.Text, CreatedBy: "tower", Every: in.Every}
 	f.rules = append(f.rules, r)
 	return r, nil
 }
@@ -140,10 +140,14 @@ func TestRules(t *testing.T) {
 		t.Errorf("second add: %v", err)
 	}
 	out.Reset()
+	if err := e.rules(ctx, []string{"add", "--every", "10", "Recheck the plan."}); err != nil || out.String() != "added rule 3, sent every 10 prompts\n" {
+		t.Errorf("add --every: %q %v", out.String(), err)
+	}
+	out.Reset()
 	if err := e.rules(ctx, []string{"ls"}); err != nil {
 		t.Fatal(err)
 	}
-	want := "1  Never push to main.  (tower)\n2  Write in [31mBritish English.  (tower)\n"
+	want := "1  Never push to main.  (tower)\n2  Write in [31mBritish English.  (tower)\n3  Recheck the plan.  (tower, every 10 prompts)\n"
 	if out.String() != want {
 		t.Errorf("ls:\n got %q\nwant %q", out.String(), want)
 	}
@@ -154,7 +158,7 @@ func TestRules(t *testing.T) {
 	if err := e.rules(ctx, []string{"rm", "9"}); err == nil || !strings.Contains(err.Error(), "rule 9") {
 		t.Errorf("rm unknown: %v", err)
 	}
-	for _, bad := range [][]string{{"rm"}, {"rm", "x"}, {"add"}, {"add", "a", "b"}, {"frob"}} {
+	for _, bad := range [][]string{{"rm"}, {"rm", "x"}, {"add"}, {"add", "a", "b"}, {"add", "--every", "0", "x"}, {"add", "--every", "x", "y"}, {"frob"}} {
 		if err := e.rules(ctx, bad); err == nil || !strings.Contains(err.Error(), "usage") {
 			t.Errorf("%q: %v, want usage", bad, err)
 		}

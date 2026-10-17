@@ -18,6 +18,8 @@ const (
 	MaxInstructionRunes = 300
 	// MaxInstructionsRunes caps the whole list.
 	MaxInstructionsRunes = 2000
+	// MaxInstructionEvery caps a rule's every: at most every 100th prompt.
+	MaxInstructionEvery = 100
 	// maxCreatedByRunes caps created_by: a machine name or web:<name>.
 	maxCreatedByRunes = 100
 )
@@ -34,7 +36,7 @@ func (s *Store) Instructions(ctx context.Context) (api.InstructionList, error) {
 
 func readInstructions(ctx context.Context, q querier) (api.InstructionList, error) {
 	out := api.InstructionList{Instructions: []api.Instruction{}}
-	rows, err := q.QueryContext(ctx, `SELECT id, text, created_at, created_by FROM instructions ORDER BY id`)
+	rows, err := q.QueryContext(ctx, `SELECT id, text, created_at, created_by, every FROM instructions ORDER BY id`)
 	if err != nil {
 		return out, err
 	}
@@ -42,7 +44,7 @@ func readInstructions(ctx context.Context, q querier) (api.InstructionList, erro
 	for rows.Next() {
 		var in api.Instruction
 		var created string
-		if err := rows.Scan(&in.ID, &in.Text, &created, &in.CreatedBy); err != nil {
+		if err := rows.Scan(&in.ID, &in.Text, &created, &in.CreatedBy, &in.Every); err != nil {
 			return out, err
 		}
 		if in.CreatedAt, err = parseTS(created); err != nil {
@@ -58,25 +60,33 @@ func readInstructions(ctx context.Context, q querier) (api.InstructionList, erro
 }
 
 // instructionsVersion is the first 16 hex digits of a SHA-256 over each
-// rule's ID and text.
+// rule's ID, text, and every.
 func instructionsVersion(list []api.Instruction) string {
 	h := sha256.New()
 	for _, in := range list {
 		fmt.Fprintf(h, "%d\x00%s\x00", in.ID, in.Text)
+		if in.Every != 0 {
+			// Only when set, so the version of a list without one stays the same.
+			fmt.Fprintf(h, "every=%d\x00", in.Every)
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 // AddInstruction stores a rule. text is trimmed and must be 1 to
-// MaxInstructionRunes characters with no control characters. A rule that
-// would take the list past MaxInstructionsRunes returns ErrFull.
-func (s *Store) AddInstruction(ctx context.Context, text, createdBy string) (api.Instruction, error) {
+// MaxInstructionRunes characters with no control characters. every is 0
+// (every prompt) to MaxInstructionEvery. A rule that would take the list
+// past MaxInstructionsRunes returns ErrFull.
+func (s *Store) AddInstruction(ctx context.Context, text, createdBy string, every int) (api.Instruction, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return api.Instruction{}, invalidf("text is empty")
 	}
 	if err := checkText("text", text, MaxInstructionRunes); err != nil {
 		return api.Instruction{}, err
+	}
+	if every < 0 || every > MaxInstructionEvery {
+		return api.Instruction{}, invalidf("every must be 0 to %d", MaxInstructionEvery)
 	}
 	if createdBy == "" {
 		return api.Instruction{}, invalidf("created_by is empty")
@@ -102,8 +112,8 @@ func (s *Store) AddInstruction(ctx context.Context, text, createdBy string) (api
 		return api.Instruction{}, fmt.Errorf("%w: the rules use %d of %d characters and this one has %d; remove a rule first",
 			ErrFull, used, MaxInstructionsRunes, n)
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO instructions (text, created_at, created_by) VALUES (?, ?, ?)`,
-		text, formatTS(now), createdBy)
+	res, err := tx.ExecContext(ctx, `INSERT INTO instructions (text, created_at, created_by, every) VALUES (?, ?, ?, ?)`,
+		text, formatTS(now), createdBy, every)
 	if err != nil {
 		return api.Instruction{}, err
 	}
@@ -114,7 +124,7 @@ func (s *Store) AddInstruction(ctx context.Context, text, createdBy string) (api
 	if err := tx.Commit(); err != nil {
 		return api.Instruction{}, err
 	}
-	return api.Instruction{ID: id, Text: text, CreatedAt: now, CreatedBy: createdBy}, nil
+	return api.Instruction{ID: id, Text: text, CreatedAt: now, CreatedBy: createdBy, Every: every}, nil
 }
 
 // DeleteInstruction removes rule id, or returns ErrNotFound.

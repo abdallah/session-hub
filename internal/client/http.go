@@ -290,9 +290,9 @@ func (c *Client) Instructions(ctx context.Context) (api.InstructionList, error) 
 }
 
 // AddInstruction adds a standing rule.
-func (c *Client) AddInstruction(ctx context.Context, text string) (api.Instruction, error) {
+func (c *Client) AddInstruction(ctx context.Context, in api.InstructionIn) (api.Instruction, error) {
 	var out api.Instruction
-	err := c.do(ctx, http.MethodPost, "/v1/instructions", api.InstructionIn{Text: text}, &out)
+	err := c.do(ctx, http.MethodPost, "/v1/instructions", in, &out)
 	return out, err
 }
 

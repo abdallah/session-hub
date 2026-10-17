@@ -46,7 +46,7 @@ func (s *Server) addInstruction(w http.ResponseWriter, r *http.Request, p princi
 	if p.web != nil {
 		by = "web:" + p.web.Name
 	}
-	rule, err := s.store.AddInstruction(r.Context(), in.Text, by)
+	rule, err := s.store.AddInstruction(r.Context(), in.Text, by, in.Every)
 	if err != nil {
 		s.storeError(w, err)
 		return

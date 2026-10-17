@@ -633,9 +633,15 @@ Standing rules every session sees, at its start and with every prompt. Each
 rule is 1 to 300 characters with no control characters; the list holds at
 most 2,000 characters, and an add past that is `409`. `GET
 /v1/instructions` returns `{"instructions": [{"id", "text", "created_at",
-"created_by"}], "version": "<16 hex digits>"}`; the version changes whenever
+"created_by", "every"}], "version": "<16 hex digits>"}`; the version changes whenever
 the list does, so clients skip an unchanged copy. `created_by` is the machine
 name, or `web:<session name>` for a browser.
+
+`every` makes a rule periodic: `0` or absent sends it with every prompt, and
+`N` (1 to 100) with every Nth prompt of a session. Every rule is sent at
+session start. `POST /v1/instructions` takes `{"text", "every"}`. The hook
+counts prompts per session in `<state>/prompt-counts/` and removes counters
+untouched for 7 days.
 
 When Telegram alerts are on, each stored rule also sends a Telegram message
 (see [Telegram alerts](#telegram-alerts)), whoever added it. A rule that a

@@ -140,7 +140,8 @@ without an event. A failed heartbeat is logged, not queued.
 
 After each heartbeat the server accepted, the watcher reads
 `GET /v1/instructions` and rewrites `<state>/instructions.json` when the
-`version` changed. `sessionhub hook context` prints that copy into every prompt. A
+`version` changed. `sessionhub hook context` prints that copy into every prompt,
+leaving out a periodic rule except on every Nth prompt of the session. A
 failed read keeps the old copy and logs `rules: refresh failed`, at most
 once every 5 minutes. The refresh runs after the heartbeat is sent, so it
 never delays or fails the heartbeat.

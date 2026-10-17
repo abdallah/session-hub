@@ -52,6 +52,9 @@ type Instruction struct {
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
 	CreatedBy string    `json:"created_by"`
+	// Every is how often the rule is sent: 0 on every prompt, N on every
+	// Nth prompt of a session. Every rule is sent at session start.
+	Every int `json:"every,omitempty"`
 }
 
 // InstructionList is the response of GET /v1/instructions, oldest first.
@@ -63,7 +66,8 @@ type InstructionList struct {
 
 // InstructionIn is the body of POST /v1/instructions.
 type InstructionIn struct {
-	Text string `json:"text"`
+	Text  string `json:"text"`
+	Every int    `json:"every,omitempty"`
 }
 
 // MessagesIn is the body of POST /v1/messages.

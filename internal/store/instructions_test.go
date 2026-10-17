@@ -34,7 +34,7 @@ func TestMigrateV7ToV8(t *testing.T) {
 	if ms, _ := s2.ListMachines(ctx); len(ms) != 1 {
 		t.Errorf("machines after upgrade: %+v", ms)
 	}
-	if _, err := s2.AddInstruction(ctx, "Use British spelling.", "tower"); err != nil {
+	if _, err := s2.AddInstruction(ctx, "Use British spelling.", "tower", 0); err != nil {
 		t.Errorf("AddInstruction after upgrade: %v", err)
 	}
 }
@@ -46,7 +46,7 @@ func TestInstructions(t *testing.T) {
 	if err != nil || empty.Instructions == nil || len(empty.Instructions) != 0 || empty.Version == "" {
 		t.Fatalf("empty list: %+v %v", empty, err)
 	}
-	a, err := e.s.AddInstruction(ctx, "  Never push to main.  ", "tower")
+	a, err := e.s.AddInstruction(ctx, "  Never push to main.  ", "tower", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestInstructions(t *testing.T) {
 		t.Errorf("added %+v", a)
 	}
 	e.clock.Advance(time.Second)
-	b, err := e.s.AddInstruction(ctx, "Write in British English.", "web:phone")
+	b, err := e.s.AddInstruction(ctx, "Write in British English.", "web:phone", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,6 +68,17 @@ func TestInstructions(t *testing.T) {
 	again, _ := e.s.Instructions(ctx)
 	if again.Version != list.Version {
 		t.Errorf("an unchanged list changed version: %q then %q", list.Version, again.Version)
+	}
+	c, err := e.s.AddInstruction(ctx, "Recheck the plan.", "tower", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withC, _ := e.s.Instructions(ctx)
+	if c.Every != 10 || withC.Instructions[2].Every != 10 {
+		t.Errorf("every not kept: added %+v, read %+v", c, withC.Instructions[2])
+	}
+	if err := e.s.DeleteInstruction(ctx, c.ID); err != nil {
+		t.Fatal(err)
 	}
 	if err := e.s.DeleteInstruction(ctx, a.ID); err != nil {
 		t.Fatal(err)
@@ -90,25 +101,30 @@ func TestInstructionLimits(t *testing.T) {
 		"newline":  "one\ntwo",
 		"escape":   "red \x1b[31m",
 	} {
-		if _, err := e.s.AddInstruction(ctx, text, "tower"); !errors.Is(err, ErrInvalid) {
+		if _, err := e.s.AddInstruction(ctx, text, "tower", 0); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: %v, want ErrInvalid", name, err)
 		}
 	}
-	if _, err := e.s.AddInstruction(ctx, "ok", ""); !errors.Is(err, ErrInvalid) {
+	if _, err := e.s.AddInstruction(ctx, "ok", "", 0); !errors.Is(err, ErrInvalid) {
 		t.Errorf("empty created_by: %v, want ErrInvalid", err)
+	}
+	for _, every := range []int{-1, MaxInstructionEvery + 1} {
+		if _, err := e.s.AddInstruction(ctx, "ok", "tower", every); !errors.Is(err, ErrInvalid) {
+			t.Errorf("every %d: %v, want ErrInvalid", every, err)
+		}
 	}
 	// 300 characters is allowed; the list holds six of them (1,800), and a
 	// seventh would pass 2,000.
 	rule := strings.Repeat("é", MaxInstructionRunes)
 	for i := 0; i < 6; i++ {
-		if _, err := e.s.AddInstruction(ctx, rule, "tower"); err != nil {
+		if _, err := e.s.AddInstruction(ctx, rule, "tower", 0); err != nil {
 			t.Fatalf("rule %d: %v", i, err)
 		}
 	}
-	if _, err := e.s.AddInstruction(ctx, rule, "tower"); !errors.Is(err, ErrFull) {
+	if _, err := e.s.AddInstruction(ctx, rule, "tower", 0); !errors.Is(err, ErrFull) {
 		t.Fatalf("past 2,000 characters: %v, want ErrFull", err)
 	}
-	if _, err := e.s.AddInstruction(ctx, strings.Repeat("y", 200), "tower"); err != nil {
+	if _, err := e.s.AddInstruction(ctx, strings.Repeat("y", 200), "tower", 0); err != nil {
 		t.Errorf("exactly 2,000 characters: %v", err)
 	}
 	if n := e.count(`SELECT COUNT(*) FROM instructions`); n != 7 {
@@ -118,5 +134,35 @@ func TestInstructionLimits(t *testing.T) {
 	list, _ = e.s.Instructions(ctx)
 	if len(list.Instructions) != 7 {
 		t.Errorf("list has %d rules, want 7", len(list.Instructions))
+	}
+}
+
+// rollbackV16 removes what schema v16 added, so a test can set user_version
+// to 15 or lower and reopen the file as an older release left it.
+func rollbackV16(t *testing.T, s *Store) {
+	t.Helper()
+	if _, err := s.db.Exec("ALTER TABLE instructions DROP COLUMN every"); err != nil {
+		t.Fatalf("drop instructions.every: %v", err)
+	}
+}
+
+func TestMigrateV15ToV16(t *testing.T) {
+	s, path := openTemp(t)
+	rollbackV16(t, s)
+	if _, err := s.db.Exec(`INSERT INTO instructions (text, created_at, created_by) VALUES ('Be brief.', '2026-10-01T00:00:00Z', 'tower')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("PRAGMA user_version = 15"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s2, err := Open(path, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	list, err := s2.Instructions(context.Background())
+	if err != nil || len(list.Instructions) != 1 || list.Instructions[0].Every != 0 {
+		t.Fatalf("after migrate: %+v %v, want one rule with every 0", list, err)
 	}
 }

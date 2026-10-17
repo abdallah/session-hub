@@ -19,7 +19,7 @@ import (
 // approve, and sessionhub deny use.
 type actionsAPI interface {
 	Instructions(ctx context.Context) (api.InstructionList, error)
-	AddInstruction(ctx context.Context, text string) (api.Instruction, error)
+	AddInstruction(ctx context.Context, in api.InstructionIn) (api.Instruction, error)
 	DeleteInstruction(ctx context.Context, id int64) error
 	SendMessages(ctx context.Context, in api.MessagesIn) (api.MessagesOut, error)
 	GetMessage(ctx context.Context, id string) (api.Message, error)
@@ -37,7 +37,7 @@ const (
 
 const rulesUsage = `usage:
   sessionhub rules [ls]
-  sessionhub rules add "<text>"
+  sessionhub rules add [--every N] "<text>"
   sessionhub rules rm <id>`
 
 const sendUsage = `usage:
@@ -84,11 +84,26 @@ func (e *env) rules(ctx context.Context, args []string) error {
 			return nil
 		}
 		for _, r := range list.Instructions {
-			fmt.Fprintf(e.out, "%d  %s  (%s)\n", r.ID, clean(r.Text, 0), clean(r.CreatedBy, 0))
+			every := ""
+			if r.Every > 0 {
+				every = fmt.Sprintf(", every %d prompts", r.Every)
+			}
+			fmt.Fprintf(e.out, "%d  %s  (%s%s)\n", r.ID, clean(r.Text, 0), clean(r.CreatedBy, 0), every)
 		}
 		return nil
+	case len(args) == 4 && args[0] == "add" && args[1] == "--every":
+		n, err := strconv.Atoi(args[2])
+		if err != nil || n <= 0 {
+			return fmt.Errorf("rules add: --every needs a number of prompts, not %q\n%s", clean(args[2], 0), rulesUsage)
+		}
+		r, err := e.actions.AddInstruction(ctx, api.InstructionIn{Text: args[3], Every: n})
+		if err != nil {
+			return fmt.Errorf("rules add: %s", errText(err))
+		}
+		fmt.Fprintf(e.out, "added rule %d, sent every %d prompts\n", r.ID, n)
+		return nil
 	case len(args) == 2 && args[0] == "add":
-		r, err := e.actions.AddInstruction(ctx, args[1])
+		r, err := e.actions.AddInstruction(ctx, api.InstructionIn{Text: args[1]})
 		if err != nil {
 			return fmt.Errorf("rules add: %s", errText(err))
 		}

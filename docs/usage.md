@@ -35,7 +35,8 @@
   key-based SSH (see [Resume across machines](self-hosting.md#resume-across-machines));
   without it, it shows the resume command instead.
 - Standing rules reach every Claude session on every machine, at its start
-  and with every prompt. Add one with `sessionhub rules add "<text>"`, on the
+  and with every prompt, or every Nth prompt with `--every N`. Add one with
+  `sessionhub rules add "<text>"`, on the
   dashboard's **Rules** tab, or by asking Claude to `remember` it for all
   sessions; `sessionhub rules` lists them and `sessionhub rules rm <id>` removes one.
   Keep each to one line; the list holds 2,000 characters.

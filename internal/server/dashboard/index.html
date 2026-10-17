@@ -231,6 +231,10 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   flex: 1 1 16rem; min-width: 0; min-height: 44px; padding: 0 8px; font: inherit;
   background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
 }
+.rule-add select {
+  min-height: 44px; padding: 0 8px; font: inherit;
+  background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
+}
 .perm { padding: 0 12px 4px; font-size: .9rem; }
 .perm-tool { font-weight: 600; margin-right: 6px; }
 .perm-main { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -423,6 +427,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   var lastRules = { instructions: [], version: "" };
   var rulesError = "";  // why the last rules read or write failed
   var ruleDraft = "";   // the add box's text, kept across rebuilds
+  var ruleEvery = 0;    // the add box's interval: 0 every prompt, N every Nth
   var selectMode = false;
   var selected = {};    // session id -> true while selected for a message
   var moveState = {};   // session id -> {phase: "sending"} while a move request is out, or {phase: "error", error}
@@ -1073,13 +1078,17 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     return "";
   }
 
-  function addRuleRequest(text) {
+  // addRuleRequest is the POST for a new rule. every > 0 sends it with
+  // every Nth prompt of a session instead of every prompt.
+  function addRuleRequest(text, every) {
+    var body = { text: text.trim() };
+    if (every > 0) body.every = every;
     return {
       url: "/v1/instructions",
       init: {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Hub-Action": "instructions" },
-        body: JSON.stringify({ text: text.trim() }),
+        body: JSON.stringify(body),
         cache: "no-store"
       }
     };
@@ -2817,14 +2826,16 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     var view = rulesView(lastRules);
     var keep = focusedKey();
     var frag = document.createDocumentFragment();
-    frag.appendChild(el("p", "meta", "Every session on every machine sees these rules at its start and with every prompt. " +
-      view.left + " of 2,000 characters left."));
+    frag.appendChild(el("p", "meta", "Every session on every machine sees these rules at its start and with every prompt, " +
+      "or with every Nth prompt for a periodic rule. " + view.left + " of 2,000 characters left."));
     if (!view.rules.length) frag.appendChild(el("p", "empty", "No standing rules yet."));
     var ul = el("ul", "rules");
     view.rules.forEach(function (r) {
       var li = el("li", null);
       li.appendChild(el("span", "rule-text", r.text));
-      li.appendChild(el("span", "rule-by", r.created_by || ""));
+      var by = r.created_by || "";
+      if (r.every > 0) by += (by ? " · " : "") + "every " + r.every + " prompts";
+      li.appendChild(el("span", "rule-by", by));
       var del = keyed(el("button", "textbtn", "Delete"), "rule-del:" + r.id);
       del.type = "button";
       del.setAttribute("aria-label", "Delete rule: " + r.text);
@@ -2842,10 +2853,20 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     box.value = ruleDraft;
     box.addEventListener("input", function () { ruleDraft = box.value; });
     box.addEventListener("keydown", function (e) { if (e.key === "Enter") addRule(); });
+    var every = keyed(el("select", null), "rule-every");
+    every.setAttribute("aria-label", "How often to send the rule");
+    [0, 5, 10, 20].forEach(function (n) {
+      var opt = el("option", null, n ? "Every " + n + " prompts" : "Every prompt");
+      opt.value = String(n);
+      opt.selected = n === ruleEvery;
+      every.appendChild(opt);
+    });
+    every.addEventListener("change", function () { ruleEvery = Number(every.value) || 0; });
     var add = el("button", null, "Add rule");
     add.type = "button";
     add.addEventListener("click", function () { addRule(); });
     form.appendChild(box);
+    form.appendChild(every);
     form.appendChild(add);
     frag.appendChild(form);
     if (rulesError) frag.appendChild(el("p", "error", rulesError));
@@ -2860,7 +2881,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       renderRules();
       return;
     }
-    rulesWrite(addRuleRequest(ruleDraft), function () { ruleDraft = ""; });
+    rulesWrite(addRuleRequest(ruleDraft, ruleEvery), function () { ruleDraft = ""; ruleEvery = 0; });
   }
 
   function removeRule(r) {

@@ -20,7 +20,7 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub inbox dismiss [--since <time>] <id\|prefix>` | Hide an inbox item until something new happens in that session. |
 | `sessionhub inbox snooze <id\|prefix> <1h\|4h\|tomorrow\|duration>` | Hide an inbox item for a while. `tomorrow` means 9:00 local time the next day. A Go duration such as `90m` also works, up to just under 7 days (167h59m). |
 | `sessionhub rules [ls]` | The standing rules every session sees, one per line: number, text, and who added it. See below. |
-| `sessionhub rules add "<text>"` | Add a rule, 1 to 300 characters on one line. The list holds at most 2,000 characters. |
+| `sessionhub rules add [--every N] "<text>"` | Add a rule, 1 to 300 characters on one line. The list holds at most 2,000 characters. `--every N` sends it with every Nth prompt of a session instead of every prompt. |
 | `sessionhub rules rm <id>` | Remove rule `<id>`. |
 | `sessionhub task add "<title>" [--ref X] [--url U] [--source S] [--now]` | Add a task. It starts as `todo`, or `in_progress` with `--now`. `--source` is `ticket`, `email`, `chat`, or `other` (default `other`). See below. |
 | `sessionhub task ls [--date YYYY-MM-DD] [--json]` | A day (default today) in the local time zone, in sections: **Now**, **Waiting on**, **Done**, **Touched, not finished**, **Todo**, and **Carried over**, each with its working time. Empty sections are left out. `--json` prints the day view as is, with `active_seconds`, `last_active_at`, `now`, and `waiting_on`. |
@@ -321,7 +321,9 @@ every machine sees at its start and with every prompt. `sessionhub rules add`
 saves one on the server; each machine's herdr watcher copies the list
 within a minute, and sessions see it from their next prompt. A rule is one
 line of at most 300 characters, and the whole list is at most 2,000; an add
-past that fails and asks you to remove a rule first. The dashboard's
+past that fails and asks you to remove a rule first. `--every N` makes a
+periodic rule: it is sent at session start and then with every Nth prompt, a
+reminder that keeps long sessions on track without repeating it each turn. The dashboard's
 **Rules** tab and the MCP tools `remember`, `forget`, and `instructions`
 edit the same list.
 

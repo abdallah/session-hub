@@ -23,7 +23,7 @@ type hubAPI interface {
 	PostReport(ctx context.Context, id string, r api.ReportIn) error
 	SetTitle(ctx context.Context, id, title string) error
 	Instructions(ctx context.Context) (api.InstructionList, error)
-	AddInstruction(ctx context.Context, text string) (api.Instruction, error)
+	AddInstruction(ctx context.Context, in api.InstructionIn) (api.Instruction, error)
 	DeleteInstruction(ctx context.Context, id int64) error
 	SendMessages(ctx context.Context, in api.MessagesIn) (api.MessagesOut, error)
 	OpenTasks(ctx context.Context) ([]api.Task, error)
@@ -337,7 +337,7 @@ func (s *Server) remember(ctx context.Context, args json.RawMessage) toolResult 
 	if err != nil {
 		return text("sessionhub: the rule could not be saved: "+serverMessage(err), true)
 	}
-	r, err := a.AddInstruction(ctx, rule)
+	r, err := a.AddInstruction(ctx, api.InstructionIn{Text: rule})
 	var se *client.StatusError
 	switch {
 	case errors.As(err, &se) && se.Status == 409:

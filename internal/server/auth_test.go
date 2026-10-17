@@ -68,7 +68,7 @@ func TestAuthMatrix(t *testing.T) {
 	ruleN := 0
 	freshRule := func() string {
 		ruleN++
-		r, err := e.st.AddInstruction(ctx, fmt.Sprintf("matrix rule %d", ruleN), "tower")
+		r, err := e.st.AddInstruction(ctx, fmt.Sprintf("matrix rule %d", ruleN), "tower", 0)
 		if err != nil {
 			t.Fatal(err)
 		}

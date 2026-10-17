@@ -55,6 +55,52 @@ func TestContextPrintsBlock(t *testing.T) {
 	}
 }
 
+func TestContextSendsPeriodicRules(t *testing.T) {
+	fx := newFixture(t, "http://127.0.0.1:1")
+	list := api.InstructionList{Version: "v1", Instructions: []api.Instruction{
+		{ID: 1, Text: "Always."},
+		{ID: 2, Text: "Every third.", Every: 3},
+	}}
+	if err := client.SaveInstructions(client.InstructionsPath(fx.state), list); err != nil {
+		t.Fatal(err)
+	}
+	send := func(event string) string {
+		t.Helper()
+		fx.out.Reset()
+		if err := fx.call(t, "context", contextStdin(event)); err != nil {
+			t.Fatal(err)
+		}
+		var out struct {
+			HookSpecificOutput struct {
+				AdditionalContext string `json:"additionalContext"`
+			} `json:"hookSpecificOutput"`
+		}
+		if err := json.Unmarshal(fx.out.Bytes(), &out); err != nil {
+			t.Fatalf("stdout is not one JSON object: %q", fx.out.String())
+		}
+		return out.HookSpecificOutput.AdditionalContext
+	}
+	if got := send("SessionStart"); !strings.Contains(got, "Every third.") {
+		t.Errorf("SessionStart leaves out the periodic rule: %q", got)
+	}
+	for n := 1; n <= 6; n++ {
+		got := send("UserPromptSubmit")
+		if !strings.Contains(got, "Always.") {
+			t.Errorf("prompt %d leaves out the plain rule: %q", n, got)
+		}
+		if want := n%3 == 0; strings.Contains(got, "Every third.") != want {
+			t.Errorf("prompt %d: periodic rule sent = %v, want %v", n, !want, want)
+		}
+	}
+}
+
+func TestDueRulesWithoutCounter(t *testing.T) {
+	rules := []api.Instruction{{ID: 1, Text: "a"}, {ID: 2, Text: "b", Every: 2}}
+	if got := dueRules(rules, 0); len(got) != 1 || got[0].ID != 1 {
+		t.Errorf("dueRules(n=0) = %+v, want only the plain rule", got)
+	}
+}
+
 func TestContextNeverCallsServer(t *testing.T) {
 	srv := newFakeServer(t)
 	for name, setup := range map[string]func(state string){

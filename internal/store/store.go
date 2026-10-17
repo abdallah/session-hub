@@ -113,7 +113,7 @@ func (s *Store) Now() time.Time { return s.now().UTC() }
 // StaleAfter returns the configured staleness threshold.
 func (s *Store) StaleAfter() time.Duration { return s.staleAfter }
 
-const schemaVersion = 15
+const schemaVersion = 16
 
 const schemaV1 = `
 CREATE TABLE machines (
@@ -438,6 +438,10 @@ CREATE INDEX task_spans_task ON task_spans(task_id);
 // expires early; see PermissionAbandonAfter.
 const schemaV15 = `ALTER TABLE permission_requests ADD COLUMN polled_at TEXT;`
 
+// schemaV16 adds instructions.every: 0 sends the rule with every prompt, N
+// with every Nth prompt of a session.
+const schemaV16 = `ALTER TABLE instructions ADD COLUMN every INTEGER NOT NULL DEFAULT 0;`
+
 // afterVersionRead runs in migrate between the unlocked version read and the
 // transaction. Tests use it to line two opens up on the same stale version.
 var afterVersionRead = func() {}
@@ -545,6 +549,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if v < 15 {
 		if _, err := tx.ExecContext(ctx, schemaV15); err != nil {
 			return fmt.Errorf("migrate schema to v15: %w", err)
+		}
+	}
+	if v < 16 {
+		if _, err := tx.ExecContext(ctx, schemaV16); err != nil {
+			return fmt.Errorf("migrate schema to v16: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
