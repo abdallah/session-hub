@@ -663,7 +663,7 @@ characters, an optional `why` of up to 200, and no control characters.
   project (`group/project!34`). A machine name matches the config machine
   name exactly, case included.
 - The server rejects text that matches a secret pattern with `400`: key
-  prefixes such as `AKIA`, `ghp_`, and `glpat-`, PEM headers, and base64 runs
+  prefixes such as `AKIA`, `ASIA`, `ghp_`, `glpat-`, and `xoxb-`, PEM headers, and base64 runs
   of 40 or more characters. Account IDs, ARNs, and secret names are allowed.
 - The server holds at most 500 `active` entries and 100 `proposed`; an add
   past either is `409`. Global conventions also share a 2,000-character cap;
