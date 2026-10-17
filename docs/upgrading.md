@@ -13,11 +13,15 @@ convention. The migration is one way: to roll back, restore the pre-deploy
 backup, because the version 16 binary refuses a version 17 database.
 
 1. Back up the database, then deploy the server.
-2. On every machine, run `make install` and `sessionhub install-plugin`. The
-   new watcher writes `knowledge.json`. Until then the hook keeps using
-   `instructions.json`, and a watcher from before this release keeps reading
+2. On every machine, run `make install` and `sessionhub install-plugin`
+   together. A watcher from before this release drops queued knowledge
+   proposals as an unknown op. The new watcher and `sessionhub hook
+   refresh-instructions` write `knowledge.json`. Until then the hook keeps
+   using `instructions.json`, and an old watcher keeps reading
    `/v1/instructions`, which returns the active global conventions.
-3. Update your `CLAUDE.md` from `docs/CLAUDE-snippet.md` so agents propose and
+3. Running sessions get repo and branch entries only after their next
+   `SessionStart`: a resume, `/clear`, a compaction, or a new session.
+4. Update your `CLAUDE.md` from `docs/CLAUDE-snippet.md` so agents propose and
    search knowledge.
 
 ## Upgrade to tasks

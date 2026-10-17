@@ -662,6 +662,9 @@ characters, an optional `why` of up to 200, and no control characters.
   HTTPS clones match. A ticket ref is lowercased; an MR ref keeps its
   project (`group/project!34`). A machine name matches the config machine
   name exactly, case included.
+- An MR scope (`ticket:group/project!N`) is accepted but not yet delivered to
+  sessions: tasks store a bare `!N`, which carries no project, so no session
+  ref matches it. Scope MR knowledge to the MR's ticket ref instead.
 - The server rejects text that matches a secret pattern with `400`: key
   prefixes such as `AKIA`, `ASIA`, `ghp_`, `glpat-`, and `xoxb-`, PEM headers, and base64 runs
   of 40 or more characters. Account IDs, ARNs, and secret names are allowed.
