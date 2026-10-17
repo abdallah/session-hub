@@ -113,10 +113,13 @@ calling session's ID and does not have it sends nothing.
 The `initialize` instructions and `docs/CLAUDE-snippet.md` carry the rule
 for agents: for a clear human-level goal, call `list_tasks`, then
 `link_task` or `propose_task`; when the goal is finished, call
-`propose_done`; create no tasks for steps inside a goal. They also tell agents
+`propose_done`; create no tasks for steps inside a goal. Both also tell agents
 to call `propose_knowledge` when the user corrects a fact about the environment,
 states a convention, or a decision is made, and to search knowledge before
-asking the user where something is.
+asking the user where something is. The snippet gives this guidance in fuller
+form, with the scope and secret guidance (narrowest true scope, names of
+secrets only) that the `initialize` string leaves to the `propose_knowledge`
+tool description.
 
 `propose_knowledge` creates a `proposed` entry that reaches no session until
 you approve it on the dashboard. The scope is `global`, `repo:<origin URL or

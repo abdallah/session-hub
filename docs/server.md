@@ -1241,6 +1241,12 @@ a session is cleaned first.
 - The request never waits for Telegram. The handler queues the message (up
   to 16) and the notifier sends it. If the queue is full, the server drops the
   alert and logs one line; the rule is still stored.
+- The server makes one attempt per rule and keeps no retry queue. A failure is
+  logged like any other alert failure, without the token. After HTTP 429, the
+  server sends no rule alert until `retry_after` has passed.
+- A rule alert is not recorded in `inbox_alerts`, and the 30-second grace
+  and the 10-messages-per-tick limit do not apply.
+- When alerts are off, the server sends nothing.
 
 #### Knowledge proposal alerts
 
@@ -1256,14 +1262,13 @@ proposed by <machine or session:id8> · entry <id>
 ```
 
 Under the text is an **Open knowledge** button (`<public_url>/#knowledge`).
-Text from a session is cleaned first. The queue and the failure handling are
-the same as for rule alerts; the proposal is stored either way.
-- The server makes one attempt per rule and keeps no retry queue. A failure is
-  logged like any other alert failure, without the token. After HTTP 429, the
-  server sends no rule alert until `retry_after` has passed.
-- A rule alert is not recorded in `inbox_alerts`, and the 30-second grace
-  and the 10-messages-per-tick limit do not apply.
-- When alerts are off, the server sends nothing.
+Text from a session is cleaned first.
+
+- The request never waits for Telegram. The handler queues the message (up
+  to 16); if the queue is full, the server drops the alert and logs one line.
+- The server makes one attempt per proposal and keeps no retry queue. After
+  HTTP 429, it sends no knowledge alert until `retry_after` has passed.
+- The proposal is stored whether or not the alert is sent.
 
 ### Query parameters and IDs
 
