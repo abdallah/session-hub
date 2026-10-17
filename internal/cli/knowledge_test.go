@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -79,6 +80,8 @@ func TestKnowledgeAdd(t *testing.T) {
 		{"add", "--kind", "fact", "x"},
 		{"add", "--kind", "fact", "--scope", "global"},
 		{"add", "--kind", "fact", "--scope", "global", "--every", "z", "x"},
+		{"add", "--kind", "fact", "--scope", "global", "--every", "-1", "x"},
+		{"add", "--kind", "fact", "--scope", "global", "--every", "101", "x"},
 		{"approve", "7"}, {"reject", "7"}, {"rm", "7"},
 	} {
 		err := e.knowledge(ctx, args)
@@ -88,6 +91,15 @@ func TestKnowledgeAdd(t *testing.T) {
 	}
 	if len(f.kProposed) != 1 {
 		t.Errorf("proposed on bad args: %d", len(f.kProposed))
+	}
+	// --every 0 means every prompt; the server accepts 0 to 100.
+	for _, v := range []string{"0", "100"} {
+		if err := e.knowledge(ctx, []string{"add", "--kind", "fact", "--scope", "global", "--every", v, "x"}); err != nil {
+			t.Fatalf("--every %s: %v", v, err)
+		}
+		if got := f.kProposed[len(f.kProposed)-1].Every; got == nil || strconv.Itoa(*got) != v {
+			t.Errorf("--every %s sent %v", v, got)
+		}
 	}
 }
 

@@ -101,8 +101,8 @@ func (e *env) knowledgeAdd(ctx context.Context, args []string) error {
 		Text: pos[0], Why: flags["why"]}
 	if v, ok := flags["every"]; ok {
 		n, err := strconv.Atoi(v)
-		if err != nil || n <= 0 {
-			return fmt.Errorf("knowledge add: --every needs a number of prompts, not %q\n%s", clean(v, 0), knowledgeUsage)
+		if err != nil || n < 0 || n > 100 {
+			return fmt.Errorf("knowledge add: --every needs 0 (every prompt) to 100, not %q\n%s", clean(v, 0), knowledgeUsage)
 		}
 		in.Every = &n
 	}

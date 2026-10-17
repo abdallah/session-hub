@@ -20,7 +20,7 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub inbox dismiss [--since <time>] <id\|prefix>` | Hide an inbox item until something new happens in that session. |
 | `sessionhub inbox snooze <id\|prefix> <1h\|4h\|tomorrow\|duration>` | Hide an inbox item for a while. `tomorrow` means 9:00 local time the next day. A Go duration such as `90m` also works, up to just under 7 days (167h59m). |
 | `sessionhub knowledge [ls] [--state proposed\|active\|all] [--scope S]` | Knowledge entries, one per line: number, kind, scope, text, state, and who added it. Default `--state active`. See below. |
-| `sessionhub knowledge add --kind K --scope S [--why W] [--every N] "<text>"` | Propose an entry. It reaches sessions after you approve it on the dashboard. |
+| `sessionhub knowledge add --kind K --scope S [--why W] [--every N] "<text>"` | Propose an entry. It reaches sessions after you approve it on the dashboard. `--every N` takes 0 (every prompt) to 100; without it, a fact or decision defaults to 20 and a convention to 0. |
 | `sessionhub knowledge search "<query>" [--scope S]` | Search the active entries, at most 20. |
 | `sessionhub rules [ls]` | The global conventions every session sees, one per line: number, text, and who added it. See below. |
 | `sessionhub rules add [--every N] "<text>"` | Add an active global convention, 1 to 300 characters on one line. The conventions hold at most 2,000 characters. `--every N` sends it with every Nth prompt of a session instead of every prompt. |
