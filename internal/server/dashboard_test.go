@@ -234,8 +234,8 @@ func TestDashboardWrites(t *testing.T) {
 		s    string
 		want int
 	}{
-		{"method:", 10},
-		{`method: "POST"`, 9},
+		{"method:", 9}, // knowledgeRequest sets the method of all four knowledge writes
+		{`method: "POST"`, 8},
 		{`"X-Hub-Action": "start"`, 1},
 		{"// start-state:begin", 1},
 		{"// start-state:end", 1},
@@ -243,9 +243,9 @@ func TestDashboardWrites(t *testing.T) {
 		{"// move-state:begin", 1},
 		{"// move-state:end", 1},
 		{"= moveRow(s)", 1},
-		{`method: "DELETE"`, 1},
+		{`"DELETE", null)`, 1}, // retireKnowledgeRequest
 		{`"X-Hub-Action": "triage"`, 1},
-		{`"X-Hub-Action": "instructions"`, 2},
+		{`"X-Hub-Action": "knowledge"`, 2}, // knowledgeRequest: with and without a body
 		{`"X-Hub-Action": "send"`, 1},
 		{`"X-Hub-Action": "approve"`, 1},
 		{"// actions-state:begin", 1},
@@ -256,7 +256,7 @@ func TestDashboardWrites(t *testing.T) {
 		{`"X-Hub-Action": "sign-out"`, 1},
 		{`"/remote-control"`, 1},
 		{"fetch(", 19}, // the list, the inbox, the request, the session poll, the Details read, sign-out, triage,
-		// the rules read, a rules write, the send, a decision, the machines read, a move, the move poll,
+		// the knowledge read, a knowledge write, the send, a decision, the machines read, a move, the move poll,
 		// the New session panel's machines read, a start, the start poll, a Tasks read, and a Tasks write
 		{"// rc-state:begin", 1},
 		{"// rc-state:end", 1},
@@ -332,13 +332,14 @@ func TestDashboardWrites(t *testing.T) {
 		"main { padding: 4px 0 32px; }", ".page { padding: 0 16px; }", "h2.machine-h { font-size: 1.25rem;",
 		// Collapse all sits beside the filter; the inbox row names its tap in the actions row.
 		`<button id="all" class="textbtn"`, "function syncAllButton(q)", `keyed(act, "act:" + s.id)`, "@media (hover: hover) and (pointer: fine)",
-		// Rules, selection, the send bar, and the permission block.
-		`<button id="tab-rules" class="tab"`, `<main id="rules" hidden>`, `<section id="sendbar" class="sendbar" hidden`,
+		// Knowledge, selection, the send bar, and the permission block.
+		`<button id="tab-knowledge" class="tab"`, `<main id="knowledge" hidden>`, `<input id="kn-filter" type="search"`,
+		`knFilterTimer = setTimeout(`, "syncKnowledgeBadge(", `window.confirm("Reject this proposal?`, `window.confirm("Retire this entry for every session?`, `<section id="sendbar" class="sendbar" hidden`,
 		`<button id="select" class="textbtn" type="button" aria-pressed="false" hidden>Select</button>`,
 		"if (selectMode || open) art.appendChild(pickBox(s));", `var pv = it.group === "blocked" ? permissionView(it.permission) : null;`,
 		"if (pv) c.appendChild(permissionBlock(pv, s));", `if (pv.main) box.appendChild(pv.code ? el("code", "perm-main", pv.main)`,
-		`window.confirm("Send this message to "`, `window.prompt("Deny "`, `window.confirm("Delete this rule for every session?`,
-		`rulesRoot.hidden = name !== "rules";`, `if (name === "rules") loadRules();`} {
+		`window.confirm("Send this message to "`, `window.prompt("Deny "`,
+		`knowledgeRoot.hidden = name !== "knowledge";`, `if (name === "knowledge") loadKnowledge();`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q", want)
 		}
@@ -355,7 +356,7 @@ func TestDashboardWrites(t *testing.T) {
 }
 
 // TestDashboardActionStates runs the page's actions-state block (and
-// inbox-state, for hashTab) under node: the Rules tab, the send bar, and
+// inbox-state, for hashTab) under node: the Knowledge tab, the send bar, and
 // the permission block.
 func TestDashboardActionStates(t *testing.T) {
 	script := `
@@ -367,15 +368,39 @@ var byId = {
   m: { id: "m", title: "M", machine: "bluebox", controllable: false, messageable: true, status: "live" }
 };
 var targets = sendTargets({ b: true, a: true, c: true, m: true, z: false }, byId);
+function kn(id, state, scope, created, confirmed) {
+  return { id: id, kind: "fact", scope: scope, text: "t" + id, state: state, created_at: created, confirmed_at: confirmed };
+}
+var knList = [
+  kn(1, "active", "repo:gitlab.com/a/b", "2026-10-01T00:00:00Z", "2026-10-01T00:00:00Z"),
+  kn(2, "active", "global", "2026-01-01T00:00:00Z", "2026-07-18T00:00:00Z"), // 91 days: review
+  kn(3, "active", "global", "2026-01-01T00:00:00Z", "2026-07-20T00:00:00Z"), // 89 days: active
+  kn(4, "proposed", "global", "2026-10-16T00:00:00Z", "2026-10-16T00:00:00Z"),
+  kn(5, "proposed", "machine:blu", "2026-10-10T00:00:00Z", "2026-10-10T00:00:00Z"),
+  kn(6, "retired", "global", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+  kn(7, "active", "ticket:x-1", "2026-10-02T00:00:00Z", "2026-10-02T00:00:00Z"),
+  kn(8, "active", "machine:blu", "2026-10-03T00:00:00Z", "2026-10-03T00:00:00Z"),
+  kn(9, "active", "repo:gitlab.com/a/b", "2025-12-01T00:00:00Z", "2026-01-01T00:00:00Z"), // review, oldest
+  kn(10, "rejected", "global", "2026-10-01T00:00:00Z", "2026-10-01T00:00:00Z"),
+  kn(11, "active", "global", "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z")
+];
+function knIds(v) {
+  var ids = function (list) { return list.map(function (k) { return k.id; }); };
+  return { proposed: ids(v.proposed), review: ids(v.review),
+    active: v.active.map(function (g) { return { scope: g.scope, ids: ids(g.entries) }; }) };
+}
 process.stdout.write(JSON.stringify({
-  hash: hashTab("#rules"),
-  view: rulesView({ instructions: [{ id: 1, text: "Never push." }, { id: 2, text: "ééé" }] }),
-  emptyView: rulesView(null),
-  problems: [ruleProblem("  ", 100), ruleProblem("a\nb", 100), ruleProblem("x".repeat(301), 2000),
-    ruleProblem("abcd", 3), ruleProblem(" ok ", 2000)],
-  add: addRuleRequest("  Be brief.  ", 0),
-  addEvery: addRuleRequest("Recheck the plan.", 10),
-  del: deleteRuleRequest(7),
+  hash: [hashTab("#rules"), hashTab("#knowledge")],
+  view: knIds(knowledgeView(knList, Date.parse("2026-10-17T00:00:00Z"))),
+  emptyView: knowledgeView(null, 0),
+  decide: decideKnowledgeRequest(5, "approve", "", ""),
+  decideEdit: decideKnowledgeRequest("5/x", "approve", " New text. ", " repo:gitlab.com/a/b "),
+  reject: decideKnowledgeRequest(5, "reject"),
+  add: addKnowledgeRequest("fact", " global ", "  Uses tofu.  ", "", 20),
+  addWhy: addKnowledgeRequest("decision", "ticket:x-1", "Keep v1.", " old clients ", 0),
+  addDefault: addKnowledgeRequest("convention", "global", "Be brief.", "", undefined),
+  retire: retireKnowledgeRequest(7),
+  confirm: confirmKnowledgeRequest(7),
   targets: targets,
   sendProblems: [sendProblem("hi", targets), sendProblem("  ", targets), sendProblem("hi", []),
     sendProblem("x".repeat(4001), targets), sendProblem("hi", many)],
@@ -404,18 +429,31 @@ process.stdout.write(JSON.stringify({
 }));`
 	out := runBlocks(t, []string{"inbox-state", "actions-state"}, script, map[string]any{})
 	want := `{
-  "hash": "rules",
-  "view": {"rules": [{"id": 1, "text": "Never push."}, {"id": 2, "text": "ééé"}], "used": 14, "left": 1986},
-  "emptyView": {"rules": [], "used": 0, "left": 2000},
-  "problems": ["Write the rule first.", "Keep the rule on one line.", "A rule holds at most 300 characters; this one has 301.",
-    "The rules hold at most 2,000 characters; remove one first.", ""],
-  "add": {"url": "/v1/instructions", "init": {"method": "POST",
-    "headers": {"Content-Type": "application/json", "X-Hub-Action": "instructions"},
-    "body": "{\"text\":\"Be brief.\"}", "cache": "no-store"}},
-  "addEvery": {"url": "/v1/instructions", "init": {"method": "POST",
-    "headers": {"Content-Type": "application/json", "X-Hub-Action": "instructions"},
-    "body": "{\"text\":\"Recheck the plan.\",\"every\":10}", "cache": "no-store"}},
-  "del": {"url": "/v1/instructions/7", "init": {"method": "DELETE", "headers": {"X-Hub-Action": "instructions"}, "cache": "no-store"}},
+  "hash": ["knowledge", "knowledge"],
+  "view": {"proposed": [5, 4], "review": [9, 2], "active": [
+    {"scope": "global", "ids": [3, 11]}, {"scope": "machine:blu", "ids": [8]},
+    {"scope": "repo:gitlab.com/a/b", "ids": [1]}, {"scope": "ticket:x-1", "ids": [7]}]},
+  "emptyView": {"proposed": [], "review": [], "active": []},
+  "decide": {"url": "/v1/knowledge/5/decide", "init": {"method": "POST",
+    "headers": {"Content-Type": "application/json", "X-Hub-Action": "knowledge"},
+    "body": "{\"decision\":\"approve\"}", "cache": "no-store"}},
+  "decideEdit": {"url": "/v1/knowledge/5%2Fx/decide", "init": {"method": "POST",
+    "headers": {"Content-Type": "application/json", "X-Hub-Action": "knowledge"},
+    "body": "{\"decision\":\"approve\",\"text\":\"New text.\",\"scope\":\"repo:gitlab.com/a/b\"}", "cache": "no-store"}},
+  "reject": {"url": "/v1/knowledge/5/decide", "init": {"method": "POST",
+    "headers": {"Content-Type": "application/json", "X-Hub-Action": "knowledge"},
+    "body": "{\"decision\":\"reject\"}", "cache": "no-store"}},
+  "add": {"url": "/v1/knowledge", "init": {"method": "POST",
+    "headers": {"Content-Type": "application/json", "X-Hub-Action": "knowledge"},
+    "body": "{\"kind\":\"fact\",\"scope\":\"global\",\"text\":\"Uses tofu.\",\"every\":20}", "cache": "no-store"}},
+  "addWhy": {"url": "/v1/knowledge", "init": {"method": "POST",
+    "headers": {"Content-Type": "application/json", "X-Hub-Action": "knowledge"},
+    "body": "{\"kind\":\"decision\",\"scope\":\"ticket:x-1\",\"text\":\"Keep v1.\",\"why\":\"old clients\",\"every\":0}", "cache": "no-store"}},
+  "addDefault": {"url": "/v1/knowledge", "init": {"method": "POST",
+    "headers": {"Content-Type": "application/json", "X-Hub-Action": "knowledge"},
+    "body": "{\"kind\":\"convention\",\"scope\":\"global\",\"text\":\"Be brief.\"}", "cache": "no-store"}},
+  "retire": {"url": "/v1/knowledge/7", "init": {"method": "DELETE", "headers": {"X-Hub-Action": "knowledge"}, "cache": "no-store"}},
+  "confirm": {"url": "/v1/knowledge/7/confirm", "init": {"method": "POST", "headers": {"X-Hub-Action": "knowledge"}, "cache": "no-store"}},
   "targets": [
     {"id": "a", "title": "A", "machine": "tower", "ok": true, "why": ""},
     {"id": "b", "title": "b", "machine": "bluebox", "ok": false, "why": "no sessionhub mod in the session, and not in herdr with its watcher running"},
@@ -1286,7 +1324,7 @@ process.stdout.write(JSON.stringify({
 	for _, want := range []string{`<button id="new" class="textbtn" type="button" aria-expanded="false" aria-controls="startbar" hidden>New session</button>`,
 		`fetch("/v1/starts/" + encodeURIComponent(id)`, "var why = startProblem(startMachine.value, startDir.value, startPrompt.value, startTrust.checked);",
 		`<input id="start-trust" type="checkbox">`,
-		"o.disabled = !c.ok;", "newBtn.hidden = tab === \"inbox\" || tab === \"tasks\" || tab === \"rules\" || signedOut;", ".startbar[hidden] { display: none; }"} {
+		"o.disabled = !c.ok;", "newBtn.hidden = tab === \"inbox\" || tab === \"tasks\" || tab === \"knowledge\" || signedOut;", ".startbar[hidden] { display: none; }"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q", want)
 		}

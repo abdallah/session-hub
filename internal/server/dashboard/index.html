@@ -226,12 +226,15 @@ details.snooze .menu button { justify-content: flex-start; text-align: left; wid
 ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .rule-text { flex: 1 1 60%; overflow-wrap: anywhere; }
 .rule-by { color: var(--muted); font-size: .75rem; }
+.rule-why, ul.rules .rule-add { flex: 1 1 100%; }
+.rule-why { color: var(--muted); overflow-wrap: anywhere; }
+#kn-filter { box-sizing: border-box; width: 100%; margin: 4px 0 8px; }
 .rule-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .rule-add input {
   flex: 1 1 16rem; min-width: 0; min-height: 44px; padding: 0 8px; font: inherit;
   background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
 }
-.rule-add select {
+.rule-add select, #kn-filter {
   min-height: 44px; padding: 0 8px; font: inherit;
   background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
 }
@@ -320,7 +323,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     <button id="tab-inbox" class="tab" type="button" role="tab" aria-selected="false" aria-controls="inbox">Inbox</button>
     <button id="tab-tasks" class="tab" type="button" role="tab" aria-selected="false" aria-controls="tasks">Tasks</button>
     <button id="tab-sessions" class="tab" type="button" role="tab" aria-selected="true" aria-controls="root">Sessions</button>
-    <button id="tab-rules" class="tab" type="button" role="tab" aria-selected="false" aria-controls="rules">Rules</button>
+    <button id="tab-knowledge" class="tab" type="button" role="tab" aria-selected="false" aria-controls="knowledge">Knowledge</button>
   </div>
   <input id="filter" type="search" placeholder="Filter sessions" aria-label="Filter sessions" autocomplete="off">
   <button id="all" class="textbtn" type="button" hidden>Collapse all</button>
@@ -374,7 +377,12 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   <div id="task-board"><p class="empty">Loading tasks...</p></div>
 </main>
 <main id="root"><p class="empty">Loading sessions...</p></main>
-<main id="rules" hidden><p class="empty">Loading the rules...</p></main>
+<main id="knowledge" hidden>
+  <div id="kn-queue"><p class="empty">Loading knowledge...</p></div>
+  <h2 class="machine-h">Active</h2>
+  <input id="kn-filter" type="search" placeholder="Search active entries" aria-label="Search active entries" autocomplete="off">
+  <div id="kn-active"></div>
+</main>
 <section id="sendbar" class="sendbar" hidden aria-label="Send a message">
   <h2>Send a message</h2>
   <ul id="send-targets" class="send-targets"></ul>
@@ -415,8 +423,11 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   var inboxRoot = document.getElementById("inbox");
   var tabInbox = document.getElementById("tab-inbox");
   var tabSessions = document.getElementById("tab-sessions");
-  var tabRules = document.getElementById("tab-rules");
-  var rulesRoot = document.getElementById("rules");
+  var tabKnowledge = document.getElementById("tab-knowledge");
+  var knowledgeRoot = document.getElementById("knowledge");
+  var knQueue = document.getElementById("kn-queue");
+  var knActive = document.getElementById("kn-active");
+  var knFilter = document.getElementById("kn-filter");
   var selectBtn = document.getElementById("select");
   var sendBar = document.getElementById("sendbar");
   var sendTargetsEl = document.getElementById("send-targets");
@@ -424,10 +435,14 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   var sendGo = document.getElementById("send-go");
   var sendClear = document.getElementById("send-clear");
   var sendResult = document.getElementById("send-result");
-  var lastRules = { instructions: [], version: "" };
-  var rulesError = "";  // why the last rules read or write failed
-  var ruleDraft = "";   // the add box's text, kept across rebuilds
-  var ruleEvery = 0;    // the add box's interval: 0 every prompt, N every Nth
+  var lastKnowledge = []; // the proposed and active entries
+  var knFound = null;     // the active entries matching knQuery, or null
+  var knQuery = "";       // the search box's query, once the debounce settles
+  var knFilterTimer = null;
+  var knError = "";       // why the last knowledge read or write failed
+  var knEdit = {};        // proposal id -> {text, scope} while its Edit box is open
+  // The add box, kept across rebuilds. every null follows the kind's default.
+  var knDraft = { kind: "convention", scope: "global", text: "", why: "", every: null };
   var selectMode = false;
   var selected = {};    // session id -> true while selected for a message
   var moveState = {};   // session id -> {phase: "sending"} while a move request is out, or {phase: "error", error}
@@ -450,7 +465,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   // {text}. Each also has session, since, and view, so a decided request
   // keeps its outcome on the row after the inbox drops the request.
   var permState = {};
-  var tab = null;       // "inbox", "sessions", or "rules"; null until the first inbox read picks one
+  var tab = null;       // "inbox", "tasks", "sessions", or "knowledge"; null until the first inbox read picks one
   var lastInbox = { items: [], counts: { blocked: 0, waiting: 0, finished: 0 } };
   var pending = {};     // session id -> the since a dismiss or snooze hid, until the server agrees
   var inboxErrors = {}; // session id -> why its last dismiss or snooze failed
@@ -837,12 +852,13 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   function firstTab(n) { return n > 0 ? "inbox" : "sessions"; }
 
   // hashTab is the tab a URL fragment asks for: #inbox, #tasks, #sessions,
-  // or #rules, else null. The Telegram alert's Open inbox button links to /#inbox.
+  // or #knowledge (#rules from before the Knowledge tab), else null. The
+  // Telegram alert's Open inbox button links to /#inbox.
   function hashTab(hash) {
     if (hash === "#inbox") return "inbox";
     if (hash === "#tasks") return "tasks";
     if (hash === "#sessions") return "sessions";
-    if (hash === "#rules") return "rules";
+    if (hash === "#knowledge" || hash === "#rules") return "knowledge";
     return null;
   }
 
@@ -1053,52 +1069,69 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   // tasks-state:end
 
   // actions-state:begin
-  var RULES_MAX = 2000; // characters in all rules
-  var RULE_MAX = 300;   // characters in one rule
+  var KNOWLEDGE_REVIEW_MS = 90 * 86400000; // an active entry unconfirmed this long goes to Review
 
-  // ruleChars counts characters as the server does: code points.
-  function ruleChars(text) { return Array.from(text).length; }
+  function knTime(iso) { return Date.parse(iso) || 0; }
 
-  // rulesView is the Rules tab: the rules, oldest first, and the characters
-  // used and left.
-  function rulesView(list) {
-    var rules = ((list && list.instructions) || []).filter(function (r) { return r && typeof r.text === "string"; });
-    var used = rules.reduce(function (n, r) { return n + ruleChars(r.text); }, 0);
-    return { rules: rules, used: used, left: Math.max(0, RULES_MAX - used) };
-  }
-
-  // ruleProblem is why the add box's text cannot be added, or "".
-  function ruleProblem(text, left) {
-    var t = text.trim();
-    if (!t) return "Write the rule first.";
-    if (/[\u0000-\u001f\u007f-\u009f]/.test(t)) return "Keep the rule on one line.";
-    var n = ruleChars(t);
-    if (n > RULE_MAX) return "A rule holds at most 300 characters; this one has " + n + ".";
-    if (n > left) return "The rules hold at most 2,000 characters; remove one first.";
-    return "";
-  }
-
-  // addRuleRequest is the POST for a new rule. every > 0 sends it with
-  // every Nth prompt of a session instead of every prompt.
-  function addRuleRequest(text, every) {
-    var body = { text: text.trim() };
-    if (every > 0) body.every = every;
+  // knowledgeView is the Knowledge tab: proposals oldest first, active
+  // entries unconfirmed for 90 days (oldest first), and the other active
+  // entries grouped by scope, global first, oldest first within a scope.
+  function knowledgeView(list, now) {
+    var all = (list || []).filter(function (k) { return k && typeof k.text === "string"; });
+    var stale = function (k) { return knTime(k.confirmed_at) < now - KNOWLEDGE_REVIEW_MS; };
+    var proposed = all.filter(function (k) { return k.state === "proposed"; })
+      .sort(function (a, b) { return knTime(a.created_at) - knTime(b.created_at) || a.id - b.id; });
+    var active = all.filter(function (k) { return k.state === "active"; });
+    var review = active.filter(stale)
+      .sort(function (a, b) { return knTime(a.confirmed_at) - knTime(b.confirmed_at) || a.id - b.id; });
+    var groups = {};
+    active.filter(function (k) { return !stale(k); }).forEach(function (k) {
+      (groups[k.scope] = groups[k.scope] || []).push(k);
+    });
+    var scopes = Object.keys(groups).sort(function (a, b) {
+      if (a === "global" || b === "global") return a === "global" ? -1 : 1;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
     return {
-      url: "/v1/instructions",
-      init: {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Hub-Action": "instructions" },
-        body: JSON.stringify(body),
-        cache: "no-store"
-      }
+      proposed: proposed,
+      review: review,
+      active: scopes.map(function (s) {
+        return { scope: s, entries: groups[s].sort(function (a, b) { return a.id - b.id; }) };
+      })
     };
   }
 
-  function deleteRuleRequest(id) {
-    return {
-      url: "/v1/instructions/" + encodeURIComponent(String(id)),
-      init: { method: "DELETE", headers: { "X-Hub-Action": "instructions" }, cache: "no-store" }
-    };
+  function knowledgeRequest(path, method, body) {
+    var init = { method: method, headers: { "X-Hub-Action": "knowledge" }, cache: "no-store" };
+    if (body) {
+      init.headers = { "Content-Type": "application/json", "X-Hub-Action": "knowledge" };
+      init.body = JSON.stringify(body);
+    }
+    return { url: "/v1/knowledge" + path, init: init };
+  }
+
+  // decideKnowledgeRequest approves or rejects a proposal. A non-empty text
+  // or scope replaces the proposal's on approve.
+  function decideKnowledgeRequest(id, decision, text, scope) {
+    var body = { decision: decision };
+    if (text && text.trim()) body.text = text.trim();
+    if (scope && scope.trim()) body.scope = scope.trim();
+    return knowledgeRequest("/" + encodeURIComponent(String(id)) + "/decide", "POST", body);
+  }
+
+  // addKnowledgeRequest adds an active entry. every is sent whenever it is a
+  // number, since the server reads a missing every as 20 for a fact or decision.
+  function addKnowledgeRequest(kind, scope, text, why, every) {
+    var body = { kind: kind, scope: scope.trim(), text: text.trim() };
+    if (why && why.trim()) body.why = why.trim();
+    if (typeof every === "number") body.every = every;
+    return knowledgeRequest("", "POST", body);
+  }
+
+  function retireKnowledgeRequest(id) { return knowledgeRequest("/" + encodeURIComponent(String(id)), "DELETE", null); }
+
+  function confirmKnowledgeRequest(id) {
+    return knowledgeRequest("/" + encodeURIComponent(String(id)) + "/confirm", "POST", null);
   }
 
   // canMessage: sessionhub can type a message into the session, through herdr or
@@ -2184,16 +2217,16 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
 
   // syncAllButton updates Collapse all and Select, which sit beside the
   // filter and show on the Sessions tab only, and hides the filter on the
-  // Rules tab. Collapse all and Expand all change the remembered state,
+  // Knowledge tab. Collapse all and Expand all change the remembered state,
   // which a filter overrides, so the button waits for the filter to clear.
   function syncAllButton(q) {
     allBtn.textContent = allCollapsed(allNames, collapsed) ? "Expand all" : "Collapse all";
     allBtn.disabled = q !== "";
-    allBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "rules" || signedOut || !allNames.length;
-    selectBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "rules" || signedOut;
-    newBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "rules" || signedOut;
+    allBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "knowledge" || signedOut || !allNames.length;
+    selectBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "knowledge" || signedOut;
+    newBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "knowledge" || signedOut;
     if (newBtn.hidden && !startBar.hidden) { startBar.hidden = true; newBtn.setAttribute("aria-expanded", "false"); }
-    filterEl.hidden = tab === "rules" || tab === "tasks";
+    filterEl.hidden = tab === "knowledge" || tab === "tasks";
   }
 
   // inboxRow is one inbox item, shown like a phone notification: the title,
@@ -2410,15 +2443,15 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     tab = name;
     inboxRoot.hidden = name !== "inbox";
     root.hidden = name !== "sessions";
-    rulesRoot.hidden = name !== "rules";
+    knowledgeRoot.hidden = name !== "knowledge";
     tasksRoot.hidden = name !== "tasks";
     syncAllButton(filterEl.value.trim());
     tabInbox.setAttribute("aria-selected", name === "inbox" ? "true" : "false");
     tabSessions.setAttribute("aria-selected", name === "sessions" ? "true" : "false");
-    tabRules.setAttribute("aria-selected", name === "rules" ? "true" : "false");
+    tabKnowledge.setAttribute("aria-selected", name === "knowledge" ? "true" : "false");
     tabTasks.setAttribute("aria-selected", name === "tasks" ? "true" : "false");
     renderSendBar();
-    if (name === "rules") loadRules();
+    if (name === "knowledge") loadKnowledge();
     if (name === "tasks") loadTasks();
   }
 
@@ -2798,113 +2831,240 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     if (keep && focusedKey() !== keep) focusKeyed(keep);
   }
 
-  // loadRules reads the rules for the Rules tab.
-  function loadRules() {
-    if (signedOut) return;
-    fetch("/v1/instructions", { headers: { "Accept": "application/json" }, cache: "no-store" })
+  // knowledgeRead is a Knowledge tab read: the list, or null once signed out.
+  function knowledgeRead(query) {
+    return fetch("/v1/knowledge?" + query, { headers: { "Accept": "application/json" }, cache: "no-store" })
       .then(function (resp) {
         if (signedOut) return null;
         if (resp.status === 401) { showSignedOut(); return null; }
-        if (!resp.ok) throw new Error("The server returned " + resp.status + ".");
-        return resp.json();
-      })
-      .then(function (data) {
-        if (data === null || signedOut) return;
-        lastRules = data;
-        renderRules();
-      })
-      .catch(function (err) {
-        if (signedOut) return;
-        rulesError = err.message || "Could not load the rules.";
-        renderRules();
+        if (!resp.ok) {
+          return resp.json().then(function (body) { throw new Error(rcRefusal(resp.status, body)); },
+            function () { throw new Error(rcRefusal(resp.status, null)); });
+        }
+        return resp.json().then(function (list) { return list || []; });
       });
   }
 
-  // renderRules draws the Rules tab: what the rules are for, each rule with
-  // a Delete button, and the add box.
-  function renderRules() {
-    var view = rulesView(lastRules);
-    var keep = focusedKey();
-    var frag = document.createDocumentFragment();
-    frag.appendChild(el("p", "meta", "Every session on every machine sees these rules at its start and with every prompt, " +
-      "or with every Nth prompt for a periodic rule. " + view.left + " of 2,000 characters left."));
-    if (!view.rules.length) frag.appendChild(el("p", "empty", "No standing rules yet."));
-    var ul = el("ul", "rules");
-    view.rules.forEach(function (r) {
-      var li = el("li", null);
-      li.appendChild(el("span", "rule-text", r.text));
-      var by = r.created_by || "";
-      if (r.every > 0) by += (by ? " · " : "") + "every " + r.every + " prompts";
-      li.appendChild(el("span", "rule-by", by));
-      var del = keyed(el("button", "textbtn", "Delete"), "rule-del:" + r.id);
-      del.type = "button";
-      del.setAttribute("aria-label", "Delete rule: " + r.text);
-      del.addEventListener("click", function () { removeRule(r); });
-      li.appendChild(del);
-      ul.appendChild(li);
-    });
-    if (view.rules.length) frag.appendChild(ul);
-    var form = el("div", "rule-add");
-    var box = keyed(el("input", null), "rule-text");
+  // syncKnowledgeBadge shows the proposal count on the tab.
+  function syncKnowledgeBadge(n) {
+    tabKnowledge.textContent = n ? "Knowledge (" + n + ")" : "Knowledge";
+  }
+
+  // loadKnowledgeBadge reads the proposals for the badge while another tab shows.
+  function loadKnowledgeBadge() {
+    if (signedOut) return;
+    knowledgeRead("state=proposed")
+      .then(function (list) { if (list !== null && !signedOut) syncKnowledgeBadge(list.length); })
+      .catch(function () { /* keep the last badge */ });
+  }
+
+  // loadKnowledge reads the proposed and active entries, and the search
+  // results while the search box has a query.
+  function loadKnowledge() {
+    if (signedOut) return;
+    var q = knQuery;
+    Promise.all([knowledgeRead("state=proposed"), knowledgeRead("state=active"),
+      q ? knowledgeRead("state=active&q=" + encodeURIComponent(q)) : null])
+      .then(function (r) {
+        if (signedOut || r[0] === null || r[1] === null || q !== knQuery) return;
+        lastKnowledge = r[0].concat(r[1]);
+        knFound = r[2];
+        knError = "";
+        renderKnowledge();
+      })
+      .catch(function (err) {
+        if (signedOut || q !== knQuery) return;
+        knError = err.message || "Could not load the knowledge.";
+        renderKnowledge();
+      });
+  }
+
+  // knMeta is an entry's kind, scope, author, and source session.
+  function knMeta(k) {
+    var parts = [k.kind, k.scope];
+    if (k.created_by) parts.push("by " + k.created_by);
+    if (k.source_session) parts.push("session " + k.source_session.slice(0, 8));
+    if (k.every > 0) parts.push("every " + k.every + " prompts");
+    return parts.join(" · ");
+  }
+
+  function knButton(label, key, aria, onClick) {
+    var b = keyed(el("button", "textbtn", label), key);
+    b.type = "button";
+    b.setAttribute("aria-label", aria);
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  function knInput(key, aria, value, max, onInput) {
+    var box = keyed(el("input", null), key);
     box.type = "text";
-    box.maxLength = RULE_MAX;
-    box.placeholder = "Add a rule, for example: Write in British English.";
-    box.setAttribute("aria-label", "New rule");
-    box.value = ruleDraft;
-    box.addEventListener("input", function () { ruleDraft = box.value; });
-    box.addEventListener("keydown", function (e) { if (e.key === "Enter") addRule(); });
-    var every = keyed(el("select", null), "rule-every");
-    every.setAttribute("aria-label", "How often to send the rule");
-    [0, 5, 10, 20].forEach(function (n) {
-      var opt = el("option", null, n ? "Every " + n + " prompts" : "Every prompt");
-      opt.value = String(n);
-      opt.selected = n === ruleEvery;
-      every.appendChild(opt);
+    box.maxLength = max;
+    box.setAttribute("aria-label", aria);
+    box.value = value;
+    box.addEventListener("input", function () { onInput(box.value); });
+    return box;
+  }
+
+  // knRow is one entry: its text, meta line, why, and the given buttons.
+  function knRow(k, meta) {
+    var li = el("li", null);
+    li.appendChild(el("span", "rule-text", k.text));
+    li.appendChild(el("span", "rule-by", meta));
+    if (k.why) li.appendChild(el("span", "rule-why", k.why));
+    return li;
+  }
+
+  function knSection(frag, title, rows) {
+    if (!rows.length) return;
+    frag.appendChild(el("h2", "machine-h", title + " (" + rows.length + ")"));
+    var ul = el("ul", "rules");
+    rows.forEach(function (li) { ul.appendChild(li); });
+    frag.appendChild(ul);
+  }
+
+  // renderKnowledge draws the Knowledge tab: the add box, proposals with
+  // Approve, Edit, and Reject, entries due for review with Confirm and
+  // Retire, and the active entries by scope with Retire.
+  function renderKnowledge() {
+    var view = knowledgeView(lastKnowledge, Date.now());
+    syncKnowledgeBadge(view.proposed.length);
+    var keep = focusedKey();
+    var top = document.createDocumentFragment();
+    top.appendChild(el("p", "meta", "Sessions see active entries that match their scope. " +
+      "Agents propose entries; nothing reaches a session until you approve it here."));
+    top.appendChild(knAddBox());
+    if (knError) top.appendChild(el("p", "error", knError));
+    knSection(top, "Proposed", view.proposed.map(function (k) {
+      var li = knRow(k, knMeta(k));
+      var ed = knEdit[k.id];
+      if (ed) {
+        var form = el("div", "rule-add");
+        form.appendChild(knInput("kn-edit-text:" + k.id, "Text for: " + k.text, ed.text, 300, function (v) { ed.text = v; }));
+        form.appendChild(knInput("kn-edit-scope:" + k.id, "Scope for: " + k.text, ed.scope, 300, function (v) { ed.scope = v; }));
+        form.appendChild(knButton("Save and approve", "kn-save:" + k.id, "Save and approve: " + k.text, function () {
+          knowledgeWrite(decideKnowledgeRequest(k.id, "approve", ed.text, ed.scope), function () { delete knEdit[k.id]; });
+        }));
+        form.appendChild(knButton("Cancel", "kn-cancel:" + k.id, "Cancel editing: " + k.text, function () {
+          delete knEdit[k.id];
+          renderKnowledge();
+        }));
+        li.appendChild(form);
+        return li;
+      }
+      li.appendChild(knButton("Approve", "kn-approve:" + k.id, "Approve: " + k.text, function () {
+        knowledgeWrite(decideKnowledgeRequest(k.id, "approve"), null);
+      }));
+      li.appendChild(knButton("Edit", "kn-edit:" + k.id, "Edit: " + k.text, function () {
+        knEdit[k.id] = { text: k.text, scope: k.scope };
+        renderKnowledge();
+        focusKeyed("kn-edit-text:" + k.id);
+      }));
+      li.appendChild(knButton("Reject", "kn-reject:" + k.id, "Reject: " + k.text, function () {
+        if (!window.confirm("Reject this proposal?\n\n" + k.text)) return;
+        knowledgeWrite(decideKnowledgeRequest(k.id, "reject"), null);
+      }));
+      return li;
+    }));
+    knSection(top, "Review", view.review.map(function (k) {
+      var li = knRow(k, knMeta(k) + " · confirmed " + new Date(k.confirmed_at).toLocaleDateString());
+      li.appendChild(knButton("Confirm", "kn-confirm:" + k.id, "Confirm: " + k.text, function () {
+        knowledgeWrite(confirmKnowledgeRequest(k.id), null);
+      }));
+      li.appendChild(knRetire(k));
+      return li;
+    }));
+    knQueue.replaceChildren(top);
+
+    // Search results are not split out for review: now -Infinity keeps every
+    // match in its scope group.
+    var groups = knQuery && knFound ? knowledgeView(knFound, -Infinity).active : view.active;
+    var act = document.createDocumentFragment();
+    if (!groups.length) act.appendChild(el("p", "empty", knQuery ? "No active entries match the search." : "No active entries yet."));
+    groups.forEach(function (g) {
+      act.appendChild(el("h3", "meta", g.scope));
+      var ul = el("ul", "rules");
+      g.entries.forEach(function (k) {
+        var li = knRow(k, knMeta(k));
+        li.appendChild(knRetire(k));
+        ul.appendChild(li);
+      });
+      act.appendChild(ul);
     });
-    every.addEventListener("change", function () { ruleEvery = Number(every.value) || 0; });
-    var add = el("button", null, "Add rule");
-    add.type = "button";
-    add.addEventListener("click", function () { addRule(); });
-    form.appendChild(box);
-    form.appendChild(every);
-    form.appendChild(add);
-    frag.appendChild(form);
-    if (rulesError) frag.appendChild(el("p", "error", rulesError));
-    rulesRoot.replaceChildren(frag);
+    knActive.replaceChildren(act);
     if (keep && focusedKey() !== keep) focusKeyed(keep);
   }
 
-  function addRule() {
-    var problem = ruleProblem(ruleDraft, rulesView(lastRules).left);
-    if (problem) {
-      rulesError = problem;
-      renderRules();
-      return;
-    }
-    rulesWrite(addRuleRequest(ruleDraft, ruleEvery), function () { ruleDraft = ""; ruleEvery = 0; });
+  function knRetire(k) {
+    return knButton("Retire", "kn-retire:" + k.id, "Retire: " + k.text, function () {
+      if (!window.confirm("Retire this entry for every session?\n\n" + k.text)) return;
+      knowledgeWrite(retireKnowledgeRequest(k.id), null);
+    });
   }
 
-  function removeRule(r) {
-    if (!window.confirm("Delete this rule for every session?\n\n" + r.text)) return;
-    rulesWrite(deleteRuleRequest(r.id), null);
+  // knEvery is the add box's interval: the one picked, else the kind's default.
+  function knEvery() {
+    if (knDraft.every !== null) return knDraft.every;
+    return knDraft.kind === "convention" ? 0 : 20;
   }
 
-  // rulesWrite sends a rules add or delete and reads the list again.
-  function rulesWrite(req, onOK) {
-    rulesError = "";
+  // knAddBox adds an active entry: kind, scope, text, why, and interval.
+  function knAddBox() {
+    var form = el("div", "rule-add");
+    var kind = keyed(el("select", null), "kn-kind");
+    kind.setAttribute("aria-label", "Kind");
+    ["convention", "fact", "decision"].forEach(function (k) {
+      var opt = el("option", null, k);
+      opt.value = k;
+      opt.selected = k === knDraft.kind;
+      kind.appendChild(opt);
+    });
+    kind.addEventListener("change", function () { knDraft.kind = kind.value; renderKnowledge(); });
+    var text = knInput("kn-text", "New entry", knDraft.text, 300, function (v) { knDraft.text = v; });
+    text.placeholder = "Add an entry, for example: Write in British English.";
+    text.addEventListener("keydown", function (e) { if (e.key === "Enter") addKnowledge(); });
+    var why = knInput("kn-why", "Why (optional)", knDraft.why, 200, function (v) { knDraft.why = v; });
+    why.placeholder = "Why (optional)";
+    var scope = knInput("kn-scope", "Scope", knDraft.scope, 300, function (v) { knDraft.scope = v; });
+    scope.placeholder = "global, repo:host/path, ticket:ref, machine:name";
+    var every = keyed(el("select", null), "kn-every");
+    every.setAttribute("aria-label", "How often to send the entry");
+    [0, 5, 10, 20].forEach(function (n) {
+      var opt = el("option", null, n ? "Every " + n + " prompts" : "Every prompt");
+      opt.value = String(n);
+      opt.selected = n === knEvery();
+      every.appendChild(opt);
+    });
+    every.addEventListener("change", function () { knDraft.every = Number(every.value) || 0; });
+    var add = el("button", null, "Add");
+    add.type = "button";
+    add.addEventListener("click", function () { addKnowledge(); });
+    [kind, scope, text, why, every, add].forEach(function (e) { form.appendChild(e); });
+    return form;
+  }
+
+  function addKnowledge() {
+    knowledgeWrite(addKnowledgeRequest(knDraft.kind, knDraft.scope, knDraft.text, knDraft.why, knEvery()), function () {
+      knDraft = { kind: knDraft.kind, scope: knDraft.scope, text: "", why: "", every: null };
+    });
+  }
+
+  // knowledgeWrite sends a knowledge write and reads the lists again.
+  function knowledgeWrite(req, onOK) {
+    knError = "";
     fetch(req.url, req.init)
       .then(function (resp) {
         if (resp.status === 401) { showSignedOut(); return; }
         if (resp.ok) {
           if (onOK) onOK();
-          loadRules();
+          loadKnowledge();
           return;
         }
         return resp.json().then(
-          function (body) { rulesError = rcRefusal(resp.status, body); renderRules(); },
-          function () { rulesError = rcRefusal(resp.status, null); renderRules(); });
+          function (body) { knError = rcRefusal(resp.status, body); renderKnowledge(); },
+          function () { knError = rcRefusal(resp.status, null); renderKnowledge(); });
       })
-      .catch(function () { rulesError = "Could not reach the sessionhub."; renderRules(); });
+      .catch(function () { knError = "Could not reach the sessionhub."; renderKnowledge(); });
   }
 
   // pickBox is a card's selection checkbox for the send bar.
@@ -3161,7 +3321,9 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     lastInbox = { items: [], counts: { blocked: 0, waiting: 0, finished: 0 } };
     showTab("sessions");
     inboxRoot.replaceChildren();
-    rulesRoot.replaceChildren();
+    knQueue.replaceChildren();
+    knActive.replaceChildren();
+    tabKnowledge.textContent = "Knowledge";
     tasksRoot.replaceChildren();
     tabTasks.textContent = "Tasks";
     selected = {};
@@ -3190,7 +3352,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
         render(data);
         renderInbox();
         renderSendBar();
-        if (tab === "rules") loadRules();
+        if (tab === "knowledge") loadKnowledge(); else loadKnowledgeBadge();
         if (tab === "tasks") loadTasks(); else loadReview();
         updated.textContent = "Updated " + new Date().toLocaleTimeString();
       })
@@ -3256,7 +3418,16 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   taskAddClose.addEventListener("click", function () { showTaskAdd(false); });
   taskAddGo.addEventListener("click", addTask);
   taskTitle.addEventListener("keydown", function (e) { if (e.key === "Enter") addTask(); });
-  tabRules.addEventListener("click", function () { showTab("rules"); });
+  tabKnowledge.addEventListener("click", function () { showTab("knowledge"); });
+  knFilter.addEventListener("input", function () {
+    clearTimeout(knFilterTimer);
+    knFilterTimer = setTimeout(function () {
+      if (knFilter.value.trim() === knQuery) return;
+      knQuery = knFilter.value.trim();
+      knFound = null;
+      loadKnowledge();
+    }, 300);
+  });
   selectBtn.addEventListener("click", function () {
     selectMode = !selectMode;
     selectBtn.setAttribute("aria-pressed", selectMode ? "true" : "false");
