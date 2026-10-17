@@ -173,7 +173,7 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `GET /v1/instructions` | read | `200`, `InstructionList` | The active global conventions, oldest first, and their `version`. See [Knowledge](#knowledge). |
 | `POST /v1/instructions` | machine, or cookie with `X-Hub-Action: instructions` | `201`, the `Instruction` | Add an active global convention (`InstructionIn`). `400` invalid, `409` past 2,000 characters. |
 | `DELETE /v1/instructions/{id}` | machine, or cookie with `X-Hub-Action: instructions` | `204`; `404` unknown | Retire a global convention. |
-| `GET /v1/knowledge?state=&scope=&q=` | read | `200`, `[]Knowledge` | Entries, newest first, at most 500. `q` is an FTS5 query over `text` and `why`. See [Knowledge](#knowledge). |
+| `GET /v1/knowledge?state=&scope=&q=` | read | `200`, `[]Knowledge` | Entries, newest first, at most 500. `q` is plain words; an entry matches when its `text` or `why` holds every word. See [Knowledge](#knowledge). |
 | `GET /v1/knowledge/local` | machine | `200`, `KnowledgeLocal` | The active entries, a `version`, and `session_refs` for the calling machine's live sessions. |
 | `POST /v1/knowledge` | machine, or cookie with `X-Hub-Action: knowledge` | `201`, `KnowledgeAdded` | Add an entry (`KnowledgeIn`). A machine creates a `proposed` entry; the dashboard creates an `active` one. The result holds the entry and up to 3 near-duplicates. `400` invalid, `409` past the limits. |
 | `POST /v1/knowledge/{id}/decide` | cookie with `X-Hub-Action: knowledge` | `200`, the `Knowledge` | Approve or reject a proposal (`KnowledgeDecisionIn`). A machine token gets `403`. |
@@ -319,7 +319,7 @@ A count badge shows on the tab label while proposals wait.
 - **Review** lists active entries not confirmed for 90 days, with **Confirm**
   and **Retire**.
 - **Active** groups the other active entries by scope, global first, with a
-  filter box (an FTS5 query) and **Retire**.
+  filter box (plain words, all must match) and **Retire**.
 - The add box has kind and scope selects, an optional `why`, and an `every`
   select. **Every prompt** sends `every: 0`. It adds an active entry and
   refuses text over 300 characters before it sends anything.
@@ -726,8 +726,11 @@ When `knowledge.json` is missing, the hook falls back to the older
 #### Search
 
 `search_knowledge` (MCP), `sessionhub knowledge search`, and `GET
-/v1/knowledge?q=` search `text` and `why` with FTS5. The MCP tool and the CLI
-return active entries, at most 20.
+/v1/knowledge?q=` search `text` and `why` with FTS5. The server splits `q`
+into words of letters and digits and matches the entries that hold every word,
+so `systemsdev-17908`, `prod/telegram`, and a trailing `?` are safe. A query
+with no such word returns no entries. The MCP tool and the CLI return active
+entries, at most 20.
 
 #### Notifications
 

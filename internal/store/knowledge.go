@@ -284,16 +284,21 @@ func (s *Store) execOne(ctx context.Context, id int64, q string, args ...any) er
 }
 
 // ListKnowledge returns up to 500 entries (MaxActiveKnowledge), newest first. An empty state,
-// scope, or query matches all; query is an FTS5 query over text and why,
-// and orders the result by rank.
+// scope, or query matches all. query is plain words, not FTS5 syntax: the
+// entries whose text or why hold every letter-and-digit word of it, ordered by
+// rank. A query with no such word matches nothing.
 func (s *Store) ListKnowledge(ctx context.Context, state, scope, query string) ([]api.Knowledge, error) {
 	q := `SELECT ` + knowledgeCols + ` FROM knowledge k`
 	var where []string
 	var args []any
 	if query != "" {
+		words := ftsWords(query, 1)
+		if len(words) == 0 {
+			return []api.Knowledge{}, nil
+		}
 		q += ` JOIN knowledge_fts ON knowledge_fts.rowid = k.id`
 		where = append(where, `knowledge_fts MATCH ?`)
-		args = append(args, query)
+		args = append(args, strings.Join(words, " "))
 	}
 	if state != "" {
 		switch state {
@@ -321,27 +326,28 @@ func (s *Store) ListKnowledge(ctx context.Context, state, scope, query string) (
 		q += ` ORDER BY k.id DESC`
 	}
 	q += fmt.Sprintf(` LIMIT %d`, maxKnowledgeList)
-	out, err := queryKnowledge(ctx, s.db, q, args...)
-	if err != nil && query != "" {
-		// shortcut: any error with a query is blamed on the query; a real DB
-		// fault reads as a 400 too. Match the fts5 error text if that misleads.
-		return nil, invalidf("query %q: %v", query, err)
-	}
-	return out, err
+	return queryKnowledge(ctx, s.db, q, args...)
 }
 
 var wordRE = regexp.MustCompile(`[\p{L}\p{N}]+`)
 
-// similarKnowledge returns up to three active or proposed entries other than
-// id that share a word of three or more characters with text, best first.
-func similarKnowledge(ctx context.Context, tx *sql.Tx, id int64, text string) ([]api.Knowledge, error) {
+// ftsWords returns the words of text with at least minRunes runes, each
+// quoted for an FTS5 MATCH. Letters and digits only, so a quoted word is
+// never FTS syntax.
+func ftsWords(text string, minRunes int) []string {
 	var words []string
 	for _, w := range wordRE.FindAllString(text, -1) {
-		if utf8.RuneCountInString(w) >= 3 {
-			// Letters and digits only, so the quoted word is never FTS syntax.
+		if utf8.RuneCountInString(w) >= minRunes {
 			words = append(words, `"`+w+`"`)
 		}
 	}
+	return words
+}
+
+// similarKnowledge returns up to three active or proposed entries other than
+// id that share a word of three or more characters with text, best first.
+func similarKnowledge(ctx context.Context, tx *sql.Tx, id int64, text string) ([]api.Knowledge, error) {
+	words := ftsWords(text, 3)
 	if len(words) == 0 {
 		return []api.Knowledge{}, nil
 	}

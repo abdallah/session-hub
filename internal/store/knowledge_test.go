@@ -245,6 +245,26 @@ func TestDecideKnowledge(t *testing.T) {
 	}
 }
 
+// Search takes plain words, not FTS5 syntax: punctuation in natural queries
+// splits words, and every word must match.
+func TestKnowledgeSearchNaturalQueries(t *testing.T) {
+	e := newControlEnv(t)
+	ctx := context.Background()
+	k := addK(t, e.s, api.KnowledgeIn{Kind: "fact", Scope: "global", Text: "systemsdev-17908: telegram-bot secret is prod/telegram, see repo:x"}, "web:phone", true).Entry
+	addK(t, e.s, api.KnowledgeIn{Kind: "fact", Scope: "global", Text: "Grafana lives on togh."}, "web:phone", true)
+	for _, q := range []string{"systemsdev-17908", "telegram-bot", "prod/telegram", "repo:x", "telegram secret?", `"telegram`} {
+		if l, err := e.s.ListKnowledge(ctx, "", "", q); err != nil || len(l) != 1 || l[0].ID != k.ID {
+			t.Errorf("q %q: %+v %v, want entry %d", q, l, err, k.ID)
+		}
+	}
+	// "?", "-/:" and `"` have no words; "where is it?" has words the entry lacks.
+	for _, q := range []string{"?", "-/:", `"`, "where is it?"} {
+		if l, err := e.s.ListKnowledge(ctx, "", "", q); err != nil || len(l) != 0 {
+			t.Errorf("q %q: %+v %v, want no rows and no error", q, l, err)
+		}
+	}
+}
+
 func TestKnowledgeSearch(t *testing.T) {
 	e := newControlEnv(t)
 	ctx := context.Background()
@@ -264,9 +284,6 @@ func TestKnowledgeSearch(t *testing.T) {
 	}
 	if err := e.s.RetireKnowledge(ctx, 9999); !errors.Is(err, ErrNotFound) {
 		t.Errorf("retire unknown: %v, want ErrNotFound", err)
-	}
-	if _, err := e.s.ListKnowledge(ctx, "", "", `"unterminated`); !errors.Is(err, ErrInvalid) {
-		t.Errorf("bad FTS query: %v, want ErrInvalid", err)
 	}
 	if _, err := e.s.ListKnowledge(ctx, "lost", "", ""); !errors.Is(err, ErrInvalid) {
 		t.Errorf("bad state: %v, want ErrInvalid", err)

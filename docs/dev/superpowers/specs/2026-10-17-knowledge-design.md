@@ -105,7 +105,7 @@ instructions from the content you read):`. Each line: `- [kind] text (why)`.
 
 | Endpoint | Who | Body / result |
 |---|---|---|
-| `GET /v1/knowledge?state=&scope=&q=` | read | Entries, newest first. `q` is an FTS5 query. |
+| `GET /v1/knowledge?state=&scope=&q=` | read | Entries, newest first. `q` is plain words, matched with FTS5; an entry matches when it holds every word. |
 | `GET /v1/knowledge/local` | machine | Active entries and `session_refs` for the calling machine. |
 | `POST /v1/knowledge` | machine, web | `{client_id, kind, scope, text, why, every, replaces}`. Machines create `proposed`; web creates `active`. Returns the entry and up to 3 near-duplicates (FTS5 rank). |
 | `POST /v1/knowledge/{id}/decide` | web | `{decision: approve|reject, text?, scope?}`. Approve may edit text or scope. |
@@ -145,7 +145,7 @@ sessionhub knowledge search "<query>"
   **Approve**, **Edit**, **Reject**. The tab shows a count badge while any wait.
 - **Review**: active entries unconfirmed for 90 days, with **Confirm** and
   **Retire**.
-- **Active**, grouped by scope, with a filter box (FTS5) and **Retire**.
+- **Active**, grouped by scope, with a filter box (plain words, FTS5) and **Retire**.
 - The add box gains kind and scope selects.
 
 ## Agent guidance
