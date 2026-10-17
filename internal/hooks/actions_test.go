@@ -195,6 +195,7 @@ func TestSessionStartStartsRefresh(t *testing.T) {
 	}
 }
 
+// The server has no knowledge route (404): the refresh still succeeds.
 func TestRefreshInstructionsWritesCopy(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/instructions" {
@@ -211,6 +212,30 @@ func TestRefreshInstructionsWritesCopy(t *testing.T) {
 	got, err := client.LoadInstructions(client.InstructionsPath(fx.state))
 	if err != nil || got.Version != "abc" || got.Instructions[0].Text != "Be brief." {
 		t.Errorf("copy %+v %v", got, err)
+	}
+}
+
+func TestRefreshInstructionsWritesKnowledgeCopy(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/instructions":
+			io.WriteString(w, `{"instructions":[{"id":3,"text":"Be brief."}],"version":"abc"}`)
+		case "/v1/knowledge/local":
+			io.WriteString(w, `{"entries":[{"id":3,"kind":"convention","scope":"global","text":"Be brief.","state":"active"}],"version":"k1"}`)
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	fx := newFixture(t, ts.URL)
+	if err := fx.call(t, "refresh-instructions", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := client.LoadInstructions(client.InstructionsPath(fx.state)); err != nil || got.Version != "abc" {
+		t.Errorf("instructions copy %+v %v", got, err)
+	}
+	if got, err := client.LoadKnowledge(client.KnowledgePath(fx.state)); err != nil || got.Version != "k1" || len(got.Entries) != 1 {
+		t.Errorf("knowledge copy %+v %v", got, err)
 	}
 }
 

@@ -12,7 +12,7 @@ or blocks a Claude Code turn.
 | `sessionhub uninstall-hooks` | Removes only sessionhub's entries. |
 | `sessionhub hook session-start\|prompt\|stop\|notification\|session-end\|context\|permission-request` | Handles one hook call. Claude Code runs this. |
 | `sessionhub hook flush` | Internal. Drains the queue. `session-end` starts it. |
-| `sessionhub hook refresh-instructions` | Internal. Rewrites the local knowledge copy. `session-start` starts it. |
+| `sessionhub hook refresh-instructions` | Internal. Rewrites the local `knowledge.json` and `instructions.json` copies. `session-start` starts it. |
 
 Both install commands accept `--settings FILE` (default
 `$CLAUDE_CONFIG_DIR/settings.json`, else `~/.claude/settings.json`) and
@@ -95,10 +95,11 @@ another event, or a subagent call, it prints nothing and writes nothing to
 stderr. When `knowledge.json` is missing, it falls back to
 `<state>/instructions.json` and prints its `Standing instructions from
 sessionhub (apply in every session):` block. The herdr watcher refreshes the
-copy on every heartbeat, and
-`session-start` starts a detached `sessionhub hook refresh-instructions`, which
-rewrites it when the server's `version` changed. An entry approved on the server
-reaches a session at its next prompt after the next refresh.
+knowledge copy on every heartbeat, and `session-start` starts a detached
+`sessionhub hook refresh-instructions`, which rewrites both copies when the
+server's `version` or session refs changed. If the server predates the
+knowledge layer (`404`), it rewrites `instructions.json` only. An entry approved
+on the server reaches a session at its next prompt after the next refresh.
 
 ### Permission requests
 

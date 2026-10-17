@@ -306,15 +306,20 @@ func pruneCounters(dir string, cutoff time.Time) {
 }
 
 // refreshInstructions is `sessionhub hook refresh-instructions`, which
-// session-start starts detached: it rewrites the local rules copy when the
-// server's version changed.
+// session-start starts detached: it rewrites the local rules and knowledge
+// copies when the server's version changed. A server without the knowledge
+// route (404) leaves the knowledge copy alone.
 func (h *handler) refreshInstructions(ctx context.Context) error {
 	c, err := h.newClient()
 	if err != nil {
 		return err
 	}
 	_, err = client.RefreshInstructions(ctx, c, client.InstructionsPath(h.stateDir))
-	return err
+	_, kerr := client.RefreshKnowledge(ctx, c, client.KnowledgePath(h.stateDir))
+	if client.IsNotFound(kerr) {
+		kerr = nil
+	}
+	return errors.Join(err, kerr)
 }
 
 // permissionPayload is the PermissionRequest hook input sessionhub reads.
