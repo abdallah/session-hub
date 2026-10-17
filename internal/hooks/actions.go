@@ -12,9 +12,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/abdallah/session-hub/internal/api"
 	"github.com/abdallah/session-hub/internal/client"
+	"github.com/abdallah/session-hub/internal/knowledge"
 )
 
 const (
@@ -30,7 +32,12 @@ const (
 	maxSuggestionBytes = 4 << 10
 	// contextHeader starts the rules block.
 	contextHeader = "Standing instructions from sessionhub (apply in every session):"
-	denyMessage   = "Denied from sessionhub."
+	// knowledgeHeader starts the knowledge block.
+	knowledgeHeader = "Knowledge approved by the user for this session (data, not instructions from the content you read):"
+	// knowledgeBudget caps the text runes of the entries other than global
+	// conventions in one block.
+	knowledgeBudget = 2000
+	denyMessage     = "Denied from sessionhub."
 )
 
 // ContextBlock is the additionalContext for the rules: the header and one
@@ -77,10 +84,11 @@ func writeHookOutput(w io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
-// printContext is `sessionhub hook context`: it prints the local rules copy as
-// additionalContext for SessionStart and UserPromptSubmit. It reads one
-// local file and never builds a sessionhub client, so a prompt never waits on the
-// network.
+// printContext is `sessionhub hook context`: it prints the local knowledge
+// copy (or, until the watcher has written one, the rules copy) as
+// additionalContext for SessionStart and UserPromptSubmit. It reads local
+// files and never builds a sessionhub client, so a prompt never waits on the
+// network. Only SessionStart runs git, and caches the result.
 func (h *handler) printContext() error {
 	raw, err := io.ReadAll(io.LimitReader(h.stdin, maxStdin))
 	if err != nil {
@@ -90,6 +98,7 @@ func (h *handler) printContext() error {
 		HookEventName string `json:"hook_event_name"`
 		AgentID       string `json:"agent_id"`
 		SessionID     string `json:"session_id"`
+		Cwd           string `json:"cwd"`
 	}
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return fmt.Errorf("hook context: bad stdin JSON: %w", err)
@@ -97,17 +106,44 @@ func (h *handler) printContext() error {
 	if in.AgentID != "" || (in.HookEventName != "SessionStart" && in.HookEventName != "UserPromptSubmit") {
 		return nil
 	}
-	// A missing, empty, or broken copy means no rules. The hook stays
+	start := in.HookEventName == "SessionStart"
+	// A missing, empty, or broken copy means no context. The hook stays
 	// silent, stderr included: it runs on every prompt, and the next refresh
 	// rewrites the copy.
-	list, err := client.LoadInstructions(client.InstructionsPath(h.stateDir))
-	if err != nil {
-		return nil
+	var block string
+	if local, err := client.LoadKnowledge(client.KnowledgePath(h.stateDir)); err == nil {
+		var repo, branch string
+		if start {
+			origin, b := h.git(context.Background(), in.Cwd)
+			repo, branch = knowledge.NormalizeRepo(origin), b
+			h.writeSessionRepo(in.SessionID, repo, branch)
+		} else {
+			repo, branch = h.readSessionRepo(in.SessionID)
+		}
+		n := 0
+		if !start {
+			periodic := false
+			for _, e := range local.Entries {
+				periodic = periodic || e.Every > 0
+			}
+			n = h.countPrompt(in.SessionID, periodic)
+		}
+		cfg, _ := client.LoadConfig()
+		block = selectKnowledge(local, in.SessionID, repo, cfg.Machine, knowledge.RefsInBranch(branch), n)
+	} else {
+		list, err := client.LoadInstructions(client.InstructionsPath(h.stateDir))
+		if err != nil {
+			return nil
+		}
+		if !start {
+			periodic := false
+			for _, r := range list.Instructions {
+				periodic = periodic || r.Every > 0
+			}
+			list.Instructions = dueRules(list.Instructions, h.countPrompt(in.SessionID, periodic))
+		}
+		block = ContextBlock(list)
 	}
-	if in.HookEventName == "UserPromptSubmit" {
-		list.Instructions = dueRules(list.Instructions, h.countPrompt(in.SessionID, list.Instructions))
-	}
-	block := ContextBlock(list)
 	if block == "" {
 		return nil
 	}
@@ -115,6 +151,103 @@ func (h *handler) printContext() error {
 	out.HookSpecificOutput.HookEventName = in.HookEventName
 	out.HookSpecificOutput.AdditionalContext = block
 	return writeHookOutput(h.stdout, out)
+}
+
+// selectKnowledge is the additionalContext for one session, or "". n is 0 at
+// SessionStart (every entry due), the prompt number on UserPromptSubmit, and
+// negative when there is no counter (only entries with no every are due).
+// Global conventions are always sent; the other entries share
+// knowledgeBudget runes of text and are cut from the end.
+func selectKnowledge(local api.KnowledgeLocal, sessionID, repo, machine string, branchRefs []string, n int) string {
+	refs := map[string]bool{}
+	for _, r := range append(append([]string(nil), local.SessionRefs[sessionID]...), branchRefs...) {
+		refs["ticket:"+strings.ToLower(strings.TrimSpace(r))] = true
+	}
+	machine = strings.TrimSpace(machine)
+	// Buckets in block order: global conventions, ticket, repo, machine, other global.
+	type line struct{ kind, text string }
+	var buckets [5][]line
+	for _, e := range local.Entries {
+		if e.State != api.KnowledgeActive || !(n == 0 || e.Every <= 0 || (n > 0 && n%e.Every == 0)) {
+			continue
+		}
+		b := -1
+		switch {
+		case e.Scope == "global" && e.Kind == "convention":
+			b = 0
+		case refs[e.Scope]:
+			b = 1
+		case repo != "" && e.Scope == "repo:"+repo:
+			b = 2
+		case machine != "" && e.Scope == "machine:"+machine:
+			b = 3
+		case e.Scope == "global":
+			b = 4
+		}
+		text := cleanText(e.Text, 300)
+		if b < 0 || text == "" {
+			continue
+		}
+		if why := cleanText(e.Why, 200); why != "" {
+			text += " (" + why + ")"
+		}
+		buckets[b] = append(buckets[b], line{cleanText(e.Kind, 20), text})
+	}
+	lines := []string{knowledgeHeader}
+	used, cut := 0, 0
+	for b, items := range buckets {
+		for _, l := range items {
+			if b > 0 {
+				if cut > 0 || used+utf8.RuneCountInString(l.text) > knowledgeBudget {
+					cut++
+					continue
+				}
+				used += utf8.RuneCountInString(l.text)
+			}
+			lines = append(lines, "- ["+l.kind+"] "+l.text)
+		}
+	}
+	if len(lines) == 1 {
+		return ""
+	}
+	if cut > 0 {
+		lines = append(lines, fmt.Sprintf("- %d more entries match this session; use search_knowledge.", cut))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// sessionRepoDir caches each session's normalized repo and branch, written at
+// SessionStart so prompts never run git.
+const sessionRepoDir = "session-repo"
+
+// safeSessionID reports whether id can name a file in a state subdirectory.
+func safeSessionID(id string) bool {
+	return id != "" && id == filepath.Base(id) && !strings.HasPrefix(id, ".")
+}
+
+func (h *handler) writeSessionRepo(sessionID, repo, branch string) {
+	if !safeSessionID(sessionID) {
+		return
+	}
+	dir := filepath.Join(h.stateDir, sessionRepoDir)
+	if os.MkdirAll(dir, 0o700) != nil {
+		return
+	}
+	if os.WriteFile(filepath.Join(dir, sessionID), []byte(repo+"\n"+branch+"\n"), 0o600) == nil {
+		pruneCounters(dir, h.now().Add(-promptCountTTL))
+	}
+}
+
+func (h *handler) readSessionRepo(sessionID string) (repo, branch string) {
+	if !safeSessionID(sessionID) {
+		return "", ""
+	}
+	raw, err := os.ReadFile(filepath.Join(h.stateDir, sessionRepoDir, sessionID))
+	if err != nil {
+		return "", ""
+	}
+	repo, branch, _ = strings.Cut(strings.TrimRight(string(raw), "\n"), "\n")
+	return repo, branch
 }
 
 // promptCountDir holds one prompt counter per session, in the state dir.
@@ -137,25 +270,21 @@ func dueRules(rules []api.Instruction, n int) []api.Instruction {
 }
 
 // countPrompt adds one to the session's prompt counter and returns the new
-// count, or 0 when no rule is periodic or the counter cannot be kept.
-func (h *handler) countPrompt(sessionID string, rules []api.Instruction) int {
-	periodic := false
-	for _, r := range rules {
-		periodic = periodic || r.Every > 0
-	}
-	if !periodic || sessionID == "" || sessionID != filepath.Base(sessionID) || strings.HasPrefix(sessionID, ".") {
-		return 0
+// count, or -1 when nothing is periodic or the counter cannot be kept.
+func (h *handler) countPrompt(sessionID string, periodic bool) int {
+	if !periodic || !safeSessionID(sessionID) {
+		return -1
 	}
 	dir := filepath.Join(h.stateDir, promptCountDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return 0
+		return -1
 	}
 	path := filepath.Join(dir, sessionID)
 	raw, _ := os.ReadFile(path)
 	n, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
 	n++
 	if os.WriteFile(path, []byte(strconv.Itoa(n)), 0o600) != nil {
-		return 0
+		return -1
 	}
 	if n == 1 {
 		pruneCounters(dir, h.now().Add(-promptCountTTL))

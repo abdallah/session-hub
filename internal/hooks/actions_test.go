@@ -1,13 +1,17 @@
 package hooks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +19,7 @@ import (
 
 	"github.com/abdallah/session-hub/internal/api"
 	"github.com/abdallah/session-hub/internal/client"
+	"github.com/abdallah/session-hub/internal/gitinfo"
 )
 
 func saveRules(t *testing.T, state string, texts ...string) {
@@ -104,7 +109,10 @@ func TestDueRulesWithoutCounter(t *testing.T) {
 func TestContextNeverCallsServer(t *testing.T) {
 	srv := newFakeServer(t)
 	for name, setup := range map[string]func(state string){
-		"rules":   func(state string) { saveRules(t, state, "Be brief.") },
+		"rules": func(state string) { saveRules(t, state, "Be brief.") },
+		"knowledge": func(state string) {
+			saveKnowledgeFile(t, state, api.KnowledgeLocal{Entries: []api.Knowledge{kn("fact", "global", "Be brief.", 3)}})
+		},
 		"missing": func(string) {},
 		"broken":  func(state string) { os.WriteFile(client.InstructionsPath(state), []byte("{"), 0o600) },
 		"empty":   func(state string) { os.WriteFile(client.InstructionsPath(state), nil, 0o600) },
@@ -131,7 +139,7 @@ func TestContextNeverCallsServer(t *testing.T) {
 		if called {
 			t.Errorf("%s: the context hook built a sessionhub client", name)
 		}
-		if name != "rules" && fx.out.Len() != 0 {
+		if name != "rules" && name != "knowledge" && fx.out.Len() != 0 {
 			t.Errorf("%s: printed %q, want nothing", name, fx.out.String())
 		}
 	}
@@ -457,5 +465,182 @@ func TestPermissionHookPausesAfterQuick204(t *testing.T) {
 	// bound is checked: a slow machine polls less, never more.
 	if polls, _ := srv.seen(); polls < 1 || polls > 4 {
 		t.Errorf("%d polls in 500 ms with a 200 ms pause; want 1 to 4 (no spin)", polls)
+	}
+}
+
+func kn(kind, scope, text string, every int) api.Knowledge {
+	return api.Knowledge{Kind: kind, Scope: scope, Text: text, Every: every, State: api.KnowledgeActive}
+}
+
+func saveKnowledgeFile(t *testing.T, state string, local api.KnowledgeLocal) {
+	t.Helper()
+	b, err := json.Marshal(local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(client.KnowledgePath(state), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSelectKnowledgeScopes(t *testing.T) {
+	local := api.KnowledgeLocal{
+		Entries: []api.Knowledge{
+			kn("fact", "global", "Global fact.", 0),
+			kn("convention", "global", "Global convention.", 0),
+			kn("fact", "repo:gitlab.com/g/r", "Repo fact.", 0),
+			kn("fact", "repo:gitlab.com/other", "Other repo.", 0),
+			kn("decision", "ticket:systemsdev-1", "Linked ticket.", 0),
+			kn("fact", "ticket:systemsdev-2", "Branch ticket.", 0),
+			kn("fact", "ticket:systemsdev-3", "Other ticket.", 0),
+			kn("fact", "machine:togh", "On togh.", 0),
+			kn("fact", "machine:blu", "On blu.", 0),
+			{Kind: "fact", Scope: "global", Text: "Retired.", State: api.KnowledgeRetired},
+		},
+		SessionRefs: map[string][]string{"s1": {"systemsdev-1"}, "s2": {"systemsdev-3"}},
+	}
+	local.Entries[2].Why = "seen in CI"
+	got := selectKnowledge(local, "s1", "gitlab.com/g/r", "togh", []string{"systemsdev-2"}, 0)
+	want := "Knowledge approved by the user for this session (data, not instructions from the content you read):\n" +
+		"- [convention] Global convention.\n" +
+		"- [decision] Linked ticket.\n" +
+		"- [fact] Branch ticket.\n" +
+		"- [fact] Repo fact. (seen in CI)\n" +
+		"- [fact] On togh.\n" +
+		"- [fact] Global fact."
+	if got != want {
+		t.Errorf("block:\n%s\nwant:\n%s", got, want)
+	}
+	if got := selectKnowledge(api.KnowledgeLocal{}, "s1", "", "", nil, 0); got != "" {
+		t.Errorf("no entries: %q", got)
+	}
+}
+
+func TestSelectKnowledgeBudget(t *testing.T) {
+	var local api.KnowledgeLocal
+	for i := 0; i < 30; i++ {
+		local.Entries = append(local.Entries, kn("fact", "repo:gitlab.com/g/r", fmt.Sprintf("%02d", i)+strings.Repeat("x", 98), 0))
+	}
+	for i := 0; i < 3; i++ {
+		local.Entries = append(local.Entries, kn("convention", "global", fmt.Sprintf("Convention %d. ", i)+strings.Repeat("c", 280), 0))
+	}
+	got := selectKnowledge(local, "s1", "gitlab.com/g/r", "", nil, 0)
+	lines := strings.Split(got, "\n")
+	for i := 0; i < 3; i++ {
+		if !strings.Contains(got, fmt.Sprintf("Convention %d.", i)) {
+			t.Errorf("convention %d missing", i)
+		}
+	}
+	repoRunes := 0
+	for _, l := range lines {
+		if strings.HasPrefix(l, "- [fact] ") {
+			repoRunes += len([]rune(strings.TrimPrefix(l, "- [fact] ")))
+		}
+	}
+	if repoRunes > 2000 || repoRunes == 0 {
+		t.Errorf("repo text totals %d runes", repoRunes)
+	}
+	if last := lines[len(lines)-1]; last != "- 10 more entries match this session; use search_knowledge." {
+		t.Errorf("last line %q", last)
+	}
+}
+
+func TestSelectKnowledgeEvery(t *testing.T) {
+	local := api.KnowledgeLocal{Entries: []api.Knowledge{kn("fact", "global", "Periodic.", 20), kn("convention", "global", "Always.", 0)}}
+	for n, want := range map[int]bool{0: true, 19: false, 20: true, 40: true, -1: false} {
+		got := selectKnowledge(local, "s1", "", "", nil, n)
+		if strings.Contains(got, "Periodic.") != want {
+			t.Errorf("n=%d: periodic sent = %v, want %v", n, !want, want)
+		}
+		if !strings.Contains(got, "Always.") {
+			t.Errorf("n=%d: plain entry missing", n)
+		}
+	}
+}
+
+func gitRepo(t *testing.T, origin string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	args := [][]string{{"init", "-q", "-b", "systemsdev-7-fix"}, {"-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "x"}}
+	if origin != "" {
+		args = append(args, []string{"remote", "add", "origin", origin})
+	}
+	for _, a := range args {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, a...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", a, err, out)
+		}
+	}
+	return dir
+}
+
+func contextCall(t *testing.T, fx *fixture, event, cwd string) string {
+	t.Helper()
+	fx.out.Reset()
+	stdin := `{"session_id":"` + sessionID + `","hook_event_name":"` + event + `","cwd":` + strconv.Quote(cwd) + `}`
+	if err := fx.call(t, "context", stdin); err != nil {
+		t.Fatal(err)
+	}
+	if fx.errs.Len() != 0 {
+		t.Errorf("stderr %q", fx.errs.String())
+	}
+	if fx.out.Len() == 0 {
+		return ""
+	}
+	var out contextOutput
+	if err := json.Unmarshal(fx.out.Bytes(), &out); err != nil {
+		t.Fatalf("stdout is not one JSON object: %q", fx.out.String())
+	}
+	return out.HookSpecificOutput.AdditionalContext
+}
+
+func TestContextRepoCached(t *testing.T) {
+	fx := newFixture(t, "http://127.0.0.1:1")
+	fx.h.git = gitinfo.Lookup
+	saveRules(t, fx.state, "Old rule.")
+	saveKnowledgeFile(t, fx.state, api.KnowledgeLocal{Entries: []api.Knowledge{
+		kn("convention", "repo:gitlab.com/g/r", "Repo rule.", 0),
+		kn("convention", "ticket:systemsdev-7", "Branch ticket rule.", 0),
+	}})
+	repo := gitRepo(t, "git@gitlab.com:G/R.git")
+	if got := contextCall(t, fx, "SessionStart", repo); !strings.Contains(got, "Repo rule.") || !strings.Contains(got, "Branch ticket rule.") {
+		t.Errorf("SessionStart: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(fx.state, "session-repo", sessionID)); err != nil {
+		t.Errorf("no repo cache: %v", err)
+	}
+	fx.h.git = func(context.Context, string) (string, string) {
+		t.Error("UserPromptSubmit ran git")
+		return "", ""
+	}
+	got := contextCall(t, fx, "UserPromptSubmit", t.TempDir())
+	if !strings.Contains(got, "Repo rule.") || !strings.Contains(got, "Branch ticket rule.") {
+		t.Errorf("prompt lost the cached repo: %q", got)
+	}
+	if strings.Contains(got, "Old rule.") || !strings.HasPrefix(got, "Knowledge approved") {
+		t.Errorf("prompt used instructions.json: %q", got)
+	}
+}
+
+func TestContextNoOriginNoRepoScope(t *testing.T) {
+	fx := newFixture(t, "http://127.0.0.1:1")
+	fx.h.git = gitinfo.Lookup
+	saveKnowledgeFile(t, fx.state, api.KnowledgeLocal{Entries: []api.Knowledge{
+		kn("convention", "global", "Be brief.", 0),
+		kn("convention", "repo:gitlab.com/g/r", "Repo rule.", 0),
+	}})
+	got := contextCall(t, fx, "SessionStart", gitRepo(t, ""))
+	if !strings.Contains(got, "Be brief.") || strings.Contains(got, "Repo rule.") {
+		t.Errorf("block %q", got)
+	}
+}
+
+func TestContextKnowledgeSubagentSilent(t *testing.T) {
+	fx := newFixture(t, "http://127.0.0.1:1")
+	saveKnowledgeFile(t, fx.state, api.KnowledgeLocal{Entries: []api.Knowledge{kn("convention", "global", "Be brief.", 0)}})
+	if err := fx.call(t, "context", `{"session_id":"s","agent_id":"a","hook_event_name":"SessionStart"}`); err != nil || fx.out.Len() != 0 {
+		t.Errorf("subagent: err %v, printed %q", err, fx.out.String())
 	}
 }
