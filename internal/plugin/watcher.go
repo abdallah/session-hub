@@ -129,6 +129,8 @@ type watcher struct {
 	// instructionsPath is the local rules copy the heartbeat refreshes; ""
 	// turns the refresh off. newWatcher leaves it empty, runWatcher sets it.
 	instructionsPath string
+	// knowledgePath is the local knowledge copy; "" turns the refresh off.
+	knowledgePath string
 	// moveKey is this machine's move public key, sent after the first
 	// accepted heartbeat and every moveKeyEvery after that; "" sends none.
 	moveKey   string
@@ -256,6 +258,7 @@ func (w *watcher) heartbeat(ctx context.Context, now time.Time) {
 	w.lastBeatOK = now
 	w.reportInbox(ctx, c, now)
 	w.refreshInstructions(ctx, c, now)
+	w.refreshKnowledge(ctx, c, now)
 	w.registerMoveKey(ctx, c, now)
 }
 
@@ -292,6 +295,22 @@ func (w *watcher) refreshInstructions(ctx context.Context, c *client.Client, now
 	}
 	if changed {
 		w.log.Printf("rules: local copy updated")
+	}
+}
+
+// refreshKnowledge rewrites the local knowledge copy when the server's
+// version or session refs changed. A failure keeps the old copy.
+func (w *watcher) refreshKnowledge(ctx context.Context, c *client.Client, now time.Time) {
+	if w.knowledgePath == "" {
+		return
+	}
+	changed, err := client.RefreshKnowledge(ctx, c, w.knowledgePath)
+	if err != nil {
+		w.logf(now, "knowledge: refresh failed: %v", err)
+		return
+	}
+	if changed {
+		w.log.Printf("knowledge: local copy updated")
 	}
 }
 
@@ -671,6 +690,7 @@ func runWatcher(ctx context.Context, stateDir, socketPath string, newClient func
 	w.logPath = filepath.Join(stateDir, watcherLogFile)
 	w.sidebar = hc
 	w.instructionsPath = client.InstructionsPath(stateDir)
+	w.knowledgePath = client.KnowledgePath(stateDir)
 	w.transcriptStat = func(id string) (int64, time.Time, bool) {
 		p, err := digest.TranscriptPath(digest.DefaultClaudeDir(), id)
 		if err != nil {

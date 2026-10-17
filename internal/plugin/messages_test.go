@@ -52,6 +52,26 @@ func TestWatcherRefreshesInstructions(t *testing.T) {
 	}
 }
 
+func TestWatcherRefreshesKnowledge(t *testing.T) {
+	e := newTestEnv(t)
+	ctx := context.Background()
+	path := filepath.Join(e.dir, client.KnowledgeFile)
+	e.w.knowledgePath = path
+	t0 := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	e.w.step(ctx, t0)
+	if n := e.sessionhub.count(http.MethodGet, "/v1/knowledge/local"); n != 1 {
+		t.Errorf("knowledge/local read %d times, want 1", n)
+	}
+	if _, err := client.LoadKnowledge(path); err != nil {
+		t.Errorf("no local copy: %v", err)
+	}
+	e2 := newTestEnv(t)
+	e2.w.step(ctx, t0)
+	if n := e2.sessionhub.count(http.MethodGet, "/v1/knowledge/local"); n != 0 {
+		t.Errorf("read %d times with no path", n)
+	}
+}
+
 // fakeAgent is a paneAgent with one pane.
 type fakeAgent struct {
 	pane      herdr.PaneInfo

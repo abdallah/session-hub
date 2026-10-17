@@ -26,6 +26,8 @@ const (
 	OpTaskLink = "task_link"
 	// OpNote: Body is api.NoteIn; Item.SessionID is optional.
 	OpNote = "note"
+	// OpKnowledgePropose: Body is api.KnowledgeIn; needs its ClientID.
+	OpKnowledgePropose = "knowledge_propose"
 )
 
 // permanentError marks an item that can never be sent (bad body, unknown op).
@@ -111,6 +113,16 @@ func Replay(ctx context.Context, c *Client, it Item) error {
 			return err
 		}
 		_, err := c.AddNote(ctx, v)
+		return err
+	case OpKnowledgePropose:
+		var v api.KnowledgeIn
+		if err := decode(&v); err != nil {
+			return err
+		}
+		if v.ClientID == "" {
+			return &permanentError{fmt.Errorf("queue item %s (%s): no client_id", it.ID, it.Op)}
+		}
+		_, err := c.ProposeKnowledge(ctx, v)
 		return err
 	case OpTaskCreate:
 		var v api.TaskIn
