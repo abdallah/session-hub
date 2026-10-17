@@ -19,8 +19,9 @@ backup, because the version 16 binary refuses a version 17 database.
    refresh-instructions` write `knowledge.json`. Until then the hook keeps
    using `instructions.json`, and an old watcher keeps reading
    `/v1/instructions`, which returns the active global conventions.
-3. Running sessions get repo and branch entries only after their next
-   `SessionStart`: a resume, `/clear`, a compaction, or a new session.
+3. Running sessions get repo entries, and ticket entries from the branch name,
+   only after their next `SessionStart`: a resume, `/clear`, a compaction, or
+   a new session.
 4. Update your `CLAUDE.md` from `docs/CLAUDE-snippet.md` so agents propose and
    search knowledge.
 
