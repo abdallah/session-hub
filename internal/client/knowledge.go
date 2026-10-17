@@ -37,9 +37,9 @@ func (c *Client) ListKnowledge(ctx context.Context, state, scope string) ([]api.
 	return c.knowledgeQuery(ctx, url.Values{"state": {state}, "scope": {scope}})
 }
 
-// SearchKnowledge searches entries by text, optionally within a scope.
+// SearchKnowledge searches active entries by text, optionally within a scope.
 func (c *Client) SearchKnowledge(ctx context.Context, query, scope string) ([]api.Knowledge, error) {
-	return c.knowledgeQuery(ctx, url.Values{"q": {query}, "scope": {scope}})
+	return c.knowledgeQuery(ctx, url.Values{"q": {query}, "state": {api.KnowledgeActive}, "scope": {scope}})
 }
 
 func (c *Client) knowledgeQuery(ctx context.Context, v url.Values) ([]api.Knowledge, error) {

@@ -31,12 +31,30 @@ func TestReplayKnowledgeProposeTwiceMakesOneEntry(t *testing.T) {
 	if err != nil || len(list) != 1 {
 		t.Fatalf("list = %+v, %v; want one proposed entry", list, err)
 	}
-	if got, err := c.SearchKnowledge(ctx, "togh", ""); err != nil || len(got) != 1 {
-		t.Errorf("search = %+v, %v", got, err)
-	}
 	_ = c.ConfirmKnowledge(ctx, list[0].ID) // a proposed entry may be refused; the call must reach the route
 	if _, err := c.KnowledgeLocal(ctx); err != nil {
 		t.Errorf("local: %v", err)
+	}
+}
+
+func TestSearchKnowledgeActiveOnly(t *testing.T) {
+	c, st := realHub(t)
+	ctx := context.Background()
+	add := func(text string, active bool) int64 {
+		got, err := st.AddKnowledge(ctx, api.KnowledgeIn{Kind: api.KnowledgeFact, Scope: "global", Text: text}, "tower", active)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got.Entry.ID
+	}
+	want := add("Deploys run on togh.", true)
+	add("Togh proposal waiting.", false)
+	if err := st.RetireKnowledge(ctx, add("Togh was retired.", true)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.SearchKnowledge(ctx, "togh", "")
+	if err != nil || len(got) != 1 || got[0].ID != want {
+		t.Errorf("search = %+v, %v; want only active entry %d", got, err, want)
 	}
 }
 
