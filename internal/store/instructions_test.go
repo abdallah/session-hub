@@ -127,7 +127,7 @@ func TestInstructionLimits(t *testing.T) {
 	if _, err := e.s.AddInstruction(ctx, strings.Repeat("y", 200), "tower", 0); err != nil {
 		t.Errorf("exactly 2,000 characters: %v", err)
 	}
-	if n := e.count(`SELECT COUNT(*) FROM instructions`); n != 7 {
+	if n := e.count(`SELECT COUNT(*) FROM knowledge WHERE state = 'active'`); n != 7 {
 		t.Errorf("%d rows, want 7", n)
 	}
 	var list api.InstructionList
@@ -141,6 +141,7 @@ func TestInstructionLimits(t *testing.T) {
 // to 15 or lower and reopen the file as an older release left it.
 func rollbackV16(t *testing.T, s *Store) {
 	t.Helper()
+	rollbackV17(t, s)
 	if _, err := s.db.Exec("ALTER TABLE instructions DROP COLUMN every"); err != nil {
 		t.Fatalf("drop instructions.every: %v", err)
 	}

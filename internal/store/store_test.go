@@ -33,7 +33,7 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 		{"journal_mode", "wal"},
 		{"busy_timeout", "5000"},
 		{"foreign_keys", "1"},
-		{"user_version", "16"},
+		{"user_version", "17"},
 	}
 	for _, c := range checks {
 		var got string
@@ -50,7 +50,7 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 
 	cols := map[string][]string{}
 	for _, table := range []string{"machines", "sessions", "events", "reports", "control_requests", "session_digests", "login_codes", "web_sessions", "inbox_triage", "inbox_alerts",
-		"instructions", "messages", "permission_requests", "moves", "start_requests"} {
+		"knowledge", "messages", "permission_requests", "moves", "start_requests"} {
 		rows, err := s.db.QueryContext(ctx, "SELECT name FROM pragma_table_info(?)", table)
 		if err != nil {
 			t.Fatal(err)
@@ -74,7 +74,7 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 		"login_codes":         "code_hash created_at expires_at machine_id name used_at",
 		"inbox_triage":        "session_id snooze_until triaged_since updated_at",
 		"inbox_alerts":        "sent_at session_id since",
-		"instructions":        "created_at created_by every id text",
+		"knowledge":           "client_id confirmed_at created_at created_by decided_at decided_by every id kind replaces scope source_session state text why",
 		"messages":            "created_at detail id limit_key machine_id offered_at sender session_id state text updated_at",
 		"permission_requests": "created_at decided_at decided_by decision expires_at id machine_id polled_at reason session_id state tool_input tool_name truncated updated_at",
 		"web_sessions":        "created_at expires_at id last_used_at machine_id name token_hash",
@@ -87,10 +87,17 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 	}
 
 	for _, idx := range []string{"messages_machine", "messages_limit", "messages_session", "permission_requests_session",
-		"moves_session", "moves_source", "moves_target", "start_requests_machine"} {
+		"moves_session", "moves_source", "moves_target", "start_requests_machine", "knowledge_state_scope"} {
 		var n int
 		if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?", idx).Scan(&n); err != nil || n != 1 {
 			t.Errorf("index %s: count %d, err %v", idx, n, err)
+		}
+	}
+
+	for name, want := range map[string]int{"instructions": 0, "knowledge_fts": 1} {
+		var n int
+		if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?", name).Scan(&n); err != nil || n != want {
+			t.Errorf("table %s: count %d, err %v, want %d", name, n, err, want)
 		}
 	}
 

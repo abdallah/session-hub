@@ -535,7 +535,7 @@ func ids(l []api.Session) []string {
 	return out
 }
 
-// actionRows dumps the instructions, messages, and permission_requests
+// actionRows dumps the knowledge, messages, and permission_requests
 // tables over a second connection, so the auth matrix sees a rejected
 // request that wrote only there.
 func (e *env) actionRows() string {
@@ -547,7 +547,7 @@ func (e *env) actionRows() string {
 	defer db.Close()
 	var b strings.Builder
 	for _, q := range []string{
-		`SELECT 'rule|' || id || '|' || text || '|' || created_by FROM instructions ORDER BY id`,
+		`SELECT 'rule|' || id || '|' || state || '|' || text || '|' || created_by FROM knowledge ORDER BY id`,
 		`SELECT 'msg|' || id || '|' || session_id || '|' || state || '|' || detail || '|' || COALESCE(offered_at, '') FROM messages ORDER BY id`,
 		`SELECT 'perm|' || id || '|' || state || '|' || decision || '|' || decided_by FROM permission_requests ORDER BY id`,
 	} {

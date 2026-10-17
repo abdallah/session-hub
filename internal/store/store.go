@@ -32,7 +32,8 @@ var (
 	ErrNameTaken = errors.New("name taken")
 	// ErrCodeGone: the sign-in code is unknown, expired, or used. 410.
 	ErrCodeGone = errors.New("sign-in link expired or already used")
-	// ErrFull: the shared instructions would pass their size limit. 409.
+	// ErrFull: the global conventions would pass their size limit, or the
+	// knowledge entries their count limit. 409.
 	ErrFull = errors.New("full")
 	// ErrGone: a permission request expired, was answered in the terminal,
 	// or closed with its session. 410.
@@ -113,7 +114,7 @@ func (s *Store) Now() time.Time { return s.now().UTC() }
 // StaleAfter returns the configured staleness threshold.
 func (s *Store) StaleAfter() time.Duration { return s.staleAfter }
 
-const schemaVersion = 16
+const schemaVersion = 17
 
 const schemaV1 = `
 CREATE TABLE machines (
@@ -442,6 +443,44 @@ const schemaV15 = `ALTER TABLE permission_requests ADD COLUMN polled_at TEXT;`
 // with every Nth prompt of a session.
 const schemaV16 = `ALTER TABLE instructions ADD COLUMN every INTEGER NOT NULL DEFAULT 0;`
 
+// schemaV17 replaces instructions with knowledge: each rule becomes an
+// active global convention with the same ID, so its version stays the same.
+// knowledge_fts indexes text and why; the triggers keep it in sync.
+const schemaV17 = `
+CREATE TABLE knowledge (
+	id             INTEGER PRIMARY KEY,
+	client_id      TEXT UNIQUE,             -- idempotent replay of a queued proposal
+	kind           TEXT NOT NULL,           -- convention|fact|decision
+	scope          TEXT NOT NULL,           -- global | repo:<url> | ticket:<ref> | machine:<name>
+	text           TEXT NOT NULL,
+	why            TEXT NOT NULL DEFAULT '',
+	state          TEXT NOT NULL,           -- proposed|active|rejected|retired
+	every          INTEGER NOT NULL DEFAULT 0,
+	replaces       INTEGER REFERENCES knowledge(id),
+	source_session TEXT,                    -- the proposing session, if any
+	created_at     TEXT NOT NULL,
+	created_by     TEXT NOT NULL,           -- machine name, web:<name>, session:<id8>
+	decided_at     TEXT,
+	decided_by     TEXT,
+	confirmed_at   TEXT NOT NULL            -- created_at, then each approval or confirm
+);
+CREATE INDEX knowledge_state_scope ON knowledge(state, scope);
+CREATE VIRTUAL TABLE knowledge_fts USING fts5(text, why, content='knowledge', content_rowid='id');
+CREATE TRIGGER knowledge_fts_insert AFTER INSERT ON knowledge BEGIN
+	INSERT INTO knowledge_fts (rowid, text, why) VALUES (new.id, new.text, new.why);
+END;
+CREATE TRIGGER knowledge_fts_delete AFTER DELETE ON knowledge BEGIN
+	INSERT INTO knowledge_fts (knowledge_fts, rowid, text, why) VALUES ('delete', old.id, old.text, old.why);
+END;
+CREATE TRIGGER knowledge_fts_update AFTER UPDATE OF text, why ON knowledge BEGIN
+	INSERT INTO knowledge_fts (knowledge_fts, rowid, text, why) VALUES ('delete', old.id, old.text, old.why);
+	INSERT INTO knowledge_fts (rowid, text, why) VALUES (new.id, new.text, new.why);
+END;
+INSERT INTO knowledge (id, kind, scope, text, state, every, created_at, created_by, confirmed_at)
+	SELECT id, 'convention', 'global', text, 'active', every, created_at, created_by, created_at FROM instructions;
+DROP TABLE instructions;
+`
+
 // afterVersionRead runs in migrate between the unlocked version read and the
 // transaction. Tests use it to line two opens up on the same stale version.
 var afterVersionRead = func() {}
@@ -554,6 +593,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if v < 16 {
 		if _, err := tx.ExecContext(ctx, schemaV16); err != nil {
 			return fmt.Errorf("migrate schema to v16: %w", err)
+		}
+	}
+	if v < 17 {
+		if _, err := tx.ExecContext(ctx, schemaV17); err != nil {
+			return fmt.Errorf("migrate schema to v17: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {

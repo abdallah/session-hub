@@ -70,6 +70,73 @@ type InstructionIn struct {
 	Every int    `json:"every,omitempty"`
 }
 
+// Knowledge kinds and states.
+const (
+	KnowledgeConvention = "convention"
+	KnowledgeFact       = "fact"
+	KnowledgeDecision   = "decision"
+
+	KnowledgeProposed = "proposed"
+	KnowledgeActive   = "active"
+	KnowledgeRejected = "rejected"
+	KnowledgeRetired  = "retired"
+)
+
+// Knowledge is one entry of the knowledge layer. Active global conventions
+// are the rules of /v1/instructions.
+type Knowledge struct {
+	ID            int64      `json:"id"`
+	Kind          string     `json:"kind"`
+	Scope         string     `json:"scope"` // global, repo:<host/path>, ticket:<ref>, machine:<name>
+	Text          string     `json:"text"`
+	Why           string     `json:"why,omitempty"`
+	State         string     `json:"state"`
+	Every         int        `json:"every,omitempty"`
+	Replaces      int64      `json:"replaces,omitempty"`
+	SourceSession string     `json:"source_session,omitempty"`
+	CreatedBy     string     `json:"created_by"`
+	DecidedBy     string     `json:"decided_by,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	DecidedAt     *time.Time `json:"decided_at,omitempty"`
+	ConfirmedAt   time.Time  `json:"confirmed_at"`
+}
+
+// KnowledgeIn is the body of POST /v1/knowledge. A nil Every takes the
+// kind's default.
+type KnowledgeIn struct {
+	ClientID      string `json:"client_id,omitempty"`
+	Kind          string `json:"kind"`
+	Scope         string `json:"scope"`
+	Text          string `json:"text"`
+	Why           string `json:"why,omitempty"`
+	Every         *int   `json:"every,omitempty"`
+	Replaces      int64  `json:"replaces,omitempty"`
+	SourceSession string `json:"source_session,omitempty"`
+}
+
+// KnowledgeDecisionIn is the body of POST /v1/knowledge/{id}/decide. Text
+// and Scope, when set, replace the proposal's on approve.
+type KnowledgeDecisionIn struct {
+	Decision string `json:"decision"` // approve|reject
+	Text     string `json:"text,omitempty"`
+	Scope    string `json:"scope,omitempty"`
+}
+
+// KnowledgeAdded is the response of POST /v1/knowledge: the entry and up to
+// three near-duplicates.
+type KnowledgeAdded struct {
+	Entry   Knowledge   `json:"entry"`
+	Similar []Knowledge `json:"similar"`
+}
+
+// KnowledgeLocal is the response of GET /v1/knowledge/local. SessionRefs
+// maps each live session of the machine to the refs of its linked tasks.
+type KnowledgeLocal struct {
+	Version     string              `json:"version"`
+	Entries     []Knowledge         `json:"entries"`
+	SessionRefs map[string][]string `json:"session_refs"`
+}
+
 // MessagesIn is the body of POST /v1/messages.
 type MessagesIn struct {
 	SessionIDs []string `json:"session_ids"`
