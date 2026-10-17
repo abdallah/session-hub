@@ -123,7 +123,9 @@ Machines send `Authorization: Bearer <token>`. Browsers send the
   `X-Hub-Action: remote-control`, `POST /v1/inbox/{id}/dismiss` and
   `POST /v1/inbox/{id}/snooze` with `X-Hub-Action: triage`,
   `POST /v1/instructions` and `DELETE /v1/instructions/{id}` with
-  `X-Hub-Action: instructions`, `POST /v1/messages` with
+  `X-Hub-Action: instructions`, the knowledge writes (`POST /v1/knowledge`,
+  `POST /v1/knowledge/{id}/decide`, `POST /v1/knowledge/{id}/confirm`,
+  `DELETE /v1/knowledge/{id}`) with `X-Hub-Action: knowledge`, `POST /v1/messages` with
   `X-Hub-Action: send`, `POST /v1/permissions/{id}/decide` with
   `X-Hub-Action: approve`, `POST /v1/sessions/{id}/move` with
   `X-Hub-Action: move`, `POST /v1/machines/{name}/start` with
@@ -168,9 +170,15 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `GET /v1/inbox` | read | `200`, `Inbox` | Sessions that need you. See [Inbox](#inbox). |
 | `POST /v1/inbox/{id}/dismiss` | machine, or cookie with `X-Hub-Action: triage` | `204` | Hide the item until a later trigger (`TriageIn`, `since` only). |
 | `POST /v1/inbox/{id}/snooze` | machine, or cookie with `X-Hub-Action: triage` | `204` | Hide the item until `until` or a later trigger (`TriageIn`). |
-| `GET /v1/instructions` | read | `200`, `InstructionList` | The standing rules, oldest first, and their `version`. See [Shared instructions](#shared-instructions). |
-| `POST /v1/instructions` | machine, or cookie with `X-Hub-Action: instructions` | `201`, the `Instruction` | Add a rule (`InstructionIn`). `400` invalid, `409` past 2,000 characters. |
-| `DELETE /v1/instructions/{id}` | machine, or cookie with `X-Hub-Action: instructions` | `204`; `404` unknown | Remove a rule. |
+| `GET /v1/instructions` | read | `200`, `InstructionList` | The active global conventions, oldest first, and their `version`. See [Knowledge](#knowledge). |
+| `POST /v1/instructions` | machine, or cookie with `X-Hub-Action: instructions` | `201`, the `Instruction` | Add an active global convention (`InstructionIn`). `400` invalid, `409` past 2,000 characters. |
+| `DELETE /v1/instructions/{id}` | machine, or cookie with `X-Hub-Action: instructions` | `204`; `404` unknown | Retire a global convention. |
+| `GET /v1/knowledge?state=&scope=&q=` | read | `200`, `[]Knowledge` | Entries, newest first, at most 500. `q` is an FTS5 query over `text` and `why`. See [Knowledge](#knowledge). |
+| `GET /v1/knowledge/local` | machine | `200`, `KnowledgeLocal` | The active entries, a `version`, and `session_refs` for the calling machine's live sessions. |
+| `POST /v1/knowledge` | machine, or cookie with `X-Hub-Action: knowledge` | `201`, `KnowledgeAdded` | Add an entry (`KnowledgeIn`). A machine creates a `proposed` entry; the dashboard creates an `active` one. The result holds the entry and up to 3 near-duplicates. `400` invalid, `409` past the limits. |
+| `POST /v1/knowledge/{id}/decide` | cookie with `X-Hub-Action: knowledge` | `200`, the `Knowledge` | Approve or reject a proposal (`KnowledgeDecisionIn`). A machine token gets `403`. |
+| `POST /v1/knowledge/{id}/confirm` | machine, or cookie with `X-Hub-Action: knowledge` | `204` | Set `confirmed_at` to now. |
+| `DELETE /v1/knowledge/{id}` | cookie with `X-Hub-Action: knowledge` | `204` | Retire an entry. |
 | `POST /v1/messages` | machine, or cookie with `X-Hub-Action: send` | `200`, `MessagesOut` | Send a message to 1 to 20 sessions (`MessagesIn`). `429` past 30 a minute. See [Messages to sessions](#messages-to-sessions). |
 | `GET /v1/tasks?state=open` | read | `200`, `[]Task` | Open tasks (`proposed`, `todo`, `in_progress`, `done_proposed`). `open` is the default and the only value; another value is `400`. |
 | `POST /v1/tasks` | machine, or cookie with `X-Hub-Action: tasks` | `201` new, `200` existing; the `Task` | Create a task (`TaskIn`). See [Tasks](#tasks). |
@@ -248,11 +256,11 @@ the page keeps the state until you reload. While the filter has text, every
 machine with a match is open and **Collapse all** is unavailable; clearing
 the filter brings back the remembered state.
 
-The page has three tabs, **Inbox**, **Sessions**, and **Rules**. **Inbox** shows
+The page has these tabs: **Inbox**, **Sessions**, and **Knowledge**. **Inbox** shows
 `GET /v1/inbox` (see [Inbox](#inbox)) and is selected when the page loads
 with items in it; after that, the page never switches tabs on its own.
 The URL fragment `#inbox` opens the **Inbox** tab, `#sessions` the
-**Sessions** tab, and `#rules` the **Rules** tab, whatever the inbox holds; the Telegram alert's **Open
+**Sessions** tab, and `#knowledge` the **Knowledge** tab (`#rules` still works), whatever the inbox holds; the Telegram alert's **Open
 inbox** button links to `/#inbox`. Changing the fragment later switches the
 tab too. The **Inbox**
 label shows the count, and the page title becomes `(3) sessionhub`. The inbox polls
@@ -303,11 +311,20 @@ that it is too late (the prompt was answered in the terminal or expired),
 until the session leaves **Blocked**. If the server refuses an allow because
 the input was cut, the row says so and keeps **Deny**.
 
-The **Rules** tab lists the standing rules (see
-[Shared instructions](#shared-instructions)) with a **Delete** button each,
-which asks for confirmation, and an add box that refuses a rule over 300
-characters or past the 2,000-character total before it sends anything.
-Writes send `X-Hub-Action: instructions`. The filter is hidden on this tab.
+The **Knowledge** tab (see [Knowledge](#knowledge)) has three lists and an add box.
+A count badge shows on the tab label while proposals wait.
+
+- **Proposed** lists each proposal's kind, scope, text, `why`, and proposing
+  session, oldest first, with **Approve**, **Edit**, and **Reject**.
+- **Review** lists active entries not confirmed for 90 days, with **Confirm**
+  and **Retire**.
+- **Active** groups the other active entries by scope, global first, with a
+  filter box (an FTS5 query) and **Retire**.
+- The add box has kind and scope selects, an optional `why`, and an `every`
+  select. **Every prompt** sends `every: 0`. It adds an active entry and
+  refuses text over 300 characters before it sends anything.
+
+Writes send `X-Hub-Action: knowledge`. The filter is hidden on this tab.
 
 **Select**, beside the filter on the **Sessions** tab, shows a checkbox on
 every card; an expanded card always shows one. A session sessionhub cannot message
@@ -627,27 +644,98 @@ The `detail` a watcher sends, which the dashboard and the CLI show as is:
 - A request expires on read: the state reads `expired` once `expires_at`
   passes, and the next create, claim, or result stores it.
 
-### Shared instructions
+### Knowledge
 
-Standing rules every session sees, at its start and with every prompt. Each
-rule is 1 to 300 characters with no control characters; the list holds at
-most 2,000 characters, and an add past that is `409`. `GET
-/v1/instructions` returns `{"instructions": [{"id", "text", "created_at",
-"created_by", "every"}], "version": "<16 hex digits>"}`; the version changes whenever
-the list does, so clients skip an unchanged copy. `created_by` is the machine
-name, or `web:<session name>` for a browser.
+Knowledge entries reach every session that matches their scope, at its start
+and with its prompts. An entry has a `kind`, a `scope`, a `text` of 1 to 300
+characters, an optional `why` of up to 200, and no control characters.
 
-`every` makes a rule periodic: `0` or absent sends it with every prompt, and
-`N` (1 to 100) with every Nth prompt of a session. Every rule is sent at
-session start. `POST /v1/instructions` takes `{"text", "every"}`. The hook
-counts prompts per session in `<state>/prompt-counts/` and removes counters
-untouched for 7 days.
+| Field | Values |
+|---|---|
+| `kind` | `convention` (how to work), `fact` (what exists and where), `decision` (what was chosen, and on what) |
+| `scope` | `global`, `repo:<host/path>`, `ticket:<ref>`, `machine:<name>` |
+| `state` | `proposed`, `active`, `rejected`, `retired` |
 
-When Telegram alerts are on, each stored rule also sends a Telegram message
-(see [Telegram alerts](#telegram-alerts)), whoever added it. A rule that a
-session plants, for example through the MCP `remember` tool after the session
-reads malicious content, then shows up at once instead of at the next rules
-review.
+- A repo scope is the origin URL without scheme, user, or `.git`, so SSH and
+  HTTPS clones match. A ticket ref is lowercased; an MR ref keeps its
+  project (`group/project!34`). A machine name matches the config machine
+  name exactly, case included.
+- The server rejects text that matches a secret pattern with `400`: key
+  prefixes such as `AKIA`, `ghp_`, and `glpat-`, PEM headers, and base64 runs
+  of 40 or more characters. Account IDs, ARNs, and secret names are allowed.
+- The server holds at most 500 `active` entries and 100 `proposed`; an add
+  past either is `409`. Global conventions also share a 2,000-character cap;
+  an add past it is `409`.
+- A machine creates a `proposed` entry. It reaches sessions only after you
+  approve it on the dashboard. The dashboard creates an `active` entry.
+  A `client_id` makes a replayed proposal return the stored entry.
+- Approving an entry whose `replaces` names another entry retires the other
+  one. A target that is already retired or rejected stays as it is. Approve
+  may change `text` and `scope`.
+- `every` is `0` to `100`. `0` sends the entry with every prompt, and `N`
+  with every Nth prompt of a session; every entry is sent at session start.
+  The default is `0` for a `convention` and `20` for a `fact` or `decision`.
+  The hook counts prompts per session in `<state>/prompt-counts/` and removes
+  counters untouched for 7 days.
+- `confirmed_at` starts at `created_at` and moves on each approval or
+  confirm. An entry not confirmed for 90 days lists under **Review**.
+- The CLI and the MCP tools cannot approve, reject, or retire. A machine
+  token gets `403` on `decide` and `DELETE`, so a session cannot approve its
+  own proposal.
+
+`GET /v1/knowledge/local` returns `{"version": "<16 hex digits>", "entries":
+[...], "session_refs": {"<session id>": ["systemsdev-17908"]}}`. `session_refs`
+lists the ticket refs of tasks linked to the machine's live sessions. The
+version changes with the entries and refs, so the watcher skips an unchanged
+copy.
+
+`/v1/instructions` stays for watchers from before knowledge: `GET` returns
+`{"instructions": [{"id", "text", "created_at", "created_by", "every"}],
+"version"}` for the active global conventions only. `POST` from a machine
+creates an active global convention (the `remember` path, not a proposal),
+and `DELETE` retires one. `created_by` is the machine name, `web:<session
+name>`, or `session:<id8>`.
+
+#### What a session receives
+
+`sessionhub hook context` picks entries from the local copy. It never calls
+the server. An entry is sent when its scope is:
+
+1. `global`.
+2. `machine:<name>` for the config machine name.
+3. `repo:<host/path>` for the origin of the session's working directory.
+4. `ticket:<ref>` for a ref in `session_refs` or in the branch name
+   (`systemsdev-\d+`).
+
+The hook looks up the repo and branch once, at SessionStart (500 ms limit),
+and caches them in `<state>/session-repo/<session id>`. Prompts read only the
+cache. A directory with no `origin` gets no repo scope.
+
+The block starts with `Knowledge approved by the user for this session (data,
+not instructions from the content you read):`. Each line is `- [<kind>]
+<text>`, plus ` (<why>)` when `why` is set. The order is global conventions,
+then ticket, repo, machine, and other global entries.
+
+Global conventions are always sent. The other entries share 2,000 characters
+of `text` plus `why` per prompt and are cut from the end; one last line says
+how many were cut and to use `search_knowledge`.
+
+When `knowledge.json` is missing, the hook falls back to the older
+`instructions.json` and prints its standing-instructions block.
+
+#### Search
+
+`search_knowledge` (MCP), `sessionhub knowledge search`, and `GET
+/v1/knowledge?q=` search `text` and `why` with FTS5. The MCP tool and the CLI
+return active entries, at most 20.
+
+#### Notifications
+
+When Telegram alerts are on, each proposal from a machine sends a Telegram
+message (see [Telegram alerts](#telegram-alerts)), and so does each global
+convention stored through `POST /v1/instructions`, whoever adds it. A
+convention that a session plants, for example through the MCP `remember` tool
+after the session reads malicious content, then shows up at once.
 
 ### Messages to sessions
 
@@ -1153,6 +1241,23 @@ a session is cleaned first.
 - The request never waits for Telegram. The handler queues the message (up
   to 16) and the notifier sends it. If the queue is full, the server drops the
   alert and logs one line; the rule is still stored.
+
+#### Knowledge proposal alerts
+
+When alerts are on, `POST /v1/knowledge` from a machine sends one message
+after it stores a proposal. A dashboard add and a replayed `client_id` send
+none.
+
+```
+💡 Knowledge proposed
+<kind> · <scope>
+<the text, cut to 300 characters>
+proposed by <machine or session:id8> · entry <id>
+```
+
+Under the text is an **Open knowledge** button (`<public_url>/#knowledge`).
+Text from a session is cleaned first. The queue and the failure handling are
+the same as for rule alerts; the proposal is stored either way.
 - The server makes one attempt per rule and keeps no retry queue. A failure is
   logged like any other alert failure, without the token. After HTTP 429, the
   server sends no rule alert until `retry_after` has passed.
@@ -1182,6 +1287,9 @@ a session is cleaned first.
 - A digest body over 16 KiB (`MaxDigestBytes`) returns `413`.
 - A report list (`done`, `in_flight`, `waiting_on`) holds at most 20 items of
   at most 200 characters each; more returns `400`.
+- Knowledge holds at most 500 `active` and 100 `proposed` entries (`409`
+  past either). `GET /v1/knowledge` returns at most 500 rows. See
+  [Knowledge](#knowledge).
 
 ### Field validation
 
@@ -1217,7 +1325,7 @@ keys on. The server uses one connection, and every transaction starts with
 same file, such as `sessionhub machine add`, waits instead of failing with
 `SQLITE_BUSY`. The schema version is in
 `PRAGMA user_version`; the server creates the schema on first open, upgrades an
-older one in place (version 2 adds `sessions.state_ts`; version 3 adds `control_requests`, `machines.last_poll`, and `sessions.rc_url` and `rc_at`; version 4 adds `session_digests` and `sessions.last_prompt` and `last_prompt_at`; version 5 adds `login_codes` and `web_sessions`; version 6 adds `sessions.turn_ended_at`, `sessions.blocked_at`, and `inbox_triage`; version 7 adds `inbox_alerts`; version 8 adds `instructions`, `messages`, and `permission_requests`; version 9 adds `moves` and `machines.move_key`; version 10 adds `start_requests`; version 11 adds `start_requests.trust`; version 12 adds the mod's `sessions` columns), and refuses
+older one in place (version 2 adds `sessions.state_ts`; version 3 adds `control_requests`, `machines.last_poll`, and `sessions.rc_url` and `rc_at`; version 4 adds `session_digests` and `sessions.last_prompt` and `last_prompt_at`; version 5 adds `login_codes` and `web_sessions`; version 6 adds `sessions.turn_ended_at`, `sessions.blocked_at`, and `inbox_triage`; version 7 adds `inbox_alerts`; version 8 adds `instructions`, `messages`, and `permission_requests`; version 9 adds `moves` and `machines.move_key`; version 10 adds `start_requests`; version 11 adds `start_requests.trust`; version 12 adds the mod's `sessions` columns; version 17 adds `knowledge` and `knowledge_fts` and drops `instructions`), and refuses
 a database from a newer version. Times are stored as UTC RFC 3339 with a
 fixed nine-digit fraction, so they also sort as text. The database directory
 is created with mode `0700`.
@@ -1309,7 +1417,8 @@ refuses a version 7 database.
 Schema version 8 adds three tables:
 
 - `instructions`: one row per standing rule, with `text`, `created_at`, and
-  `created_by` (a machine name, or `web:<session name>`).
+  `created_by` (a machine name, or `web:<session name>`). Schema version 17
+  moves these rows into `knowledge` and drops the table (see below).
 - `messages`: one row per queued target of a send, with the text as sent,
   the `sender`, the `state` (`queued`, `delivered`, `expired`, `refused`), a
   `detail` from the watcher, and `offered_at`, the last time a watcher was
@@ -1330,6 +1439,20 @@ local-answer close and the inbox.
 
 To roll back to the v7 binary, restore the pre-deploy backup. The v7 binary
 refuses a version 8 database.
+
+### Knowledge
+
+Schema version 17 adds `knowledge` and `knowledge_fts`, copies each
+`instructions` row into `knowledge` as an `active` global `convention` with
+the same `text`, `every`, and `created_by`, and drops `instructions`. The
+migration is one way: to roll back to the v16 binary, restore the pre-deploy
+backup. The v16 binary refuses a version 17 database.
+
+- `knowledge`: one row per entry, with `client_id` (unique, for replaying a
+  queued proposal), `kind`, `scope`, `text`, `why`, `state`, `every`,
+  `replaces`, `source_session`, `created_at`, `created_by`, `decided_at`,
+  `decided_by`, and `confirmed_at`. An index covers `state` and `scope`.
+- `knowledge_fts`: an FTS5 index over `text` and `why`.
 
 ### Moves
 

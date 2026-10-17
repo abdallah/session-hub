@@ -19,9 +19,12 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub inbox --watch` | The same list, full screen, refreshed every 5 seconds, with a cursor you move with the keyboard. See below. |
 | `sessionhub inbox dismiss [--since <time>] <id\|prefix>` | Hide an inbox item until something new happens in that session. |
 | `sessionhub inbox snooze <id\|prefix> <1h\|4h\|tomorrow\|duration>` | Hide an inbox item for a while. `tomorrow` means 9:00 local time the next day. A Go duration such as `90m` also works, up to just under 7 days (167h59m). |
-| `sessionhub rules [ls]` | The standing rules every session sees, one per line: number, text, and who added it. See below. |
-| `sessionhub rules add [--every N] "<text>"` | Add a rule, 1 to 300 characters on one line. The list holds at most 2,000 characters. `--every N` sends it with every Nth prompt of a session instead of every prompt. |
-| `sessionhub rules rm <id>` | Remove rule `<id>`. |
+| `sessionhub knowledge [ls] [--state proposed\|active\|all] [--scope S]` | Knowledge entries, one per line: number, kind, scope, text, state, and who added it. Default `--state active`. See below. |
+| `sessionhub knowledge add --kind K --scope S [--why W] [--every N] "<text>"` | Propose an entry. It reaches sessions after you approve it on the dashboard. |
+| `sessionhub knowledge search "<query>" [--scope S]` | Search the active entries, at most 20. |
+| `sessionhub rules [ls]` | The global conventions every session sees, one per line: number, text, and who added it. See below. |
+| `sessionhub rules add [--every N] "<text>"` | Add an active global convention, 1 to 300 characters on one line. The conventions hold at most 2,000 characters. `--every N` sends it with every Nth prompt of a session instead of every prompt. |
+| `sessionhub rules rm <id>` | Retire convention `<id>`. |
 | `sessionhub task add "<title>" [--ref X] [--url U] [--source S] [--now]` | Add a task. It starts as `todo`, or `in_progress` with `--now`. `--source` is `ticket`, `email`, `chat`, or `other` (default `other`). See below. |
 | `sessionhub task ls [--date YYYY-MM-DD] [--json]` | A day (default today) in the local time zone, in sections: **Now**, **Waiting on**, **Done**, **Touched, not finished**, **Todo**, and **Carried over**, each with its working time. Empty sections are left out. `--json` prints the day view as is, with `active_seconds`, `last_active_at`, `now`, and `waiting_on`. |
 | `sessionhub note <text>` | Send a worklog note. The session is `CLAUDE_CODE_SESSION_ID` when set. sessionhub routes it to a task: a ticket ref (`systemsdev-NNNNN`, `!NNNN`) picks that task, else the session's current task, else a new one; `done`, `finished`, or (with a ref) `close`/`closed` at the start marks it done. Prints `noted → <ref> <title> (<action>)`. If the server can't be reached, the note is queued and sent later (`queued: <text>`). `worklog note` calls it. |
@@ -314,18 +317,34 @@ is refused, like `sessionhub resume` refuses it, and the status line shows the
   every viewer and may be a name, such as a Cloudflare hostname, that this
   machine can't reach. sessionhub checks for the entry with `ssh -G <machine>`.
 
+## `sessionhub knowledge`
+
+Knowledge entries are short facts, conventions, and decisions that reach
+the Claude sessions they apply to. Each has a kind (`convention`, `fact`, or
+`decision`) and a scope (`global`, `repo:<host/path>`, `ticket:<ref>`, or
+`machine:<name>`). `sessionhub knowledge add` always creates a proposal:
+nothing reaches a session until you approve it on the dashboard's
+**Knowledge** tab. The CLI cannot approve, reject, or retire an entry,
+because it runs with the machine token and a session could approve its own
+proposal. `add` prints the proposal's number and up to 3 similar entries. The
+text is one line of at most 300 characters, `--why` at most 200. `--every N`
+(1 to 100) sends the entry with every Nth prompt of a session; the default is
+every prompt for a `convention` and every 20th for a `fact` or `decision`.
+Each machine's herdr watcher copies the approved entries within a minute.
+See [Knowledge](server.md#knowledge) for scopes, limits, and what a session receives.
+
 ## `sessionhub rules`
 
-The rules are short standing instructions that every Claude session on
-every machine sees at its start and with every prompt. `sessionhub rules add`
-saves one on the server; each machine's herdr watcher copies the list
+`sessionhub rules` works on the global conventions, the entries that every
+session sees. `sessionhub rules add` saves one as an active entry without a
+proposal; each machine's herdr watcher copies the list
 within a minute, and sessions see it from their next prompt. A rule is one
-line of at most 300 characters, and the whole list is at most 2,000; an add
+line of at most 300 characters, and the global conventions together are at most 2,000; an add
 past that fails and asks you to remove a rule first. `--every N` makes a
 periodic rule: it is sent at session start and then with every Nth prompt, a
 reminder that keeps long sessions on track without repeating it each turn. The dashboard's
-**Rules** tab and the MCP tools `remember`, `forget`, and `instructions`
-edit the same list.
+**Knowledge** tab and the MCP tools `remember`, `forget`, and `instructions`
+edit the same entries.
 
 ## `sessionhub send`
 

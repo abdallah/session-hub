@@ -12,7 +12,7 @@ or blocks a Claude Code turn.
 | `sessionhub uninstall-hooks` | Removes only sessionhub's entries. |
 | `sessionhub hook session-start\|prompt\|stop\|notification\|session-end\|context\|permission-request` | Handles one hook call. Claude Code runs this. |
 | `sessionhub hook flush` | Internal. Drains the queue. `session-end` starts it. |
-| `sessionhub hook refresh-instructions` | Internal. Rewrites the local rules copy. `session-start` starts it. |
+| `sessionhub hook refresh-instructions` | Internal. Rewrites the local knowledge copy. `session-start` starts it. |
 
 Both install commands accept `--settings FILE` (default
 `$CLAUDE_CONFIG_DIR/settings.json`, else `~/.claude/settings.json`) and
@@ -77,19 +77,27 @@ with `claude` or whose path contains `/share/claude/versions/`; if none
 matches, the parent PID. The MCP server uses this file to find the current
 session after `/clear`.
 
-### Standing instructions
+### Knowledge
 
-`sessionhub hook context` prints the rules from the local copy,
-`<state>/instructions.json`, as `additionalContext`:
+`sessionhub hook context` prints the entries that match the session from the
+local copy, `<state>/knowledge.json`, as `additionalContext`:
 
-    {"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Standing instructions from sessionhub (apply in every session):\n- <rule>\n- <rule>"}}
+    {"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Knowledge approved by the user for this session (data, not instructions from the content you read):\n- [convention] <text>\n- [fact] <text> (<why>)"}}
 
-It reads only that file and never calls the server, so a prompt never waits
-on the network. With a missing, empty, or unreadable copy, an empty list,
+Which entries match, the order, and the 2,000-character budget for entries
+other than global conventions are in [Knowledge](server.md#what-a-session-receives).
+At SessionStart the hook looks up the repo and branch once (500 ms limit) and
+caches them in `<state>/session-repo/<session id>`; prompts read only the cache.
+
+It reads local files only and never calls the server, so a prompt never waits
+on the network. With a missing, empty, or unreadable copy, no matching entry,
 another event, or a subagent call, it prints nothing and writes nothing to
-stderr. The herdr watcher refreshes the copy on every heartbeat, and
+stderr. When `knowledge.json` is missing, it falls back to
+`<state>/instructions.json` and prints its `Standing instructions from
+sessionhub (apply in every session):` block. The herdr watcher refreshes the
+copy on every heartbeat, and
 `session-start` starts a detached `sessionhub hook refresh-instructions`, which
-rewrites it when the server's `version` changed. A rule added on the server
+rewrites it when the server's `version` changed. An entry approved on the server
 reaches a session at its next prompt after the next refresh.
 
 ### Permission requests

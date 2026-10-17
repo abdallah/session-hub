@@ -166,8 +166,9 @@ the bot's updates.
 Each message names the session, its machine, and how long it has been
 blocked or waiting, with an **Open inbox** button that opens the dashboard's **Inbox**
 tab, and a **Remote Control** button when the session has a Remote Control
-link. The server also sends a message whenever someone adds a standing rule,
-with an **Open rules** button, so you notice a rule that a session planted.
+link. The server also sends a message whenever someone adds a standing rule, with an
+**Open rules** button, and whenever a machine proposes a knowledge entry, with an
+**Open knowledge** button, so you notice an entry that a session planted.
 See [`docs/server.md`](server.md), "Telegram alerts".
 
 ## Join each machine

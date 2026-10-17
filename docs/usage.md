@@ -34,12 +34,16 @@
   A jump to another machine runs `ssh -o BatchMode=yes`, so it needs
   key-based SSH (see [Resume across machines](self-hosting.md#resume-across-machines));
   without it, it shows the resume command instead.
-- Standing rules reach every Claude session on every machine, at its start
-  and with every prompt, or every Nth prompt with `--every N`. Add one with
-  `sessionhub rules add "<text>"`, on the
-  dashboard's **Rules** tab, or by asking Claude to `remember` it for all
-  sessions; `sessionhub rules` lists them and `sessionhub rules rm <id>` removes one.
-  Keep each to one line; the list holds 2,000 characters.
+- Knowledge reaches the Claude sessions it applies to, at their start and with
+  their prompts: global conventions in every session, and facts and decisions
+  scoped to a repo, a ticket, or a machine. Claude proposes entries with
+  `propose_knowledge`, and you can propose one with
+  `sessionhub knowledge add --kind K --scope S "<text>"`. A proposal reaches
+  no session until you approve it on the dashboard's **Knowledge** tab, which
+  also lists entries to review and retire. Ask Claude to `remember` something to
+  add a global convention at once. `sessionhub knowledge` lists entries and
+  `sessionhub knowledge search "<query>"` searches them.
+  Keep each to one line of 300 characters; global conventions hold 2,000 characters in all.
 - `sessionhub send <id-prefix>... -m "<text>"` types a message into sessions,
   prefixed with who sent it, once each one's agent is idle. On the
   dashboard, **Select** the sessions and use the **Send a message** bar.

@@ -45,7 +45,7 @@ or Claude Code.
   tool sets its own session). The server answers `404` for an unknown
   `from_session` and `409` for another machine's; both come back as a
   `*StatusError` with the server's message.
-- The local rules copy is `<state dir>/instructions.json`
+- The local knowledge copy is `<state dir>/knowledge.json` (`KnowledgePath`, `LoadKnowledge`); the older rules copy is `<state dir>/instructions.json`
   (`InstructionsPath`). `LoadInstructions` reads it without any network
   call, `SaveInstructions` writes it with mode 0600 through a temp file and a
   rename, and `RefreshInstructions(ctx, c, path)` fetches the list and

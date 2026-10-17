@@ -139,10 +139,11 @@ up session ID changes after `/clear`, and ends sessions whose pane vanished
 without an event. A failed heartbeat is logged, not queued.
 
 After each heartbeat the server accepted, the watcher reads
-`GET /v1/instructions` and rewrites `<state>/instructions.json` when the
-`version` changed. `sessionhub hook context` prints that copy into every prompt,
-leaving out a periodic rule except on every Nth prompt of the session. A
-failed read keeps the old copy and logs `rules: refresh failed`, at most
+`GET /v1/knowledge/local` and rewrites `<state>/knowledge.json` when the
+`version` changed. `sessionhub hook context` prints the entries that match the
+session (see [Knowledge](server.md#knowledge)), leaving out a periodic entry
+except on every Nth prompt of the session. A
+failed read keeps the old copy and logs `knowledge: refresh failed`, at most
 once every 5 minutes. The refresh runs after the heartbeat is sent, so it
 never delays or fails the heartbeat.
 
@@ -499,7 +500,9 @@ Log lines start with `move:`. Results are posted to
 |---|---|
 | `queue.jsonl`, `queue.lock` | The shared retry queue (see `docs/client.md`). |
 | `watcher.lock` | `flock` held by the running watcher. Its content is the watcher's PID. |
-| `instructions.json` | The standing rules, as the server last returned them. The watcher and `sessionhub hook refresh-instructions` write it; `sessionhub hook context` reads it. |
+| `knowledge.json` | The active knowledge entries and the session ticket refs, as the server last returned them. The watcher and `sessionhub hook refresh-instructions` write it; `sessionhub hook context` reads it. |
+| `instructions.json` | The older copy of the standing rules. `sessionhub hook context` reads it only when `knowledge.json` is missing. |
+| `session-repo/<session id>` | The session's normalized repo and branch, written at SessionStart. Prompts read this instead of running `git`. |
 | `watcher.log` | The watcher's stderr. Truncated when the watcher starts if it is over 1 MiB, and checked on every tick. An identical failure line is repeated at most every 5 minutes. |
 | `moved/<move id>/` | The transcript, sidecar folder, and file history of a session moved to another machine, kept 30 days. |
 

@@ -41,6 +41,9 @@ name returns `-32602`; bad JSON returns `-32700`.
 | `propose_task` | `title: string`, `source: string`, `ref?: string`, `ref_url?: string` |
 | `link_task` | `task_id: string` |
 | `propose_done` | `task_id: string`, `note?: string` |
+| `propose_knowledge` | `kind: "convention"\|"fact"\|"decision"`, `scope: string`, `text: string`, `why?: string`, `replaces?: integer` |
+| `search_knowledge` | `query: string`, `scope?: string` |
+| `confirm_knowledge` | `id: integer` |
 
 Results are one text content item. For `report_progress` and `set_title`,
 invalid arguments (a non-array list, an empty title) return a result with
@@ -49,11 +52,12 @@ down (fail open).
 
 `remember`, `forget`, `instructions`, and `send_to_sessions` act at once and
 never queue: a failure, including an unreachable server, is a result with
-`isError: true` that says what happened. `remember` adds a standing rule
-(see `docs/server.md`, "Shared instructions"); its description tells Claude
+`isError: true` that says what happened. `remember` adds an active global convention
+(see `docs/server.md`, "Knowledge"); its description tells Claude
 to use it only when the user asks for something to apply to all sessions.
 It folds the text to one line and refuses more than 300 characters. A full
-list (2,000 characters) tells Claude to ask the user which rule to `forget`.
+list (2,000 characters of global conventions) tells Claude to ask the user which
+rule to `forget`.
 `send_to_sessions` sends as `session <first 8 characters>` of the calling
 session (the target reads `From session <id8> via sessionhub (sent on the user's
 behalf):` above the text) and lists each target as queued or refused with the reason. It
@@ -109,7 +113,22 @@ calling session's ID and does not have it sends nothing.
 The `initialize` instructions and `docs/CLAUDE-snippet.md` carry the rule
 for agents: for a clear human-level goal, call `list_tasks`, then
 `link_task` or `propose_task`; when the goal is finished, call
-`propose_done`; create no tasks for steps inside a goal.
+`propose_done`; create no tasks for steps inside a goal. They also tell agents
+to call `propose_knowledge` when the user corrects a fact about the environment,
+states a convention, or a decision is made, and to search knowledge before
+asking the user where something is.
+
+`propose_knowledge` creates a `proposed` entry that reaches no session until
+you approve it on the dashboard. The scope is `global`, `repo:<origin URL or
+host/path>`, `ticket:<ref>`, or `machine:<name>`; the server normalizes a
+repo URL. The text is one line of at most 300 characters and may name a secret
+but never holds its value; the server rejects likely credentials. The result
+lists up to 3 near-duplicates, so a correction can pass `replaces`. Like the
+task tools, it queues when the server is down and carries a client-made ID, so
+a replay creates one proposal. `search_knowledge` returns at most 20 active
+entries. `confirm_knowledge` marks an entry you used and found still true;
+call it only after you checked. No tool approves, rejects, or retires an
+entry.
 
 ## Session ID
 

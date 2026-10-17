@@ -4,6 +4,22 @@ The general upgrade steps and how to roll back are in
 [`self-hosting.md`](self-hosting.md#upgrade). This page lists the releases
 that need more than that. Newest first.
 
+## Upgrade to knowledge
+
+This release replaces standing rules with knowledge entries and moves the
+database to schema version 17. Deploy the server first; it upgrades the
+database on its first start and copies each rule to an active global
+convention. The migration is one way: to roll back, restore the pre-deploy
+backup, because the version 16 binary refuses a version 17 database.
+
+1. Back up the database, then deploy the server.
+2. On every machine, run `make install` and `sessionhub install-plugin`. The
+   new watcher writes `knowledge.json`. Until then the hook keeps using
+   `instructions.json`, and a watcher from before this release keeps reading
+   `/v1/instructions`, which returns the active global conventions.
+3. Update your `CLAUDE.md` from `docs/CLAUDE-snippet.md` so agents propose and
+   search knowledge.
+
 ## Upgrade to tasks
 
 This release adds tasks and moves the database to schema version 13. Deploy

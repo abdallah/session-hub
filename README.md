@@ -32,8 +32,8 @@ CLI, or a Telegram message.
 - **Get back in.** `sessionhub resume <id>` focuses the session, restarts it,
   or prints the `ssh` command for the machine it is on. You can also turn on
   Claude Code Remote Control and continue in the Claude app.
-- **Standing rules and messages.** Add a rule once and every session sees it
-  with each prompt. Send a message to one session or to all of them.
+- **Knowledge and messages.** Approve a convention, fact, or decision once and
+  every session it applies to sees it. Send a message to one session or to all of them.
 - **Start sessions anywhere.** Start a new session on any machine from the
   dashboard or `sessionhub start`, with Remote Control on, and continue it
   from your phone.
@@ -156,7 +156,7 @@ five minutes. When you want more machines, follow
 
 | Doc | Covers |
 |---|---|
-| [`docs/usage.md`](docs/usage.md) | Day-to-day use: the inbox, approvals, rules, messages, resume, moves. |
+| [`docs/usage.md`](docs/usage.md) | Day-to-day use: the inbox, approvals, knowledge, messages, resume, moves. |
 | [`docs/self-hosting.md`](docs/self-hosting.md) | Running the server for several machines: systemd, Docker, a tunnel, Telegram, joining machines, upgrades, uninstall. |
 | [`docs/cli.md`](docs/cli.md) | Every `sessionhub` command. |
 | [`docs/server.md`](docs/server.md) | Server config, HTTP API, dashboard, and database. |

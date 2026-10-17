@@ -16,6 +16,11 @@ is doing from the sessionhub dashboard or the herdr sidebar without opening it.
   starting with `done:` when you finish. sessionhub turns notes into tasks.
   Use `propose_task` and `propose_done` only when you cannot run shell
   commands. No notes for steps inside a piece of work.
+- Call `propose_knowledge` when I correct a fact about the environment, state a
+  convention, or a decision is made. Pick the narrowest true scope, and write
+  names of secrets only, never values.
+- Call `search_knowledge` before you ask me where something is or how something
+  is done.
 
 If a sessionhub tool reports that the server is unreachable, carry on with your work.
 The report is queued and sent later.
