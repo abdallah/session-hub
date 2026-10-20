@@ -518,11 +518,13 @@ func TestSelectKnowledgeScopes(t *testing.T) {
 			kn("decision", "ticket:systemsdev-1", "Linked ticket.", 0),
 			kn("fact", "ticket:systemsdev-2", "Branch ticket.", 0),
 			kn("fact", "ticket:systemsdev-3", "Other ticket.", 0),
+			kn("fact", "ticket:g/r!7", "Linked MR.", 0),
+			kn("fact", "ticket:other/repo!7", "Same MR number, other repo.", 0),
 			kn("fact", "machine:togh", "On togh.", 0),
 			kn("fact", "machine:blu", "On blu.", 0),
 			{Kind: "fact", Scope: "global", Text: "Retired.", State: api.KnowledgeRetired},
 		},
-		SessionRefs: map[string][]string{"s1": {"systemsdev-1"}, "s2": {"systemsdev-3"}},
+		SessionRefs: map[string][]string{"s1": {"systemsdev-1", "!7"}, "s2": {"systemsdev-3"}},
 	}
 	local.Entries[2].Why = "seen in CI"
 	got := selectKnowledge(local, "s1", "gitlab.com/g/r", "togh", []string{"systemsdev-2"}, 0)
@@ -530,6 +532,7 @@ func TestSelectKnowledgeScopes(t *testing.T) {
 		"- [convention] Global convention.\n" +
 		"- [decision] Linked ticket.\n" +
 		"- [fact] Branch ticket.\n" +
+		"- [fact] Linked MR.\n" +
 		"- [fact] Repo fact. (seen in CI)\n" +
 		"- [fact] On togh.\n" +
 		"- [fact] Global fact."

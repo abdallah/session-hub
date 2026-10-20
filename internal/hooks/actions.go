@@ -161,7 +161,9 @@ func (h *handler) printContext() error {
 func selectKnowledge(local api.KnowledgeLocal, sessionID, repo, machine string, branchRefs []string, n int) string {
 	refs := map[string]bool{}
 	for _, r := range append(append([]string(nil), local.SessionRefs[sessionID]...), branchRefs...) {
-		refs["ticket:"+strings.ToLower(strings.TrimSpace(r))] = true
+		if r = knowledge.RefInRepo(strings.ToLower(strings.TrimSpace(r)), repo); r != "" {
+			refs["ticket:"+r] = true
+		}
 	}
 	machine = strings.TrimSpace(machine)
 	// Buckets in block order: global conventions, ticket, repo, machine, other global.

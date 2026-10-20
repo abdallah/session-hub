@@ -386,7 +386,7 @@ func (s *Store) KnowledgeLocal(ctx context.Context, machineID int64) (api.Knowle
 		if err := rows.Scan(&id, &ref); err != nil {
 			return out, err
 		}
-		ref = knowledge.NormalizeRef(ref)
+		ref = knowledge.SessionRef(ref)
 		if ref == "" || slices.Contains(out.SessionRefs[id], ref) {
 			continue
 		}

@@ -124,8 +124,7 @@ tool description.
 `propose_knowledge` creates a `proposed` entry that reaches no session until
 you approve it on the dashboard. The scope is `global`, `repo:<origin URL or
 host/path>`, `ticket:<ref>`, or `machine:<name>`; the server normalizes a
-repo URL. An MR scope (`ticket:group/project!N`) is accepted but not yet
-delivered to sessions, so prefer the ticket ref. The text is one line of at most 300 characters and may name a secret
+repo URL. An MR scope is `ticket:group/project!N`. The text is one line of at most 300 characters and may name a secret
 but never holds its value; the server rejects likely credentials. The result
 lists up to 3 near-duplicates, so a correction can pass `replaces`. Like the
 task tools, it queues when the server is down and carries a client-made ID, so

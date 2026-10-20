@@ -52,6 +52,24 @@ func TestParseScope(t *testing.T) {
 	}
 }
 
+func TestSessionRefAndRefInRepo(t *testing.T) {
+	for in, want := range map[string]string{" !34 ": "!34", "SystemsDev-1": "systemsdev-1", "G/P!3": "g/p!3", "!x": ""} {
+		if got := SessionRef(in); got != want {
+			t.Errorf("SessionRef(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for _, c := range [][3]string{
+		{"!34", "gitlab.com/group/project", "group/project!34"},
+		{"!34", "", ""},
+		{"systemsdev-1", "", "systemsdev-1"},
+		{"g/p!3", "gitlab.com/other/repo", "g/p!3"},
+	} {
+		if got := RefInRepo(c[0], c[1]); got != c[2] {
+			t.Errorf("RefInRepo(%q, %q) = %q, want %q", c[0], c[1], got, c[2])
+		}
+	}
+}
+
 func TestRefsInBranch(t *testing.T) {
 	got := RefsInBranch("abdallah/systemsdev-17908-dr-plan")
 	if !reflect.DeepEqual(got, []string{"systemsdev-17908"}) {

@@ -12,6 +12,7 @@ import (
 var (
 	ticketRe = regexp.MustCompile(`^[a-z][a-z0-9]+-\d+$`)
 	mrRe     = regexp.MustCompile(`^[^/!\s]+(/[^/!\s]+)+!\d+$`)
+	bareMRRe = regexp.MustCompile(`^!\d+$`)
 	branchRe = regexp.MustCompile(`(?i)\b[a-z][a-z0-9]+-\d+\b`)
 )
 
@@ -42,6 +43,28 @@ func NormalizeRef(ref string) string {
 	r := strings.ToLower(strings.TrimSpace(ref))
 	if ticketRe.MatchString(r) || mrRe.MatchString(r) {
 		return r
+	}
+	return ""
+}
+
+// SessionRef normalizes a task ref for session_refs: what NormalizeRef
+// accepts, plus a bare MR ref (!34), which RefInRepo completes in the hook.
+func SessionRef(ref string) string {
+	if r := strings.TrimSpace(ref); bareMRRe.MatchString(r) {
+		return r
+	}
+	return NormalizeRef(ref)
+}
+
+// RefInRepo completes a bare MR ref (!34) with the path of repo, a
+// NormalizeRepo result, giving group/project!34. Other refs pass through
+// unchanged; a bare MR ref with no repo gives "".
+func RefInRepo(ref, repo string) string {
+	if !bareMRRe.MatchString(ref) {
+		return ref
+	}
+	if _, path, ok := strings.Cut(repo, "/"); ok {
+		return path + ref
 	}
 	return ""
 }

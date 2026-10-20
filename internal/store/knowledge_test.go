@@ -298,6 +298,7 @@ func TestKnowledgeLocal(t *testing.T) {
 	e.session(e.bluebox, "s3", "")
 	e.task(api.TaskIn{Title: "Bot", Ref: "SYSTEMSDEV-17908", SessionID: "s1"}, tYou)
 	e.task(api.TaskIn{Title: "Other", Ref: "systemsdev-1", SessionID: "s3"}, tYou)
+	e.task(api.TaskIn{Title: "Review", Ref: "!34", SessionID: "s2"}, tYou)
 	act := addK(t, e.s, api.KnowledgeIn{Kind: "fact", Scope: "ticket:systemsdev-17908", Text: "Bot runs in eu-west-1."}, "web:phone", true).Entry
 	addK(t, e.s, api.KnowledgeIn{Kind: "fact", Scope: "global", Text: "Not yet approved."}, "tower", false)
 	got, err := e.s.KnowledgeLocal(ctx, e.tower.ID)
@@ -307,7 +308,7 @@ func TestKnowledgeLocal(t *testing.T) {
 	if len(got.Entries) != 1 || got.Entries[0].ID != act.ID {
 		t.Errorf("entries %+v, want only the active one", got.Entries)
 	}
-	if fmt.Sprint(got.SessionRefs) != "map[s1:[systemsdev-17908]]" {
+	if fmt.Sprint(got.SessionRefs) != "map[s1:[systemsdev-17908] s2:[!34]]" {
 		t.Errorf("session_refs %v", got.SessionRefs)
 	}
 	if len(got.Version) != 16 {
