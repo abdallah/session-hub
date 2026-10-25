@@ -30,7 +30,7 @@ const (
 	maxLinks     = 20
 	maxLinkBytes = 300
 	recapSuffix  = "(disable recaps in /config)"
-	stateVersion = 1
+	stateVersion = 2 // 2 adds last_reply; older state is read again from the start
 )
 
 var (
