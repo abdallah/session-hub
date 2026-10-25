@@ -110,6 +110,16 @@ session reports with `report_progress`.
   on the dashboard.
 - Add a task with **Add task** or `sessionhub task add "<title>"`. It starts
   as todo, or in progress with `--now`.
+- Park an idea with the **Park an idea** box, `sessionhub idea "<text>"`, or
+  by asking any Claude session to park it. An idea is a todo task with
+  source `idea`: it waits under **Ideas** on every day until you start,
+  finish, or drop it with **Move**, and the standup leaves it out.
+- **Standup** on the **Tasks** tab, and `sessionhub task standup`, print the
+  shown day's standup, ready to paste: **Yesterday** is the done and
+  worked-on tasks of the last earlier day with work (up to 7 days back, so
+  Monday covers Friday), **Today** is the open, todo, and done tasks, and
+  **Blockers** is what the open tasks wait on. **Copy** puts it on the
+  clipboard.
 - A session proposes a task when it has a clear goal, and proposes it done
   when the goal is finished. Nothing an agent proposes reaches **Done**
   until you confirm it. The review strip on the **Tasks** tab, and

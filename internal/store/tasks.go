@@ -27,7 +27,7 @@ const (
 var (
 	taskIDRE      = regexp.MustCompile(`^t_[A-Za-z0-9_-]{11}$`)
 	taskEventIDRE = regexp.MustCompile(`^te_[A-Za-z0-9_-]{11}$`)
-	taskSources   = map[string]bool{"ticket": true, "email": true, "chat": true, "other": true}
+	taskSources   = map[string]bool{"ticket": true, "email": true, "chat": true, "other": true, api.SourceIdea: true}
 )
 
 // ValidTaskID reports whether id has the shape of a task ID.
@@ -111,7 +111,7 @@ func checkTaskTitle(v string) error {
 
 func checkTaskSource(v string) error {
 	if !taskSources[v] {
-		return invalidf("source %q: use ticket, email, chat, or other", v)
+		return invalidf("source %q: use ticket, email, chat, other, or idea", v)
 	}
 	return nil
 }

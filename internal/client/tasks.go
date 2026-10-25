@@ -92,6 +92,17 @@ func (c *Client) TaskDay(ctx context.Context, date, tz string) (api.TaskDay, err
 	return d, err
 }
 
+// TaskStandup returns date's standup text in the zone tz.
+func (c *Client) TaskStandup(ctx context.Context, date, tz string) (api.Standup, error) {
+	q := url.Values{"date": {date}}
+	if tz != "" {
+		q.Set("tz", tz)
+	}
+	var out api.Standup
+	err := c.do(ctx, http.MethodGet, "/v1/tasks/standup?"+q.Encode(), nil, &out)
+	return out, err
+}
+
 // TaskReview returns what waits for review.
 func (c *Client) TaskReview(ctx context.Context) (api.TaskReview, error) {
 	var r api.TaskReview

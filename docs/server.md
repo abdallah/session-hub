@@ -188,7 +188,8 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `POST /v1/tasks/{id}/merge` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the target `Task` | Merge a task into another (`TaskMergeIn`: `into`); the source is dropped and its sessions and spans move to the target. `409` when the source is dropped or merged; `400` when the target is proposed or dropped. |
 | `POST /v1/tasks/{id}/sessions` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the `Task` | Link a session (`TaskLinkIn`: `session_id`, `event_id`). |
 | `PATCH /v1/tasks/{id}` | machine, or cookie with `X-Hub-Action: tasks` | `200`, the `Task` | Edit `title`, `ref`, `ref_url`, or `source` (`TaskEditIn`). Always acts as you. |
-| `GET /v1/tasks/day?date=YYYY-MM-DD&tz=Area/City` | read | `200`, `TaskDay` | The **Todo**, **In progress**, and **Done** columns for a day. `date` is required; a missing `tz` means UTC. `400` for a bad date or zone. |
+| `GET /v1/tasks/day?date=YYYY-MM-DD&tz=Area/City` | read | `200`, `TaskDay` | The **Todo**, **In progress**, and **Done** columns for a day, and `ideas`: the todo tasks with source `idea`, kept out of `todo`. `date` is required; a missing `tz` means UTC. `400` for a bad date or zone. |
+| `GET /v1/tasks/standup?date=YYYY-MM-DD&tz=Area/City` | read | `200`, `{date, since, text}` | The day's standup as plain text: **Yesterday** from `since`, the last of the 7 earlier days with a done task or working time (`since` absent when none had any), **Today** from the day's open, todo, and done tasks, **Blockers** from their `waiting_on`. Ideas stay out. `400` for a bad date or zone. |
 | `GET /v1/tasks/review` | read | `200`, `TaskReview` | Proposed tasks, done proposals, and sessions with no task. |
 | `POST /v1/tasks/review/ignore` | machine, or cookie with `X-Hub-Action: tasks` | `204` | Hide sessions from **Sessions with no task**: one in `session_id`, or up to 500 in `session_ids`. All or nothing: an unknown session is `404` and hides none. |
 | `GET /v1/messages/{id}` | read | `200`, `Message` | One message and its delivery state. |
@@ -1129,7 +1130,7 @@ until `until`. Both answer `204` and keep one row per session in
 
 A task is a unit of work you would name in a standup. Its state is
 `proposed`, `todo`, `in_progress`, `done_proposed`, `done`, or `dropped`.
-`source` is `ticket`, `email`, `chat`, or `other`. A title is up to 200
+`source` is `ticket`, `email`, `chat`, `other`, or `idea`. A title is up to 200
 characters, a `ref` up to 200, a `ref_url` an `http` or `https` URL of up to
 2,000 bytes, and a note up to 500. An ID is `t_` and 11 URL-safe base64
 characters; a client can supply one in `TaskIn.id`, and a repeat returns

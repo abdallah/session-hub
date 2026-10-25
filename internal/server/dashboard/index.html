@@ -292,6 +292,13 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   background: var(--card); border: 1px solid var(--line); border-radius: 6px;
 }
 .task-bar .grow { flex: 1 1 auto; }
+.idea-bar { display: flex; gap: 8px; margin: 8px 0 0; }
+.idea-bar input {
+  flex: 1 1 auto; min-height: 44px; padding: 0 8px; font: inherit; color: var(--fg);
+  background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+}
+#idea-status { padding: 0; text-align: left; font-size: .85rem; margin: 4px 0 0; }
+#standup pre { white-space: pre-wrap; margin: 0 0 8px; font: inherit; }
 .task-add { margin: 8px 0 0; }
 .task-add .row { display: flex; flex-wrap: wrap; gap: 8px; }
 .task-add .row label { flex: 1 1 12rem; }
@@ -386,8 +393,21 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     <button id="task-next" class="textbtn" type="button" aria-label="Next day">Next &rarr;</button>
     <button id="task-today" class="textbtn" type="button">Today</button>
     <span class="grow"></span>
+    <button id="task-standup" class="textbtn" type="button" aria-expanded="false" aria-controls="standup">Standup</button>
     <button id="task-add-open" type="button" aria-expanded="false" aria-controls="task-add">Add task</button>
   </div>
+  <div class="idea-bar">
+    <input id="idea-text" type="text" maxlength="200" autocomplete="off" placeholder="Park an idea" aria-label="Park an idea">
+    <button id="idea-go" type="button">Park</button>
+  </div>
+  <p id="idea-status" class="error" aria-live="polite"></p>
+  <section id="standup" class="startbar" hidden aria-label="Standup">
+    <pre id="standup-text"></pre>
+    <div class="actions">
+      <button id="standup-copy" type="button">Copy</button>
+      <span id="standup-status" class="meta" aria-live="polite"></span>
+    </div>
+  </section>
   <section id="task-add" class="startbar task-add" hidden aria-label="Add a task">
     <h2>Add a task</h2>
     <label>Title <input id="task-title" type="text" maxlength="200" autocomplete="off"></label>
@@ -399,6 +419,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
         <option value="email">Email</option>
         <option value="chat">Chat</option>
         <option value="other" selected>Other</option>
+        <option value="idea">Idea</option>
       </select></label>
     </div>
     <label class="check"><input id="task-now" type="checkbox"> Start now</label>
@@ -532,6 +553,14 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   var taskAddStatus = document.getElementById("task-add-status");
   var taskReviewEl = document.getElementById("task-review");
   var taskBoard = document.getElementById("task-board");
+  var ideaText = document.getElementById("idea-text");
+  var ideaGo = document.getElementById("idea-go");
+  var ideaStatus = document.getElementById("idea-status");
+  var standupBtn = document.getElementById("task-standup");
+  var standupBox = document.getElementById("standup");
+  var standupText = document.getElementById("standup-text");
+  var standupCopy = document.getElementById("standup-copy");
+  var standupStatus = document.getElementById("standup-status");
   var TASKS_DATE_KEY = "sessionhub.tasksDate";
   var taskDate = "";        // the day the Tasks tab shows, YYYY-MM-DD
   var lastDay = null;       // the last GET /v1/tasks/day, for taskDate
@@ -1044,6 +1073,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     { key: "done", label: "Done", column: "done" },
     { key: "touched", label: "Touched, not finished", column: "in_progress" },
     { key: "todo", label: "Todo", column: "todo" },
+    { key: "ideas", label: "💡 Ideas", column: "ideas" },
     { key: "carried", label: "Carried over", column: "in_progress", collapsed: true }
   ];
   var TASK_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -1162,7 +1192,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   function taskSections(day) {
     var by = {};
     TASK_SECTIONS.forEach(function (c) { by[c.key] = []; });
-    ["todo", "in_progress", "done"].forEach(function (column) {
+    ["todo", "in_progress", "done", "ideas"].forEach(function (column) {
       ((day && day[column]) || []).forEach(function (t) { by[sectionOf(t, column)].push(t); });
     });
     return TASK_SECTIONS.map(function (c) {
@@ -2849,6 +2879,34 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     });
   }
 
+  // parkIdea saves the idea box's text as a todo task with source idea.
+  function parkIdea() {
+    var title = ideaText.value.trim();
+    if (!title) { ideaStatus.textContent = "Write the idea first."; return; }
+    ideaStatus.textContent = "";
+    taskWrite("idea", taskPost("/v1/tasks", { title: title, source: "idea" }), function () { ideaText.value = ""; });
+  }
+
+  // showStandup opens the standup panel with the shown day's text, or
+  // closes it.
+  function showStandup() {
+    var open = standupBox.hidden;
+    standupBox.hidden = !open;
+    standupBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (!open) return;
+    standupText.textContent = "Loading...";
+    standupStatus.textContent = "";
+    taskRead("/v1/tasks/standup?date=" + encodeURIComponent(taskDate) + "&tz=" + encodeURIComponent(taskTZ()))
+      .then(function (out) { if (out) standupText.textContent = out.text || ""; })
+      .catch(function (err) { standupText.textContent = err.message || "Could not load the standup."; });
+  }
+
+  function copyStandup() {
+    navigator.clipboard.writeText(standupText.textContent).then(
+      function () { standupStatus.textContent = "Copied."; },
+      function () { standupStatus.textContent = "Copy failed; select the text and copy it."; });
+  }
+
   function taskStateRequest(id, to) {
     return taskPost("/v1/tasks/" + encodeURIComponent(id) + "/state", { to: to });
   }
@@ -3091,6 +3149,8 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     taskTodayBtn.disabled = !readOnly;
     taskAddGo.disabled = !!taskBusy.add;
     taskAddStatus.textContent = taskErrors.add || "";
+    ideaGo.disabled = !!taskBusy.idea;
+    if (taskErrors.idea) ideaStatus.textContent = taskErrors.idea;
     var keep = focusedKey();
     taskReviewEl.replaceChildren(reviewStrip());
     var frag = document.createDocumentFragment();
@@ -3100,7 +3160,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       if (readOnly) frag.appendChild(el("p", "meta", "A past day, as it ended. Read-only."));
       var grid = el("div", "task-sections");
       taskSections(lastDay).forEach(function (section) {
-        if (!section.tasks.length && (section.collapsed || section.key === "waiting" || section.key === "todo")) return;
+        if (!section.tasks.length && (section.collapsed || section.key === "waiting" || section.key === "todo" || section.key === "ideas")) return;
         var col = el("section", "task-col");
         var h = el("h2", null, section.label);
         h.appendChild(el("span", "count", String(section.tasks.length)));
@@ -3718,6 +3778,10 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   taskAddOpen.addEventListener("click", function () { showTaskAdd(taskAdd.hidden); });
   taskAddClose.addEventListener("click", function () { showTaskAdd(false); });
   taskAddGo.addEventListener("click", addTask);
+  ideaGo.addEventListener("click", parkIdea);
+  ideaText.addEventListener("keydown", function (e) { if (e.key === "Enter") parkIdea(); });
+  standupBtn.addEventListener("click", showStandup);
+  standupCopy.addEventListener("click", copyStandup);
   taskTitle.addEventListener("keydown", function (e) { if (e.key === "Enter") addTask(); });
   tabKnowledge.addEventListener("click", function () { showTab("knowledge"); });
   knFilter.addEventListener("input", function () {

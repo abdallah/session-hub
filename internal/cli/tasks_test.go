@@ -54,6 +54,11 @@ func (f *fakeTasks) TaskDay(_ context.Context, date, tz string) (api.TaskDay, er
 
 func (f *fakeTasks) TaskReview(context.Context) (api.TaskReview, error) { return f.review, f.err }
 
+func (f *fakeTasks) TaskStandup(_ context.Context, date, tz string) (api.Standup, error) {
+	f.dayArgs = append(f.dayArgs, date+" "+tz)
+	return api.Standup{Date: date, Text: "Yesterday:\n- none\n"}, f.err
+}
+
 func runTask(t *testing.T, f *fakeTasks, args ...string) (string, error) {
 	t.Helper()
 	var out bytes.Buffer
@@ -290,5 +295,41 @@ func TestTaskLsJSON(t *testing.T) {
 	var got api.TaskDay
 	if err := json.Unmarshal([]byte(out), &got); err != nil || !reflect.DeepEqual(got, f.day) {
 		t.Errorf("json %q: %+v %v", out, got, err)
+	}
+}
+
+func TestTaskStandup(t *testing.T) {
+	f := &fakeTasks{}
+	out, err := runTask(t, f, "standup", "--date", "2026-10-26")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "Yesterday:\n- none\n" {
+		t.Errorf("output %q", out)
+	}
+	if len(f.dayArgs) != 1 || !strings.HasPrefix(f.dayArgs[0], "2026-10-26 ") {
+		t.Errorf("standup args %v", f.dayArgs)
+	}
+}
+
+func TestTaskAddIdea(t *testing.T) {
+	f := &fakeTasks{}
+	out, err := runTask(t, f, "add", "--source", api.SourceIdea, "try zellij layouts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.created) != 1 || f.created[0].Source != api.SourceIdea || !strings.HasPrefix(out, "parked idea ") {
+		t.Errorf("created %+v, output %q", f.created, out)
+	}
+}
+
+func TestTaskLsIdeas(t *testing.T) {
+	f := &fakeTasks{day: api.TaskDay{Ideas: []api.Task{{ID: "t_idea00001111", Title: "try zellij layouts"}}}}
+	out, err := runTask(t, f, "ls")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Ideas (1)") || !strings.Contains(out, "try zellij layouts") {
+		t.Errorf("output:\n%s", out)
 	}
 }

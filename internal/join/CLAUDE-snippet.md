@@ -16,6 +16,8 @@ is doing from the sessionhub dashboard or the herdr sidebar without opening it.
   starting with `done:` when you finish. sessionhub turns notes into tasks.
   Use `propose_task` and `propose_done` only when you cannot run shell
   commands. No notes for steps inside a piece of work.
+- When I ask you to park, save, or remember an idea for later, run
+  `sessionhub idea "<idea>"` and carry on with the current work.
 - Call `propose_knowledge` when I correct a fact about the environment, state a
   convention, or a decision is made. Pick the narrowest true scope, and write
   names of secrets only, never values.

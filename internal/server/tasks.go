@@ -234,3 +234,60 @@ func (s *Server) ignoreUntasked(w http.ResponseWriter, r *http.Request, _ princi
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// standupLookback is how many days before date the standup searches for
+// the last day with work, to skip weekends and days off.
+const standupLookback = 7
+
+// getTaskStandup is GET /v1/tasks/standup: date's standup text, with
+// Yesterday from the last earlier day that had work.
+func (s *Server) getTaskStandup(w http.ResponseWriter, r *http.Request, _ principal) {
+	q := r.URL.Query()
+	date := q.Get("date")
+	d, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid date %q: use YYYY-MM-DD", date))
+		return
+	}
+	loc := time.UTC
+	if tz := q.Get("tz"); tz != "" {
+		if loc, err = time.LoadLocation(tz); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid tz %q: use an IANA name such as Asia/Amman", tz))
+			return
+		}
+	}
+	today, err := s.store.TaskDay(r.Context(), date, loc)
+	if err != nil {
+		s.storeError(w, err)
+		return
+	}
+	var prev *api.TaskDay
+	for i := 1; i <= standupLookback && prev == nil; i++ {
+		day, err := s.store.TaskDay(r.Context(), d.AddDate(0, 0, -i).Format("2006-01-02"), loc)
+		if err != nil {
+			s.storeError(w, err)
+			return
+		}
+		if worked(day) {
+			prev = &day
+		}
+	}
+	out := api.Standup{Date: date, Text: api.StandupText(prev, today)}
+	if prev != nil {
+		out.Since = prev.Date
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// worked reports whether a day has a done task or working time.
+func worked(d api.TaskDay) bool {
+	if len(d.Done) > 0 {
+		return true
+	}
+	for _, t := range d.InProgress {
+		if t.ActiveSeconds > 0 {
+			return true
+		}
+	}
+	return false
+}

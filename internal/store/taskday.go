@@ -40,7 +40,7 @@ func (s *Store) TaskDay(ctx context.Context, date string, loc *time.Location) (a
 	if loc == nil {
 		loc = time.UTC
 	}
-	out := api.TaskDay{Date: date, TZ: loc.String(), Todo: []api.Task{}, InProgress: []api.Task{}, Done: []api.Task{}}
+	out := api.TaskDay{Date: date, TZ: loc.String(), Todo: []api.Task{}, InProgress: []api.Task{}, Done: []api.Task{}, Ideas: []api.Task{}}
 	d, err := time.ParseInLocation("2006-01-02", date, loc)
 	if err != nil {
 		return out, invalidf("date %q: use YYYY-MM-DD", date)
@@ -164,6 +164,15 @@ func (s *Store) TaskDay(ctx context.Context, date string, loc *time.Location) (a
 			return out, err
 		}
 	}
+	todo := out.Todo[:0:0]
+	for _, t := range out.Todo {
+		if t.Source == api.SourceIdea {
+			out.Ideas = append(out.Ideas, t)
+		} else {
+			todo = append(todo, t)
+		}
+	}
+	out.Todo = todo
 	return out, nil
 }
 

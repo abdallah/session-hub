@@ -229,6 +229,7 @@ func TestAuthMatrix(t *testing.T) {
 		"GET /v1/instructions":                {path: "/v1/instructions", ok: 200},
 		"GET /v1/tasks":                       {path: "/v1/tasks", ok: 200},
 		"GET /v1/tasks/day":                   {path: "/v1/tasks/day?date=2026-10-03&tz=Asia/Amman", ok: 200},
+		"GET /v1/tasks/standup":               {path: "/v1/tasks/standup?date=2026-10-03&tz=Asia/Amman", ok: 200},
 		"GET /v1/tasks/review":                {path: "/v1/tasks/review", ok: 200},
 		"POST /v1/tasks":                      {path: "/v1/tasks", body: api.TaskIn{Title: "matrix create", SessionID: sid1}, ok: 201, okB: 409},
 		"POST /v1/notes":                      {path: "/v1/notes", body: api.NoteIn{ID: "te_MATRIXNOTE1", Text: "matrix note", SessionID: sid1}, ok: 200, okB: 409},

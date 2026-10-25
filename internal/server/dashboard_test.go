@@ -1457,7 +1457,7 @@ process.stdout.write(JSON.stringify({
     { id: "w", waiting_on: ["Eran"] },
     { id: "t1", active_seconds: 120 }, { id: "t2", active_seconds: 600 },
     { id: "c1", last_active_at: "2026-10-07T10:00:00Z" }, { id: "c2", last_active_at: "2026-10-08T10:00:00Z" }
-  ], done: null }).map(function (c) { return [c.key, c.column, c.collapsed, c.tasks.map(function (t) { return t.id; })]; }),
+  ], done: null, ideas: [{ id: "i" }] }).map(function (c) { return [c.key, c.column, c.collapsed, c.tasks.map(function (t) { return t.id; })]; }),
   minutes: [taskMinutes(0), taskMinutes(59), taskMinutes(720), taskMinutes(4680), sectionMinutes([{ active_seconds: 600 }, {}])],
   ago: [lastActive("2026-10-07T10:00:00Z", Date.parse("2026-10-09T11:00:00Z")), lastActive("2026-10-09T08:00:00Z", Date.parse("2026-10-09T11:00:00Z")),
     lastActive("2026-10-09T10:30:00Z", Date.parse("2026-10-09T11:00:00Z")), lastActive(null, 0)],
@@ -1506,6 +1506,7 @@ process.stdout.write(JSON.stringify({
 			[]any{"done", "done", false, []any{}},
 			[]any{"touched", "in_progress", false, []any{"t2", "t1"}},
 			[]any{"todo", "todo", false, []any{"a"}},
+			[]any{"ideas", "ideas", false, []any{"i"}},
 			[]any{"carried", "in_progress", true, []any{"c2", "c1"}},
 		},
 		"minutes":  []any{"", "", "12m", "1h 18m", "10m"},

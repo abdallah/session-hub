@@ -23,6 +23,7 @@ const instructions = "Call report_progress when you finish a task, start a long 
 	"Record human-level work with sessionhub note (or worklog note, which calls it): one note when you start a piece of work, with its ticket ref (systemsdev-12345, MR !1234) if it has one, " +
 	"and one starting with done: when you finish it. sessionhub turns notes into tasks. " +
 	"Use list_tasks, link_task, propose_task, and propose_done only when you cannot run shell commands. No notes for steps inside a piece of work. " +
+	"When the user asks to park, save, or remember an idea for later, run sessionhub idea \"<idea>\" and carry on with the current work. " +
 	"Propose knowledge with propose_knowledge when the user corrects a fact about the environment, states a convention, or a decision is made. Search knowledge before asking the user where something is."
 
 // Protocol versions this server speaks. The first is the default.

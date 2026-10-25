@@ -25,11 +25,14 @@ type taskAPI interface {
 	MergeTask(ctx context.Context, id, into string) (api.Task, error)
 	TaskDay(ctx context.Context, date, tz string) (api.TaskDay, error)
 	TaskReview(ctx context.Context) (api.TaskReview, error)
+	TaskStandup(ctx context.Context, date, tz string) (api.Standup, error)
 }
 
 const taskUsage = `usage:
   sessionhub task add "title" [--ref X] [--url U] [--source S] [--now]
   sessionhub task ls [--date YYYY-MM-DD] [--json]
+  sessionhub task standup [--date YYYY-MM-DD]
+  sessionhub idea "text"
   sessionhub task review
   sessionhub task accept|reject|done|drop|start|reopen <id> [--note T]
   sessionhub task merge <id> --into <id>`
@@ -63,6 +66,8 @@ func (e *env) taskCmd(ctx context.Context, args []string) error {
 		return e.taskAdd(ctx, rest)
 	case "ls":
 		return e.taskLs(ctx, rest)
+	case "standup":
+		return e.taskStandup(ctx, rest)
 	case "review":
 		return e.taskReview(ctx, rest)
 	case "merge":
@@ -74,6 +79,16 @@ func (e *env) taskCmd(ctx context.Context, args []string) error {
 		return e.taskState(ctx, cmd, rest)
 	}
 	return fmt.Errorf("task: unknown subcommand %q\n%s", clean(cmd, 0), taskUsage)
+}
+
+// RunIdea implements `sessionhub idea "text"`: a todo task with source
+// idea, listed under Ideas and left out of the standup.
+func RunIdea(ctx context.Context, args []string) error {
+	e, err := defaultEnv()
+	if err != nil {
+		return err
+	}
+	return e.taskAdd(ctx, append([]string{"--source", api.SourceIdea}, args...))
 }
 
 // parseInterspersed parses fs over args, allowing flags after positional
@@ -128,7 +143,11 @@ func (e *env) taskAdd(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("task add: %w", err)
 	}
-	fmt.Fprintf(e.out, "added %s (%s)\n", taskShortID(t.ID), clean(t.Title, termtext.TitleWidth))
+	verb := "added"
+	if *source == api.SourceIdea {
+		verb = "parked idea"
+	}
+	fmt.Fprintf(e.out, "%s %s (%s)\n", verb, taskShortID(t.ID), clean(t.Title, termtext.TitleWidth))
 	return nil
 }
 
@@ -196,18 +215,40 @@ func (e *env) taskLs(ctx context.Context, args []string) error {
 	return nil
 }
 
+// taskStandup prints the day's standup text, ready to paste.
+func (e *env) taskStandup(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("sessionhub task standup", flag.ContinueOnError)
+	date := fs.String("date", "", "day of the standup, YYYY-MM-DD (default today)")
+	pos, err := parseInterspersed(fs, args)
+	if err != nil || len(pos) > 0 {
+		return fmt.Errorf("task standup: unexpected arguments\n%s", taskUsage)
+	}
+	if *date == "" {
+		*date = e.now().Format("2006-01-02")
+	}
+	out, err := e.tasks.TaskStandup(ctx, *date, localZone())
+	if err != nil {
+		return fmt.Errorf("task standup: %w", err)
+	}
+	for _, line := range strings.Split(strings.TrimRight(out.Text, "\n"), "\n") {
+		fmt.Fprintln(e.out, clean(line, 0))
+	}
+	return nil
+}
+
 type daySection struct {
 	key, heading string
 	tasks        []api.Task
 }
 
 // daySections splits a day view like the dashboard: Now, Waiting on, Done,
-// Touched, Todo, Carried over. Each is sorted by the day's time, most
+// Touched, Todo, Ideas, Carried over. Each is sorted by the day's time, most
 // first; Carried over by last activity, newest first.
 func daySections(d api.TaskDay) []daySection {
 	secs := []daySection{{key: "now", heading: "Now"}, {key: "waiting", heading: "Waiting on"},
 		{key: "done", heading: "Done", tasks: d.Done}, {key: "touched", heading: "Touched, not finished"},
-		{key: "todo", heading: "Todo", tasks: d.Todo}, {key: "carried", heading: "Carried over"}}
+		{key: "todo", heading: "Todo", tasks: d.Todo}, {key: "ideas", heading: "Ideas", tasks: d.Ideas},
+		{key: "carried", heading: "Carried over"}}
 	idx := map[string]int{}
 	for i, s := range secs {
 		idx[s.key] = i

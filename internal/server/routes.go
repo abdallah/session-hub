@@ -99,6 +99,7 @@ func (s *Server) routes() []route {
 		{"GET", "/v1/inbox", accessRead, s.reader(s.getInbox)},
 		{"GET", "/v1/tasks", accessRead, s.reader(s.listTasks)},
 		{"GET", "/v1/tasks/day", accessRead, s.reader(s.getTaskDay)},
+		{"GET", "/v1/tasks/standup", accessRead, s.reader(s.getTaskStandup)},
 		{"GET", "/v1/tasks/review", accessRead, s.reader(s.getTaskReview)},
 		{"GET", "/v1/knowledge", accessRead, s.reader(s.listKnowledge)},
 		{"GET", "/v1/knowledge/local", accessWrite, s.writer(s.knowledgeLocal)},

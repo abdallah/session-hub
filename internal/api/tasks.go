@@ -22,7 +22,7 @@ type Task struct {
 	Title      string        `json:"title"`
 	Ref        string        `json:"ref"`
 	RefURL     string        `json:"ref_url"`
-	Source     string        `json:"source"` // ticket|email|chat|other
+	Source     string        `json:"source"` // ticket|email|chat|other|idea
 	State      string        `json:"state"`
 	MergedInto string        `json:"merged_into,omitempty"`
 	CreatedBy  string        `json:"created_by"`
@@ -116,7 +116,13 @@ type TaskDay struct {
 	Todo       []Task `json:"todo"`
 	InProgress []Task `json:"in_progress"`
 	Done       []Task `json:"done"`
+	// Ideas are the todo tasks with source "idea", kept out of Todo.
+	Ideas []Task `json:"ideas"`
 }
+
+// SourceIdea marks a task as a parked idea: the day view lists it under
+// Ideas, and the standup leaves it out.
+const SourceIdea = "idea"
 
 // TaskReview is what waits for you: proposals, done proposals, and recent
 // sessions with a title and no task.

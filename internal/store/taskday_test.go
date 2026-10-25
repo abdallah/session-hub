@@ -341,3 +341,24 @@ func TestIgnoreUntaskedMany(t *testing.T) {
 		t.Errorf("empty batch: %v", err)
 	}
 }
+
+func TestTaskDayIdeas(t *testing.T) {
+	e := newControlEnv(t)
+	e.at(5, 9)
+	idea := e.task(api.TaskIn{Title: "try zellij layouts", Source: api.SourceIdea}, tYou)
+	todo := e.task(api.TaskIn{Title: "Netbird upgrade"}, tYou)
+	e.at(5, 10)
+	v := e.day(5)
+	if len(v.Ideas) != 1 || v.Ideas[0].ID != idea.ID || col(v, idea.ID) != "" {
+		t.Fatalf("ideas %+v, todo %+v", v.Ideas, v.Todo)
+	}
+	if col(v, todo.ID) != "todo" {
+		t.Errorf("todo column %q", col(v, todo.ID))
+	}
+	// A started idea is ordinary work.
+	e.move(idea.ID, api.TaskInProgress)
+	e.at(5, 11)
+	if v := e.day(5); len(v.Ideas) != 0 || col(v, idea.ID) != "in_progress" {
+		t.Errorf("started idea: ideas %d, column %q", len(v.Ideas), col(v, idea.ID))
+	}
+}

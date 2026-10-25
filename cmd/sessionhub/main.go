@@ -50,6 +50,8 @@ commands:
   inbox [--json|--watch]        list the sessions that need you
   inbox dismiss|snooze <id>     dismiss or snooze an inbox item
   task add|ls|review|<verb> <id> manage tasks (accept, reject, start, done, drop, reopen, merge)
+  task standup [--date D]       print the day's standup, ready to paste
+  idea <text>                   park an idea; it waits under Ideas in the Tasks tab
   note <text>                   record a worklog note; sessionhub turns it into a task
   rules [ls|add <text>|rm <id>] list or edit the standing rules
   knowledge [ls|add|search]     list, propose, or search knowledge entries
@@ -96,6 +98,7 @@ var routes = map[string]handler{
 	"inbox":              cli.RunInbox,
 	"task":               cli.RunTask,
 	"note":               cli.RunNote,
+	"idea":               cli.RunIdea,
 	"rules":              cli.RunRules,
 	"knowledge":          cli.RunKnowledge,
 	"send":               cli.RunSend,
