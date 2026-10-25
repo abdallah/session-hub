@@ -485,3 +485,15 @@ func TestDecidePermissionAnswers(t *testing.T) {
 		t.Errorf("read answers %v, want %v", read.Answers, want)
 	}
 }
+
+func TestDecidePermissionQuestionNeedsAnswers(t *testing.T) {
+	e := newControlEnv(t)
+	e.session(e.tower, "s1", "w1:p1")
+	p := e.permission("s1", api.ToolAskUserQuestion, `{"questions":[{"question":"Q?","options":[{"label":"A"}]}]}`)
+	if _, err := e.s.DecidePermission(context.Background(), p.ID, api.DecisionIn{Decision: api.DecisionAllow}, "web:phone"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("plain allow: err %v, want ErrInvalid", err)
+	}
+	if _, err := e.s.DecidePermission(context.Background(), p.ID, api.DecisionIn{Decision: api.DecisionDeny}, "web:phone"); err != nil {
+		t.Errorf("deny: %v", err)
+	}
+}

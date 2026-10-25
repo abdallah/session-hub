@@ -329,6 +329,12 @@ details.untasked > summary, .review details.untasked > summary, details.kn-add >
   min-height: 44px; max-width: 100%; padding: 0 8px; font: inherit; font-size: .85rem; color: var(--fg);
   background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
 }
+.update-bar {
+  position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 10; display: flex; gap: 12px; align-items: center;
+  justify-content: space-between; padding: 8px 8px 8px 16px; background: var(--card); color: var(--fg);
+  border: 1px solid var(--accent); border-radius: 8px; box-shadow: var(--shadow);
+}
+.update-bar[hidden] { display: none; }
 button.primary { background: var(--accent); color: var(--card); font-weight: 600; }
 .task-sections { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 24px; }
 @media (min-width: 900px) { .task-sections { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
@@ -382,6 +388,10 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
   <div class="brand">
     <h1>sessionhub</h1>
     <span id="updated" aria-live="polite"></span>
+    <div id="update-bar" class="update-bar" role="status" hidden>
+      <span>sessionhub was updated.</span>
+      <button id="update-reload" class="primary" type="button">Reload</button>
+    </div>
   </div>
   <span id="who" class="who" hidden>Signed in as <strong id="who-name"></strong> <button id="signout" type="button">Sign out</button></span>
 </header>
@@ -481,6 +491,8 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
   var REFRESH_MS = 30000;
   var root = document.getElementById("root");
   var updated = document.getElementById("updated");
+  var updateBar = document.getElementById("update-bar");
+  document.getElementById("update-reload").addEventListener("click", function () { location.reload(); });
   var filterEl = document.getElementById("filter");
   var allBtn = document.getElementById("all");
   var allNames = []; // every machine in the last session list
@@ -3912,6 +3924,17 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
     updated.textContent = "";
   }
 
+  // pageTag is the X-Dashboard value of the first session list: the page
+  // this tab runs. A different value later means the server has a newer
+  // page, and the update bar offers a reload (never forced, so a draft
+  // stays).
+  var pageTag = null;
+  function noteDashboard(tag) {
+    if (!tag) return;
+    if (pageTag === null) pageTag = tag;
+    else if (tag !== pageTag) updateBar.hidden = false;
+  }
+
   function load() {
     if (signedOut) return;
     loadInbox();
@@ -3919,6 +3942,7 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
       .then(function (resp) {
         if (signedOut) return null;
         var auth = sessionAuth(resp.status, resp.headers.get("X-Hub-Session-Name"));
+        noteDashboard(resp.headers.get("X-Dashboard"));
         if (auth.signedOut) { showSignedOut(); return null; }
         if (!resp.ok) throw new Error("The server returned " + resp.status + ".");
         whoName.textContent = auth.name;

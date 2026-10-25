@@ -343,6 +343,10 @@ func (s *Store) openPermissions(ctx context.Context) (map[string]api.PermissionR
 // allow of an AskUserQuestion request, one non-empty answer per question.
 func checkAnswers(in api.DecisionIn, tool, input string) (string, error) {
 	if len(in.Answers) == 0 {
+		if in.Decision == api.DecisionAllow && tool == api.ToolAskUserQuestion {
+			// A plain allow leaves the question open in the terminal.
+			return "", invalidf("pick an answer: an allow without answers does not answer the question")
+		}
 		return "", nil
 	}
 	if in.Decision != api.DecisionAllow || tool != api.ToolAskUserQuestion {

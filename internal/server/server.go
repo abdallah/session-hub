@@ -256,6 +256,7 @@ func (s *Server) auth(write bool, h authedHandler) http.Handler {
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Dashboard", dashboardTag)
 	w.WriteHeader(status)
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)

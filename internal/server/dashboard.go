@@ -16,6 +16,14 @@ var dashboardHTML []byte
 // embedded file, so editing the page cannot leave a stale policy behind.
 var dashboardCSP = buildCSP(dashboardHTML)
 
+// dashboardTag fingerprints the embedded page. Every JSON answer carries it
+// as X-Dashboard, so an open page can tell that the server now has a newer
+// one.
+var dashboardTag = func() string {
+	sum := sha256.Sum256(dashboardHTML)
+	return base64.RawURLEncoding.EncodeToString(sum[:9])
+}()
+
 var (
 	scriptRe = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
 	styleRe  = regexp.MustCompile(`(?s)<style>(.*?)</style>`)

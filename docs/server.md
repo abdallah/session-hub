@@ -412,6 +412,11 @@ computes the hashes from the embedded file at startup, so editing the page
 needs no other change. The page cannot use inline event handlers or `style=`
 attributes, and a test enforces that.
 
+Every JSON response carries `X-Dashboard`, a fingerprint of the embedded
+page. An open page remembers the first value it sees; when a later poll
+brings a different one, it shows **sessionhub was updated** with
+**Reload**. It never reloads on its own, so a draft stays.
+
 The copy button uses `navigator.clipboard.writeText`, which needs a secure
 context: `https://` or `http://127.0.0.1`. If the API is missing or fails, the
 page selects the command text and tries `document.execCommand("copy")`; if
@@ -845,7 +850,9 @@ An allow of an `AskUserQuestion` request may carry `"answers"`: question
 text to the chosen option label, labels joined with `, ` for a multi-select,
 or free text for **Other**; each at most 1,000 characters. It needs one
 answer for every question in the request and no other keys, or it is `400`;
-answers on a deny or on another tool are `400` too. The hook returns them to
+answers on a deny or on another tool are `400` too, and so is an allow of an
+`AskUserQuestion` request without answers, which would leave the question
+open in the terminal. The hook returns them to
 Claude Code as `updatedInput` (the tool input with `answers` added), which
 answers the question. The dashboard's **Send answer** sends them. Each decision adds a `permission` event to the
 session with `request_id`, `tool`, `input` (the first 200 characters of the

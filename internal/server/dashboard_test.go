@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"reflect"
@@ -1614,5 +1615,22 @@ console.log(JSON.stringify({
 		`"denyBody":{"decision":"deny","reason":"no"},"outcome":"Answered."}`
 	if got := strings.TrimSpace(string(out)); got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+}
+
+// TestDashboardTag: JSON answers carry the page's fingerprint, which the
+// page compares to offer a reload.
+func TestDashboardTag(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeJSON(rec, 200, map[string]string{})
+	if got := rec.Header().Get("X-Dashboard"); got == "" || got != dashboardTag {
+		t.Errorf("X-Dashboard %q, want %q", got, dashboardTag)
+	}
+	page := string(dashboardHTML)
+	for _, want := range []string{`noteDashboard(resp.headers.get("X-Dashboard"));`, `else if (tag !== pageTag) updateBar.hidden = false;`,
+		`id="update-bar"`, "location.reload()"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page lacks %q", want)
+		}
 	}
 }
