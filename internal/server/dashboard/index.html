@@ -808,8 +808,8 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   }
 
   // cardState is the one state a card shows, most urgent first: kind picks
-  // the colour (alert, warn, stale, work, unread, idle, ended), icon marks
-  // only the states that need you, and label says what and since when.
+  // the colour (alert, warn, stale, work, unread, idle, ended), icon is the
+  // state's emoji, and label says what and since when.
   // blockedSince is the inbox's since for a blocked session.
   // laterThan reports whether time a is set and after time b.
   function laterThan(a, b) { return !!a && !!b && Date.parse(a) > Date.parse(b); }
@@ -829,7 +829,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       var a = iso ? shortAge(iso, now) : "";
       return a ? " " + a : "";
     }
-    if (s.status === "ended") return { kind: "ended", icon: "", label: "ended" };
+    if (s.status === "ended") return { kind: "ended", icon: "\u23f9\ufe0f", label: "ended" };
     var m = moveFailedNow(s);
     if (m) {
       return { kind: "alert", icon: "\ud83d\ude9a", label: "move failed" + since(m.updated_at) };
@@ -842,11 +842,11 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     }
     if (s.status === "stale") return { kind: "stale", icon: "\u26a0\ufe0f", label: (s.machine || "machine") + " silent" + since(s.last_seen_at) };
     switch (s.agent_state) {
-      case "working": return { kind: "work", icon: "", label: "working" + since(s.state_since) };
-      case "done": return { kind: "unread", icon: "", label: "finished" + since(s.state_since) };
-      case "idle": return { kind: "idle", icon: "", label: "idle" + since(s.state_since) };
+      case "working": return { kind: "work", icon: "\u23f3", label: "working" + since(s.state_since) };
+      case "done": return { kind: "unread", icon: "\u2705", label: "finished" + since(s.state_since) };
+      case "idle": return { kind: "idle", icon: "\ud83d\udca4", label: "idle" + since(s.state_since) };
     }
-    return { kind: "idle", icon: "", label: s.agent_state || s.status || "" };
+    return { kind: "idle", icon: "\ud83d\udca4", label: s.agent_state || s.status || "" };
   }
 
   // REPLY_BREAK separates the lines of a last reply (U+2028).
@@ -950,10 +950,10 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
 
   // inbox-state:begin
   var GROUPS = [
-    { key: "move_failed", label: "Move failed" },
-    { key: "blocked", label: "Blocked" },
-    { key: "waiting", label: "Waiting on you" },
-    { key: "finished", label: "Finished" }
+    { key: "move_failed", label: "Move failed", icon: "\ud83d\ude9a" },
+    { key: "blocked", label: "Needs you", icon: "\u270b" },
+    { key: "waiting", label: "Waiting on you", icon: "\ud83d\udcac" },
+    { key: "finished", label: "Finished", icon: "\u2705" }
   ];
 
   // inboxView groups the inbox for display, in GROUPS order, without empty
@@ -967,7 +967,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
         return it.group === g.key && !(it.session && pending[it.session.id] === it.since);
       });
       total += list.length;
-      return { key: g.key, label: g.label, items: list };
+      return { key: g.key, label: g.label, icon: g.icon, items: list };
     }).filter(function (g) { return g.items.length > 0; });
     return { groups: groups, total: total };
   }
@@ -2470,6 +2470,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     var s = sessionsById[it.session.id] || it.session;
     var g = GROUPS.filter(function (x) { return x.key === it.group; })[0];
     var label = g ? g.label : it.group;
+    var icon = g && g.icon ? g.icon + " " : "";
     var open = openRows[s.id] === true;
     var st = rcState[s.id];
     var busy = !!st && (st.phase === "sending" || (!!st.req && (st.req.state === "pending" || st.req.state === "claimed")));
@@ -2488,7 +2489,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       if (p.kind === "expand") main.setAttribute("aria-expanded", open ? "true" : "false");
     }
     keyed(main, "row:" + s.id);
-    main.appendChild(el("span", "n-title", displayTitle(s)));
+    main.appendChild(el("span", "n-title", icon + displayTitle(s)));
     main.appendChild(el("span", "n-age", shortAge(it.since, now)));
     var need = inboxNeed(it, s, label);
     var needEl = el("span", "n-need");
@@ -2662,7 +2663,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       var items = g.items.filter(function (it) { return matches(it.session, q); });
       if (!items.length) return;
       shown += items.length;
-      var h = el("h2", null, g.label);
+      var h = el("h2", null, (g.icon ? g.icon + " " : "") + g.label);
       h.setAttribute("data-group", g.key);
       h.tabIndex = -1;
       h.appendChild(el("span", "count", String(items.length)));
