@@ -812,23 +812,34 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   // the colour (alert, warn, stale, work, unread, idle, ended), icon marks
   // only the states that need you, and label says what and since when.
   // blockedSince is the inbox's since for a blocked session.
+  // laterThan reports whether time a is set and after time b.
+  function laterThan(a, b) { return !!a && !!b && Date.parse(a) > Date.parse(b); }
+  // moveFailedNow is the session's failed move, unless you prompted since.
+  function moveFailedNow(s) {
+    var m = s.move;
+    return m && m.state === "failed" && !laterThan(s.last_prompt_at, m.updated_at) ? m : null;
+  }
+  // waitingNow is the latest report's waiting_on, unless you prompted since.
+  function waitingNow(s) {
+    var r = s.latest_report;
+    return r && (r.waiting_on || []).length && !laterThan(s.last_prompt_at, r.ts) ? r.waiting_on : null;
+  }
+
   function cardState(s, blockedSince, now) {
     function since(iso) {
       var a = iso ? shortAge(iso, now) : "";
       return a ? " " + a : "";
     }
-    function after(a, b) { return !!a && !!b && Date.parse(a) > Date.parse(b); }
     if (s.status === "ended") return { kind: "ended", icon: "", label: "ended" };
-    var m = s.move;
-    if (m && m.state === "failed" && !after(s.last_prompt_at, m.updated_at)) {
+    var m = moveFailedNow(s);
+    if (m) {
       return { kind: "alert", icon: "\ud83d\ude9a", label: "move failed" + since(m.updated_at) };
     }
     if (s.status === "blocked" || s.agent_state === "blocked") {
       return { kind: "alert", icon: "\u270b", label: "needs you" + since(blockedSince || s.state_since) };
     }
-    var r = s.latest_report;
-    if (r && (r.waiting_on || []).length && !after(s.last_prompt_at, r.ts)) {
-      return { kind: "warn", icon: "\ud83d\udcac", label: "waiting on you" + since(r.ts) };
+    if (waitingNow(s)) {
+      return { kind: "warn", icon: "\ud83d\udcac", label: "waiting on you" + since(s.latest_report.ts) };
     }
     if (s.status === "stale") return { kind: "stale", icon: "\u26a0\ufe0f", label: (s.machine || "machine") + " silent" + since(s.last_seen_at) };
     switch (s.agent_state) {
@@ -856,9 +867,10 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   // else Claude's last reply, else its recap, else your last prompt.
   function cardLine(s) {
     if (s.blocked_on) return s.blocked_on;
-    if (s.move && s.move.state === "failed") return "Move to " + s.move.target + " failed: " + (s.move.detail || s.move.state);
-    var r = s.latest_report;
-    if (r && (r.waiting_on || []).length) return "Waiting on: " + r.waiting_on.join("; ");
+    var m = moveFailedNow(s);
+    if (m) return "Move to " + m.target + " failed: " + (m.detail || m.state);
+    var w = waitingNow(s);
+    if (w) return "Waiting on: " + w.join("; ");
     var reply = s.summary && s.summary.last_reply;
     if (reply) return reply;
     if (s.recap) return s.recap;
