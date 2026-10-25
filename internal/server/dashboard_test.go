@@ -607,6 +607,15 @@ process.stdout.write(JSON.stringify({
   reach: [machineReach([{ controllable: true }, { status: "stale" }], now),
     machineReach([{ status: "stale", last_seen_at: "2026-10-02T11:48:00Z" }, { status: "stale", last_seen_at: "2026-10-02T11:56:00Z" }], now),
     machineReach([{ status: "live" }], now), machineReach([], now)],
+  order: [
+    { id: "idle-new", status: "live", agent_state: "idle", state_since: "2026-10-02T11:59:00Z" },
+    { id: "fin-old", status: "live", agent_state: "done", state_since: "2026-10-01T10:00:00Z" },
+    { id: "work", status: "live", agent_state: "working", state_since: "2026-10-02T11:00:00Z" },
+    { id: "fin-new", status: "live", agent_state: "done", state_since: "2026-10-02T11:00:00Z" },
+    { id: "blocked", status: "blocked", agent_state: "blocked", state_since: "2026-10-01T09:00:00Z" },
+    { id: "stale", status: "stale", agent_state: "idle", last_seen_at: "2026-10-02T11:00:00Z" },
+    { id: "wait", status: "live", agent_state: "idle", latest_report: { ts: "2026-10-02T10:00:00Z", waiting_on: ["x"] } }
+  ].sort(function (a, b) { return sessionOrder(a, b, now); }).map(function (s) { return s.id; }),
   titles: [displayTitle({ title: "Fix login", id: "abcdefghij" }), displayTitle({ title: "Claude Code", last_note: { task_title: "booking pilot" } }),
     displayTitle({ title: "Claude Code" }), displayTitle({ id: "abcdefghij" })],
   contexts: [contextLabel({ context_percent: 42 }), contextLabel({ context_percent: 0 }), contextLabel({ context_percent: 99.6 }),
@@ -644,6 +653,7 @@ process.stdout.write(JSON.stringify({
 		Lines    []string            `json:"lines"`
 		Titles   []string            `json:"titles"`
 		Reach    []map[string]string `json:"reach"`
+		Order    []string            `json:"order"`
 		Contexts []string            `json:"contexts"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
@@ -671,6 +681,7 @@ process.stdout.write(JSON.stringify({
 			"Move to togh failed: boom", "r"}},
 		{"machineReach", got.Reach, []map[string]string{{"kind": "work", "text": "online"}, {"kind": "stale", "text": "silent 4m"},
 			{"kind": "idle", "text": "not in herdr"}, nil}},
+		{"sessionOrder", got.Order, []string{"blocked", "wait", "fin-new", "fin-old", "work", "stale", "idle-new"}},
 		{"displayTitle", got.Titles, []string{"Fix login", "booking pilot", "Claude Code", "abcdefgh"}},
 		{"contextLabel", got.Contexts, []string{"context 42%", "context 0%", "context 100%", "context 100%", "", "", ""}},
 	}

@@ -30,7 +30,7 @@ const (
 	maxLinks     = 20
 	maxLinkBytes = 300
 	recapSuffix  = "(disable recaps in /config)"
-	stateVersion = 2 // 2 adds last_reply; older state is read again from the start
+	stateVersion = 3 // 3 keeps last_reply's line breaks; older state is read again from the start
 )
 
 var (
@@ -327,11 +327,44 @@ func replyText(content json.RawMessage) string {
 		if blocks[i].Type != "text" {
 			continue
 		}
-		if s := termtext.Clean(blocks[i].Text, maxReply); s != "" {
+		if s := plainReply(blocks[i].Text); s != "" {
 			return s
 		}
 	}
 	return ""
+}
+
+// ReplyBreak separates the lines of a last reply. It is U+2028, not a
+// newline, because stored text may hold no control character.
+const ReplyBreak = "\u2028"
+
+// mdMarks are the Markdown marks plainReply drops.
+var mdMarks = strings.NewReplacer("**", "", "__", "", "`", "")
+
+// plainReply is Markdown text as plain lines: emphasis, code marks, and
+// heading marks dropped, "- " bullets as "• ", blank lines and fences
+// removed, each line cleaned, joined with ReplyBreak, and cut to maxReply
+// runes.
+func plainReply(t string) string {
+	var lines []string
+	for _, l := range strings.Split(t, "\n") {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "#") {
+			l = strings.TrimLeft(l, "# ")
+		}
+		l = mdMarks.Replace(l)
+		if strings.HasPrefix(l, "- ") || strings.HasPrefix(l, "* ") {
+			l = "• " + l[2:]
+		}
+		if l = termtext.Clean(l, 0); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	r := []rune(strings.Join(lines, ReplyBreak))
+	if len(r) > maxReply {
+		return string(r[:maxReply-1]) + "…"
+	}
+	return string(r)
 }
 
 // addLink keeps https links only, once per URL, the newest maxLinks.

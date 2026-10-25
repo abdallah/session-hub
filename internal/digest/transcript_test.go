@@ -255,11 +255,19 @@ func TestLastReply(t *testing.T) {
 	} {
 		st.apply([]byte(l), true)
 	}
-	if st.LastReply != "Done. Next: deploy." || st.LastReplyAt == nil || st.LastReplyAt.Format(time.RFC3339) != "2026-10-01T10:03:00Z" {
+	if st.LastReply != "Done."+ReplyBreak+"Next: deploy." || st.LastReplyAt == nil || st.LastReplyAt.Format(time.RFC3339) != "2026-10-01T10:03:00Z" {
 		t.Errorf("last reply %q at %v", st.LastReply, st.LastReplyAt)
 	}
 	st.apply([]byte(`{"type":"assistant","timestamp":"2026-10-01T10:04:00Z","message":{"id":"m4","content":[{"type":"text","text":"`+long+`"}]}}`), true)
 	if n := len([]rune(st.LastReply)); n > maxReply {
 		t.Errorf("last reply has %d runes, want at most %d", n, maxReply)
+	}
+}
+
+func TestPlainReply(t *testing.T) {
+	in := "Sessions are sorted like this (`cmp`):\n\n1. **Machines** alphabetically.\n- one\n## Head\n```\ncode\n```"
+	want := strings.Join([]string{"Sessions are sorted like this (cmp):", "1. Machines alphabetically.", "• one", "Head", "code"}, ReplyBreak)
+	if got := plainReply(in); got != want {
+		t.Errorf("plainReply = %q, want %q", got, want)
 	}
 }

@@ -427,7 +427,6 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
 <script>
 (function () {
   "use strict";
-  var ORDER = { blocked: 0, live: 1, stale: 2, ended: 3 };
   var REFRESH_MS = 30000;
   var root = document.getElementById("root");
   var updated = document.getElementById("updated");
@@ -850,6 +849,29 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     return { kind: "idle", icon: "", label: s.agent_state || s.status || "" };
   }
 
+  // REPLY_BREAK separates the lines of a last reply (U+2028).
+  var REPLY_BREAK = "\u2028";
+
+  // KIND_ORDER ranks cardState kinds, the ones that need you first.
+  var KIND_ORDER = { alert: 0, warn: 1, unread: 2, work: 3, stale: 4, idle: 5, ended: 6 };
+
+  // changedAt is when the session's shown state began: a failed move's end,
+  // else the agent state's change, else the last heartbeat.
+  function changedAt(s) {
+    var m = moveFailedNow(s);
+    return Date.parse((m && m.updated_at) || s.state_since || s.last_seen_at) || 0;
+  }
+
+  // sessionOrder sorts cards by cardState kind, then the newest change
+  // first, then ID, so the order holds between refreshes.
+  function sessionOrder(a, b, now) {
+    var ka = KIND_ORDER[cardState(a, null, now).kind], kb = KIND_ORDER[cardState(b, null, now).kind];
+    if (ka !== kb) return ka - kb;
+    var d = changedAt(b) - changedAt(a);
+    if (d) return d;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  }
+
   // promptText is a prompt as a person reads it: a message a channel or a
   // background task typed into the session gets a short name instead of its
   // markup.
@@ -872,7 +894,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     var w = waitingNow(s);
     if (w) return "Waiting on: " + w.join("; ");
     var reply = s.summary && s.summary.last_reply;
-    if (reply) return reply;
+    if (reply) return reply.split(REPLY_BREAK)[0];
     if (s.recap) return s.recap;
     var p = promptText(s.last_prompt);
     return p ? "You: " + p : "";
@@ -1642,13 +1664,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     return Math.floor(h / 24) + "d ago";
   }
 
-  function rank(s) { return ORDER[s.status] !== undefined ? ORDER[s.status] : 9; }
-
-  function cmp(a, b) {
-    var d = rank(a) - rank(b);
-    if (d) return d;
-    return new Date(b.last_seen_at) - new Date(a.last_seen_at);
-  }
+  function cmp(a, b) { return sessionOrder(a, b, Date.now()); }
 
   function list(label, items, max) {
     if (!items || !items.length) return null;
@@ -1928,8 +1944,16 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     if (!sum || !sum.last_reply) return null;
     var p = el("p", "recap");
     p.appendChild(el("span", "label", "Claude" + (sum.last_reply_at ? ", " + age(sum.last_reply_at, now) : "") + ": "));
-    p.appendChild(document.createTextNode(sum.last_reply));
+    appendLines(p, sum.last_reply);
     return p;
+  }
+
+  // appendLines adds text to e with a line break at each REPLY_BREAK.
+  function appendLines(e, text) {
+    String(text).split(REPLY_BREAK).forEach(function (l, i) {
+      if (i) e.appendChild(document.createElement("br"));
+      e.appendChild(document.createTextNode(l));
+    });
   }
 
   // renameRow is the card's Rename button: it asks for a title and sends it.
@@ -2467,7 +2491,9 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     main.appendChild(el("span", "n-title", displayTitle(s)));
     main.appendChild(el("span", "n-age", shortAge(it.since, now)));
     var need = inboxNeed(it, s, label);
-    main.appendChild(el("span", "n-need", need));
+    var needEl = el("span", "n-need");
+    appendLines(needEl, need);
+    main.appendChild(needEl);
     var meta = need === label ? [s.machine] : [s.machine, label];
     if (s.status === "stale") meta.push("stale");
     main.appendChild(el("span", "n-meta", meta.join(" · ")));

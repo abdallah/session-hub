@@ -292,7 +292,7 @@ func inboxLine(it api.InboxItem, now time.Time, width int) string {
 	}
 	detail := s.Recap
 	if s.Summary != nil && s.Summary.LastReply != "" {
-		detail = s.Summary.LastReply
+		detail = strings.ReplaceAll(s.Summary.LastReply, "\u2028", " · ")
 	}
 	if len(it.WaitingOn) > 0 {
 		detail = strings.Join(it.WaitingOn, "; ")
