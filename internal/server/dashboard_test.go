@@ -1605,14 +1605,15 @@ console.log(JSON.stringify({
   other: askAnswers(qs, { "Which DB?": { labels: [], other: "MySQL" }, "Which checks?": { labels: ["lint"] } }),
   body: JSON.parse(decideRequest("pr_q", "allow", "", { "Which DB?": "SQLite" }).init.body),
   denyBody: JSON.parse(decideRequest("pr_q", "deny", "no", { "Which DB?": "SQLite" }).init.body),
-  outcome: decisionOutcome(200, "answer", null)
+  outcome: decisionOutcome(200, "answer", null),
+  noBox: v.input === ""
 }));`
 	out := runBlocks(t, []string{"inbox-state", "actions-state"}, script, map[string]any{})
 	want := `{"qs":[{"question":"Which DB?","header":"DB","multi":false,"options":[{"label":"Postgres","description":"server"},{"label":"SQLite","description":""}]},` +
 		`{"question":"Which checks?","header":"","multi":true,"options":[{"label":"lint","description":""},{"label":"test","description":""}]}],` +
 		`"plainHasNone":true,"cutHasNone":true,"partial":null,"full":{"Which DB?":"SQLite","Which checks?":"lint, test, fmt"},` +
 		`"other":{"Which DB?":"MySQL","Which checks?":"lint"},"body":{"decision":"allow","answers":{"Which DB?":"SQLite"}},` +
-		`"denyBody":{"decision":"deny","reason":"no"},"outcome":"Answered."}`
+		`"denyBody":{"decision":"deny","reason":"no"},"outcome":"Answered.","noBox":true}`
 	if got := strings.TrimSpace(string(out)); got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}

@@ -1482,7 +1482,10 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
     var v = { id: p.id, tool: permText(p.tool_name), main: permText(main), code: code, input: code ? "" : permText(all),
       cut: p.truncated === true };
     var qs = p.tool_name === "AskUserQuestion" && !v.cut ? askQuestions(input) : null;
-    if (qs) v.questions = qs;
+    if (qs) {
+      v.questions = qs;
+      v.input = ""; // the options show the input; no JSON box
+    }
     return v;
   }
 
