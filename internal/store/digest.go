@@ -16,6 +16,7 @@ import (
 // Digest limits. See docs/server.md, "Session digests".
 const (
 	MaxRecapRunes    = 600
+	MaxReplyRunes    = 300
 	MaxSubjectRunes  = 120
 	MaxDigestLinks   = 20
 	MaxDigestCommits = 5
@@ -65,7 +66,8 @@ func validateDigest(d api.DigestIn, now time.Time) error {
 	for _, f := range []struct {
 		name, v string
 		max     int
-	}{{"recap", d.Recap, MaxRecapRunes}, {"ai_title", d.AITitle, MaxTitleRunes}, {"custom_title", d.CustomTitle, MaxTitleRunes}} {
+	}{{"recap", d.Recap, MaxRecapRunes}, {"ai_title", d.AITitle, MaxTitleRunes}, {"custom_title", d.CustomTitle, MaxTitleRunes},
+		{"last_reply", d.LastReply, MaxReplyRunes}} {
 		if err := checkText(f.name, f.v, f.max); err != nil {
 			return err
 		}
@@ -219,7 +221,8 @@ func applyDigestTitle(ctx context.Context, tx *sql.Tx, id string, d, prev api.Di
 
 // summarize is the part of a digest the session list carries.
 func summarize(d api.DigestIn) *api.SessionSummary {
-	sum := &api.SessionSummary{AsOf: d.AsOf, CostUSD: d.CostUSD, OutputTokens: d.Tokens.Output}
+	sum := &api.SessionSummary{AsOf: d.AsOf, CostUSD: d.CostUSD, OutputTokens: d.Tokens.Output,
+		LastReply: d.LastReply, LastReplyAt: d.LastReplyAt}
 	if d.Git != nil {
 		g := d.Git.GitCounts
 		sum.Git = &g

@@ -25,6 +25,7 @@ import (
 const (
 	maxLine      = 1 << 20 // longer lines are skipped and counted as bad
 	maxRecap     = 600
+	maxReply     = 300
 	maxTitle     = 200
 	maxLinks     = 20
 	maxLinkBytes = 300
@@ -57,6 +58,8 @@ type State struct {
 	Tokens      api.DigestTokens     `json:"tokens"`
 	Recap       string               `json:"recap,omitempty"`
 	RecapAt     *time.Time           `json:"recap_at,omitempty"`
+	LastReply   string               `json:"last_reply,omitempty"`
+	LastReplyAt *time.Time           `json:"last_reply_at,omitempty"`
 	AITitle     string               `json:"ai_title,omitempty"`
 	CustomTitle string               `json:"custom_title,omitempty"`
 	Links       []api.DigestLink     `json:"links,omitempty"`
@@ -79,8 +82,9 @@ type usage struct {
 	CacheWrite int64 `json:"cache_creation_input_tokens"`
 }
 
-// entry holds the transcript fields the digest reads. The message content
-// (the reply and prompt text) is deliberately not declared.
+// entry holds the transcript fields the digest reads. Of the message
+// content, only an assistant reply's text blocks are read, for the last
+// reply's first maxReply runes; prompt text is never read.
 type entry struct {
 	Type         string          `json:"type"`
 	Subtype      string          `json:"subtype"`
@@ -94,8 +98,9 @@ type entry struct {
 	PRRepository string          `json:"prRepository"`
 	TotalCostUSD *float64        `json:"totalCostUSD"`
 	Message      *struct {
-		ID    string `json:"id"`
-		Usage *usage `json:"usage"`
+		ID      string          `json:"id"`
+		Usage   *usage          `json:"usage"`
+		Content json.RawMessage `json:"content"`
 	} `json:"message"`
 }
 
@@ -278,6 +283,14 @@ func (st *State) apply(line []byte, main bool) bool {
 				}
 			}
 		}
+	case e.Type == "assistant" && e.Message != nil:
+		if s := replyText(e.Message.Content); s != "" {
+			st.LastReply, st.LastReplyAt = s, nil
+			if hasTS {
+				r := at
+				st.LastReplyAt = &r
+			}
+		}
 	case e.Type == "ai-title":
 		if s := termtext.Clean(e.AITitle, maxTitle); s != "" {
 			st.AITitle = s
@@ -298,6 +311,27 @@ func (st *State) apply(line []byte, main bool) bool {
 		}
 	}
 	return true
+}
+
+// replyText is the text of the last non-empty text block of an assistant
+// message's content, cleaned and cut to maxReply runes, or "".
+func replyText(content json.RawMessage) string {
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(content, &blocks) != nil {
+		return ""
+	}
+	for i := len(blocks) - 1; i >= 0; i-- {
+		if blocks[i].Type != "text" {
+			continue
+		}
+		if s := termtext.Clean(blocks[i].Text, maxReply); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // addLink keeps https links only, once per URL, the newest maxLinks.
@@ -329,6 +363,7 @@ func (st *State) DigestIn() (api.DigestIn, bool) {
 	}
 	return api.DigestIn{
 		AsOf: *st.AsOf, FirstAt: st.FirstAt, Recap: st.Recap, RecapAt: st.RecapAt,
+		LastReply: st.LastReply, LastReplyAt: st.LastReplyAt,
 		AITitle: st.AITitle, CustomTitle: st.CustomTitle, Links: st.Links, Tokens: st.Tokens,
 		CostUSD: st.CostUSD, CostAt: st.CostAt, BadLines: st.BadLines,
 	}, true

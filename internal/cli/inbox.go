@@ -291,6 +291,9 @@ func inboxLine(it api.InboxItem, now time.Time, width int) string {
 		parts = append(parts, "stale")
 	}
 	detail := s.Recap
+	if s.Summary != nil && s.Summary.LastReply != "" {
+		detail = s.Summary.LastReply
+	}
 	if len(it.WaitingOn) > 0 {
 		detail = strings.Join(it.WaitingOn, "; ")
 	}

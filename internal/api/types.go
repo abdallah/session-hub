@@ -57,6 +57,9 @@ const (
 	// HeaderActionTriage is the X-Hub-Action value the dashboard sends with
 	// POST /v1/inbox/{id}/dismiss and /snooze.
 	HeaderActionTriage = "triage"
+	// HeaderActionRename is the X-Hub-Action value the dashboard sends with
+	// POST /v1/sessions/{id}/rename.
+	HeaderActionRename = "rename"
 	// HeaderSessionName carries the browser session's name on GET
 	// /v1/sessions when the caller used the session cookie.
 	HeaderSessionName = "X-Hub-Session-Name"
@@ -163,24 +166,26 @@ type Event struct {
 }
 
 type Session struct {
-	ID             string     `json:"id"`
-	Agent          string     `json:"agent"`
-	Machine        string     `json:"machine"`
-	CWD            string     `json:"cwd,omitempty"`
-	GitRepo        string     `json:"git_repo,omitempty"`
-	GitBranch      string     `json:"git_branch,omitempty"`
-	HerdrSession   string     `json:"herdr_session,omitempty"`
-	HerdrWorkspace string     `json:"herdr_workspace,omitempty"`
-	HerdrPane      string     `json:"herdr_pane,omitempty"`
-	Title          string     `json:"title,omitempty"`
-	TitleSource    string     `json:"title_source,omitempty"` // user|herdr|prompt
-	StartedAt      time.Time  `json:"started_at"`
-	LastSeenAt     time.Time  `json:"last_seen_at"`
-	Status         string     `json:"status"`
-	AgentState     string     `json:"agent_state,omitempty"`
-	EndedAt        *time.Time `json:"ended_at,omitempty"`
-	ResumeCommand  string     `json:"resume_command"` // ssh -t <ssh_host> '~/.local/bin/sessionhub resume <id>'
-	LatestReport   *Report    `json:"latest_report,omitempty"`
+	ID             string    `json:"id"`
+	Agent          string    `json:"agent"`
+	Machine        string    `json:"machine"`
+	CWD            string    `json:"cwd,omitempty"`
+	GitRepo        string    `json:"git_repo,omitempty"`
+	GitBranch      string    `json:"git_branch,omitempty"`
+	HerdrSession   string    `json:"herdr_session,omitempty"`
+	HerdrWorkspace string    `json:"herdr_workspace,omitempty"`
+	HerdrPane      string    `json:"herdr_pane,omitempty"`
+	Title          string    `json:"title,omitempty"`
+	TitleSource    string    `json:"title_source,omitempty"` // user|herdr|prompt
+	StartedAt      time.Time `json:"started_at"`
+	LastSeenAt     time.Time `json:"last_seen_at"`
+	Status         string    `json:"status"`
+	AgentState     string    `json:"agent_state,omitempty"`
+	// StateSince is when AgentState last changed, or nil when unknown.
+	StateSince    *time.Time `json:"state_since,omitempty"`
+	EndedAt       *time.Time `json:"ended_at,omitempty"`
+	ResumeCommand string     `json:"resume_command"` // ssh -t <ssh_host> '~/.local/bin/sessionhub resume <id>'
+	LatestReport  *Report    `json:"latest_report,omitempty"`
 	// RemoteControl is the session's latest control request.
 	RemoteControl *ControlRequest `json:"remote_control,omitempty"`
 	// RemoteControlURL and RemoteControlAt are the last Remote Control link
@@ -301,10 +306,13 @@ type DigestGit struct {
 // learned about a session from its transcript and git. Each digest replaces
 // the previous one.
 type DigestIn struct {
-	AsOf        time.Time    `json:"as_of"` // the last transcript entry's time
-	FirstAt     *time.Time   `json:"first_at,omitempty"`
-	Recap       string       `json:"recap,omitempty"`
-	RecapAt     *time.Time   `json:"recap_at,omitempty"`
+	AsOf    time.Time  `json:"as_of"` // the last transcript entry's time
+	FirstAt *time.Time `json:"first_at,omitempty"`
+	Recap   string     `json:"recap,omitempty"`
+	RecapAt *time.Time `json:"recap_at,omitempty"`
+	// LastReply is the first 300 runes of the last text Claude wrote.
+	LastReply   string       `json:"last_reply,omitempty"`
+	LastReplyAt *time.Time   `json:"last_reply_at,omitempty"`
 	AITitle     string       `json:"ai_title,omitempty"`
 	CustomTitle string       `json:"custom_title,omitempty"`
 	Links       []DigestLink `json:"links,omitempty"`
@@ -328,6 +336,8 @@ type SessionSummary struct {
 	LatestLink   *DigestLink `json:"latest_link,omitempty"`
 	CostUSD      *float64    `json:"cost_usd,omitempty"`
 	OutputTokens int64       `json:"output_tokens"`
+	LastReply    string      `json:"last_reply,omitempty"`
+	LastReplyAt  *time.Time  `json:"last_reply_at,omitempty"`
 }
 
 // LoginIn is the body of POST /v1/logins.

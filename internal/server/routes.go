@@ -20,6 +20,7 @@ const (
 	accessMachine = "machine"  // machine token only, also for reads (sign-in management)
 	accessSignOut = "sign-out" // the session cookie with X-Hub-Action: sign-out only
 	accessTriage  = "triage"   // machine token, or the session cookie with X-Hub-Action: triage
+	accessRename  = "rename"   // machine token, or the session cookie with X-Hub-Action: rename
 
 	accessInstructions = "instructions"  // machine token, or the session cookie with X-Hub-Action: instructions
 	accessSend         = "send"          // machine token, or the session cookie with X-Hub-Action: send
@@ -56,6 +57,7 @@ func (s *Server) routes() []route {
 		{"POST", "/v1/sessions/{id}/events", accessWrite, s.writer(s.postEvent)},
 		{"POST", "/v1/sessions/{id}/report", accessWrite, s.writer(s.postReport)},
 		{"POST", "/v1/sessions/{id}/title", accessWrite, s.writer(s.postTitle)},
+		{"POST", "/v1/sessions/{id}/rename", accessRename, s.actor(api.HeaderActionRename, s.postRename)},
 		{"PUT", "/v1/sessions/{id}/digest", accessWrite, s.writer(s.putDigest)},
 		{"POST", "/v1/sessions/{id}/remote-control", accessAction, s.actor(api.HeaderActionRemoteControl, s.postRemoteControl)},
 		{"POST", "/v1/inbox/{id}/dismiss", accessTriage, s.actor(api.HeaderActionTriage, s.dismissInbox)},

@@ -116,6 +116,24 @@ func (s *Server) postTitle(w http.ResponseWriter, r *http.Request, p principal) 
 	s.respondSession(w, r, id, http.StatusOK)
 }
 
+// postRename is POST /v1/sessions/{id}/rename: a person names the session
+// from the dashboard, on any machine.
+func (s *Server) postRename(w http.ResponseWriter, r *http.Request, _ principal) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var in api.TitleIn
+	if !decode(w, r, &in) {
+		return
+	}
+	if err := s.store.RenameSession(r.Context(), id, in.Title); err != nil {
+		s.storeError(w, err)
+		return
+	}
+	s.respondSession(w, r, id, http.StatusOK)
+}
+
 // MaxDigestBytes caps a digest body, below the 64 KiB cap on every body.
 const MaxDigestBytes = 16 << 10
 

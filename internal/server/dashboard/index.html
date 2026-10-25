@@ -11,6 +11,7 @@
 :root {
   --bg: #f6f7f9; --card: #ffffff; --fg: #1b1f24; --muted: #5b6570; --line: #d8dde3;
   --live: #1a7f37; --blocked: #b42318; --stale: #8a6100; --ended: #6b7280;
+  --unread: #1d4ed8; --on-alert: #ffffff;
   --accent: #0b5cad; --code-bg: #eef1f4; --hover: #eef1f4;
   --shadow: 0 1px 2px rgba(16, 24, 40, .08), 0 1px 3px rgba(16, 24, 40, .06);
 }
@@ -18,6 +19,7 @@
   :root {
     --bg: #0f1216; --card: #1a1f26; --fg: #e6e9ed; --muted: #9aa5b1; --line: #2c343e;
     --live: #4ac26b; --blocked: #ff8a80; --stale: #e3b341; --ended: #8b95a1;
+    --unread: #7aa7ff; --on-alert: #1a1f26;
     --accent: #6cb6ff; --code-bg: #10141a; --hover: #232a33;
     --shadow: none;
   }
@@ -97,6 +99,34 @@ button.card-head {
 .dot.blocked { background: var(--blocked); }
 .dot.stale { background: var(--stale); }
 .title { font-weight: 600; }
+/* One colour per card state (cardState): red needs you, amber waits on you
+   or its machine went quiet, blue finished and unread, green working, grey
+   idle. */
+.card.k-alert, .notif.k-alert { border-left-color: var(--blocked); }
+.card.k-warn, .notif.k-warn { border-left-color: var(--stale); }
+.card.k-stale { border-left-color: var(--stale); border-left-style: dashed; }
+.card.k-work { border-left-color: var(--live); }
+.card.k-unread, .notif.k-unread { border-left-color: var(--unread); }
+.card.k-idle { border-left-color: var(--line); }
+.card.k-ended { border-left-color: var(--ended); }
+.dot.k-alert { background: var(--blocked); }
+.dot.k-warn, .dot.k-stale { background: var(--stale); }
+.dot.k-work { background: var(--live); animation: pulse 1.6s ease-in-out infinite; }
+.dot.k-unread { background: var(--unread); }
+.dot.k-idle, .dot.k-ended { background: var(--line); }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .dot.k-work { animation: none; } }
+.badge.k-alert { color: var(--on-alert); background: var(--blocked); border-color: var(--blocked); }
+.badge.k-warn, .badge.k-stale { color: var(--stale); }
+.badge.k-work { color: var(--live); }
+.badge.k-unread { color: var(--unread); }
+.badge.k-idle, .badge.k-ended { color: var(--muted); border-color: var(--line); }
+.card.k-unread .title { font-weight: 700; }
+.card.k-idle .title, .card.k-ended .title { font-weight: 500; }
+.card-line {
+  color: var(--muted); font-size: .85rem; padding: 0 12px 8px 30px; margin-top: -4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .badge {
   font-size: .75rem; font-weight: 600; white-space: nowrap; padding: 1px 8px;
   border: 1px solid currentColor; border-radius: 999px;
@@ -152,7 +182,7 @@ button.textbtn { min-width: 0; padding: 0 10px; border-color: transparent; backg
 }
 .notif.blocked, .notif.move_failed { border-left-color: var(--blocked); }
 .notif.waiting { border-left-color: var(--stale); }
-.notif.finished { border-left-color: var(--live); }
+.notif.finished { border-left-color: var(--unread); }
 .notif-main {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; width: 100%; min-width: 0;
   padding: 10px 12px 4px; background: none; border: 0; border-radius: 6px;
@@ -737,6 +767,21 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     return t;
   }
 
+  // machineReach is whether a machine answers, from its active sessions: a
+  // controllable one means its watcher polled in the last 2 minutes
+  // (online); all stale means it went quiet, since its newest heartbeat.
+  // null when it has no active session to tell by.
+  function machineReach(active, now) {
+    if (!active.length) return null;
+    if (active.some(function (s) { return s.controllable === true; })) return { kind: "work", text: "online" };
+    var last = active.map(function (s) { return s.last_seen_at; }).filter(Boolean).sort().pop();
+    if (active.every(function (s) { return s.status === "stale"; })) {
+      var a = last ? shortAge(last, now) : "";
+      return { kind: "stale", text: "silent" + (a ? " " + a : "") };
+    }
+    return { kind: "idle", text: "not in herdr" };
+  }
+
   // needsByMachine counts the inbox items per machine in inboxView's groups.
   function needsByMachine(groups) {
     var out = {};
@@ -763,16 +808,73 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     return Math.floor(h / 24) + "d";
   }
 
-  // cardBadge is the state a card header shows: "blocked 4m" when the
-  // inbox says since when, the agent state of a live session, else the
-  // status.
-  function cardBadge(s, blockedSince, now) {
-    if (s.status === "blocked") {
-      var a = blockedSince ? shortAge(blockedSince, now) : "";
-      return a ? "blocked " + a : "blocked";
+  // cardState is the one state a card shows, most urgent first: kind picks
+  // the colour (alert, warn, stale, work, unread, idle, ended), icon marks
+  // only the states that need you, and label says what and since when.
+  // blockedSince is the inbox's since for a blocked session.
+  function cardState(s, blockedSince, now) {
+    function since(iso) {
+      var a = iso ? shortAge(iso, now) : "";
+      return a ? " " + a : "";
     }
-    if (s.status === "live") return s.agent_state || "live";
-    return s.status || "";
+    function after(a, b) { return !!a && !!b && Date.parse(a) > Date.parse(b); }
+    if (s.status === "ended") return { kind: "ended", icon: "", label: "ended" };
+    var m = s.move;
+    if (m && m.state === "failed" && !after(s.last_prompt_at, m.updated_at)) {
+      return { kind: "alert", icon: "\ud83d\ude9a", label: "move failed" + since(m.updated_at) };
+    }
+    if (s.status === "blocked" || s.agent_state === "blocked") {
+      return { kind: "alert", icon: "\u270b", label: "needs you" + since(blockedSince || s.state_since) };
+    }
+    var r = s.latest_report;
+    if (r && (r.waiting_on || []).length && !after(s.last_prompt_at, r.ts)) {
+      return { kind: "warn", icon: "\ud83d\udcac", label: "waiting on you" + since(r.ts) };
+    }
+    if (s.status === "stale") return { kind: "stale", icon: "\u26a0\ufe0f", label: (s.machine || "machine") + " silent" + since(s.last_seen_at) };
+    switch (s.agent_state) {
+      case "working": return { kind: "work", icon: "", label: "working" + since(s.state_since) };
+      case "done": return { kind: "unread", icon: "", label: "finished" + since(s.state_since) };
+      case "idle": return { kind: "idle", icon: "", label: "idle" + since(s.state_since) };
+    }
+    return { kind: "idle", icon: "", label: s.agent_state || s.status || "" };
+  }
+
+  // promptText is a prompt as a person reads it: a message a channel or a
+  // background task typed into the session gets a short name instead of its
+  // markup.
+  function promptText(p) {
+    if (typeof p !== "string") return "";
+    var t = p.trim();
+    var ch = /^<channel\b[^>]*\bsource="(?:plugin:)?([a-z0-9_-]+)/i.exec(t);
+    if (ch) return "(message from " + ch[1] + ")";
+    if (/^<task-notification\b/i.test(t)) return "(background task finished)";
+    if (/^<[a-z][\w-]*[\s>]/i.test(t)) return t.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    return t;
+  }
+
+  // cardLine is a collapsed card's one grey line: what the session waits on,
+  // else Claude's last reply, else its recap, else your last prompt.
+  function cardLine(s) {
+    if (s.blocked_on) return s.blocked_on;
+    if (s.move && s.move.state === "failed") return "Move to " + s.move.target + " failed: " + (s.move.detail || s.move.state);
+    var r = s.latest_report;
+    if (r && (r.waiting_on || []).length) return "Waiting on: " + r.waiting_on.join("; ");
+    var reply = s.summary && s.summary.last_reply;
+    if (reply) return reply;
+    if (s.recap) return s.recap;
+    var p = promptText(s.last_prompt);
+    return p ? "You: " + p : "";
+  }
+
+  // displayTitle is the session's title, or its task's when the title is
+  // Claude Code's default, or the ID's first 8 characters.
+  function displayTitle(s) {
+    var t = typeof s.title === "string" ? s.title.trim() : "";
+    if (!t || /^claude( code)?$/i.test(t)) {
+      var n = s.last_note;
+      if (n && typeof n.task_title === "string" && n.task_title) return n.task_title;
+    }
+    return t || String(s.id || "").slice(0, 8);
   }
 
   // contextLabel is "context 42%" when the session's mod reported its
@@ -787,12 +889,13 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   // row-state:begin
   // inboxNeed is an inbox row's one line: a failed move's error, what the
   // session waits on (for a blocked item, the question its mod reported),
-  // else its recap, else the group's label.
+  // else Claude's last reply, else its recap, else the group's label.
   function inboxNeed(it, s, label) {
     if (it.group === "move_failed" && s && s.move) return "Move to " + s.move.target + " failed: " + (s.move.detail || s.move.state);
     if (it.group === "blocked" && s && typeof s.blocked_on === "string" && s.blocked_on) return s.blocked_on;
     var w = (it.waiting_on || []).filter(function (x) { return typeof x === "string" && x; });
     if (w.length) return w.join("; ");
+    if (s && s.summary && typeof s.summary.last_reply === "string" && s.summary.last_reply) return s.summary.last_reply;
     if (s && typeof s.recap === "string" && s.recap) return s.recap;
     return label;
   }
@@ -1799,11 +1902,53 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   }
 
   function promptEl(s, now) {
-    if (!s.last_prompt) return null;
+    var t = promptText(s.last_prompt);
+    if (!t) return null;
     var lp = el("p", "prompt");
     lp.appendChild(el("span", "label", "You" + (s.last_prompt_at ? ", " + age(s.last_prompt_at, now) : "") + ": "));
-    lp.appendChild(document.createTextNode(s.last_prompt));
+    lp.appendChild(document.createTextNode(t));
     return lp;
+  }
+
+  // replyEl is the start of Claude's last reply, from the digest, or null.
+  function replyEl(s, now) {
+    var sum = s.summary;
+    if (!sum || !sum.last_reply) return null;
+    var p = el("p", "recap");
+    p.appendChild(el("span", "label", "Claude" + (sum.last_reply_at ? ", " + age(sum.last_reply_at, now) : "") + ": "));
+    p.appendChild(document.createTextNode(sum.last_reply));
+    return p;
+  }
+
+  // renameRow is the card's Rename button: it asks for a title and sends it.
+  function renameRow(s) {
+    var row = el("div", "rc");
+    var b = el("button", "textbtn", "Rename");
+    b.type = "button";
+    var msg = el("span", "note", "");
+    b.addEventListener("click", function () {
+      var t = window.prompt("New name for this session", displayTitle(s));
+      if (t === null || !t.trim()) return;
+      b.disabled = true;
+      fetch("/v1/sessions/" + encodeURIComponent(s.id) + "/rename", {
+        method: "POST", cache: "no-store",
+        headers: { "Content-Type": "application/json", "X-Hub-Action": "rename" },
+        body: JSON.stringify({ title: t.trim() })
+      }).then(function (resp) {
+        if (!resp.ok) throw new Error("The server returned " + resp.status + ".");
+        return resp.json();
+      }).then(function (x) {
+        var cur = sessionsById[s.id];
+        if (cur) cur.title = x.title;
+        refreshCard(s.id);
+      }).catch(function (err) {
+        b.disabled = false;
+        msg.textContent = err.message || "Could not rename.";
+      });
+    });
+    row.appendChild(b);
+    row.appendChild(msg);
+    return row;
   }
 
   function summaryEl(s) {
@@ -1844,16 +1989,16 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   // age, and state badge, and, while openCards has the session, the body.
   function card(s, now) {
     var open = openCards[s.id] === true;
-    var art = el("article", "card " + s.status + (open ? " open" : ""));
+    var st = cardState(s, blockedSince[s.id], now);
+    var art = el("article", "card " + s.status + " k-" + st.kind + (open ? " open" : ""));
     var head = keyed(el("button", "card-head"), "card:" + s.id);
     head.type = "button";
     head.setAttribute("aria-expanded", open ? "true" : "false");
-    var dot = el("span", "dot " + s.status);
+    var dot = el("span", "dot k-" + st.kind);
     dot.setAttribute("aria-hidden", "true");
     head.appendChild(dot);
-    head.appendChild(el("span", "title", s.title || s.id.slice(0, 8)));
-    head.appendChild(el("span", "age", shortAge(s.last_seen_at, now)));
-    head.appendChild(el("span", "badge " + s.status, cardBadge(s, blockedSince[s.id], now)));
+    head.appendChild(el("span", "title", displayTitle(s)));
+    head.appendChild(el("span", "badge k-" + st.kind, (st.icon ? st.icon + " " : "") + st.label));
     head.addEventListener("click", function () {
       openCards = toggleOne(openCards, s.id);
       saveMap(CARDS_KEY, openCards);
@@ -1861,6 +2006,8 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       focusKeyed("card:" + s.id);
     });
     art.appendChild(head);
+    var line = open ? "" : cardLine(s);
+    if (line) art.appendChild(el("div", "card-line", line));
     if (selectMode || open) art.appendChild(pickBox(s));
     cardEls[s.id] = art;
     if (!open) return art;
@@ -1868,7 +2015,6 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     var c = el("div", "card-body");
     art.appendChild(c);
     var bits = [];
-    if (s.agent_state) bits.push(s.agent_state);
     var ctx = contextLabel(s);
     if (ctx) bits.push(ctx);
     bits.push("seen " + age(s.last_seen_at, now));
@@ -1885,9 +2031,13 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     var rp = recapEl(s, now);
     if (rp) c.appendChild(rp);
 
+    var cl = replyEl(s, now);
+    if (cl) c.appendChild(cl);
+
     var r = s.latest_report;
     if (r) {
       var dl = el("dl", "report");
+      if (r.ts) dl.appendChild(el("dt", null, "Report, " + age(r.ts, now)));
       [list("Done", r.done, 3), list("In flight", r.in_flight, 5), list("Waiting on", r.waiting_on, 5)].forEach(function (f) {
         if (f) dl.appendChild(f);
       });
@@ -1912,6 +2062,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     if (rc) c.appendChild(rc);
     var mr = moveRow(s);
     if (mr) c.appendChild(mr);
+    c.appendChild(renameRow(s));
     return art;
   }
 
@@ -2228,8 +2379,14 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       var chev = el("span", "chev", "▸");
       chev.setAttribute("aria-hidden", "true");
       mb.appendChild(chev);
+      var reach = machineReach(active, Date.now());
+      if (reach) {
+        var rd = el("span", "dot k-" + reach.kind);
+        rd.setAttribute("aria-hidden", "true");
+        mb.appendChild(rd);
+      }
       mb.appendChild(el("span", "name", name));
-      mb.appendChild(el("span", "count", machineLabel(active.length, ended.length, needs[name] || 0)));
+      mb.appendChild(el("span", "count", (reach ? reach.text + " · " : "") + machineLabel(active.length, ended.length, needs[name] || 0)));
       mb.addEventListener("click", function () {
         collapsed = toggleOne(collapsed, name);
         saveMap(COLLAPSED_KEY, collapsed);
@@ -2295,10 +2452,11 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       if (p.kind === "expand") main.setAttribute("aria-expanded", open ? "true" : "false");
     }
     keyed(main, "row:" + s.id);
-    main.appendChild(el("span", "n-title", s.title || s.id.slice(0, 8)));
+    main.appendChild(el("span", "n-title", displayTitle(s)));
     main.appendChild(el("span", "n-age", shortAge(it.since, now)));
-    main.appendChild(el("span", "n-need", inboxNeed(it, s, label)));
-    var meta = [s.machine, label];
+    var need = inboxNeed(it, s, label);
+    main.appendChild(el("span", "n-need", need));
+    var meta = need === label ? [s.machine] : [s.machine, label];
     if (s.status === "stale") meta.push("stale");
     main.appendChild(el("span", "n-meta", meta.join(" · ")));
     // tap does the row's primary action; the row and its named button in
@@ -2353,7 +2511,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     var more = p.kind !== "expand";
     var box = el("div", "actions");
     var name = s.title || s.id;
-    var dismiss = el("button", "textbtn", "Done");
+    var dismiss = el("button", "textbtn", "Clear");
     dismiss.type = "button";
     dismiss.setAttribute("aria-label", "Done with " + name);
     dismiss.addEventListener("click", function () { triage("dismiss", it, null); });

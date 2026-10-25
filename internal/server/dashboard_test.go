@@ -234,8 +234,8 @@ func TestDashboardWrites(t *testing.T) {
 		s    string
 		want int
 	}{
-		{"method:", 9}, // knowledgeRequest sets the method of all four knowledge writes
-		{`method: "POST"`, 8},
+		{"method:", 10}, // knowledgeRequest sets the method of all four knowledge writes
+		{`method: "POST"`, 9},
 		{`"X-Hub-Action": "start"`, 1},
 		{"// start-state:begin", 1},
 		{"// start-state:end", 1},
@@ -255,9 +255,10 @@ func TestDashboardWrites(t *testing.T) {
 		{`"X-Hub-Action": "remote-control"`, 1},
 		{`"X-Hub-Action": "sign-out"`, 1},
 		{`"/remote-control"`, 1},
-		{"fetch(", 19}, // the list, the inbox, the request, the session poll, the Details read, sign-out, triage,
+		{"fetch(", 20}, // the list, the inbox, the request, the session poll, the Details read, sign-out, triage,
 		// the knowledge read, a knowledge write, the send, a decision, the machines read, a move, the move poll,
-		// the New session panel's machines read, a start, the start poll, a Tasks read, and a Tasks write
+		// the New session panel's machines read, a start, the start poll, a Tasks read, a Tasks write, and a rename
+		{`"X-Hub-Action": "rename"`, 1},
 		{"// rc-state:begin", 1},
 		{"// rc-state:end", 1},
 		{"// auth-state:begin", 1},
@@ -327,7 +328,7 @@ func TestDashboardWrites(t *testing.T) {
 		"if (keep && focusedKey() !== keep) focusKeyed(keep);",
 		// The inbox row: one tap target, then Done and Later.
 		"var p = inboxPrimary(s, busy)", `el("a", "notif-main")`, `el("button", "notif-main")`, "requestRC(s.id);",
-		`el("button", "textbtn", "Done")`, `el("summary", null, "Later")`, "openRows[s.id] = !open", "delete openRows[id]",
+		`el("button", "textbtn", "Clear")`, `el("summary", null, "Later")`, "openRows[s.id] = !open", "delete openRows[id]",
 		`querySelector(".notif-main")`, "if (lastSessions.length) render(lastSessions);",
 		"main { padding: 4px 0 32px; }", ".page { padding: 0 16px; }", "h2.machine-h { font-size: 1.25rem;",
 		// Collapse all sits beside the filter; the inbox row names its tap in the actions row.
@@ -595,7 +596,18 @@ process.stdout.write(JSON.stringify({
   needs: needsByMachine([{ items: [{ session: { machine: "m1" } }, { session: { machine: "m2" } }] },
     { items: [{ session: { machine: "m1" } }, { session: {} }] }]),
   ages: input.ages.map(function (a) { return shortAge(a, now); }),
-  badges: input.badges.map(function (b) { return cardBadge(b[0], b[1], now); }),
+  badges: input.badges.map(function (b) { var st = cardState(b[0], b[1], now); return st.kind + "|" + st.icon + "|" + st.label; }),
+  prompts: ["fix it", "<channel source=\"plugin:telegram:telegram\" chat_id=\"1\">hi</channel>", "<task-notification> <task-id>x</task-id>",
+    "<command-name>/model</command-name> sonnet", "", null].map(promptText),
+  lines: [cardLine({ blocked_on: "Q?", recap: "r" }), cardLine({ latest_report: { waiting_on: ["a", "b"] }, recap: "r" }),
+    cardLine({ summary: { last_reply: "Done. Next: deploy." }, recap: "r" }), cardLine({ recap: "r" }),
+    cardLine({ last_prompt: "<task-notification>" }), cardLine({}),
+    cardLine({ move: { state: "failed", target: "togh", detail: "boom" }, recap: "r" })],
+  reach: [machineReach([{ controllable: true }, { status: "stale" }], now),
+    machineReach([{ status: "stale", last_seen_at: "2026-10-02T11:48:00Z" }, { status: "stale", last_seen_at: "2026-10-02T11:56:00Z" }], now),
+    machineReach([{ status: "live" }], now), machineReach([], now)],
+  titles: [displayTitle({ title: "Fix login", id: "abcdefghij" }), displayTitle({ title: "Claude Code", last_note: { task_title: "booking pilot" } }),
+    displayTitle({ title: "Claude Code" }), displayTitle({ id: "abcdefghij" })],
   contexts: [contextLabel({ context_percent: 42 }), contextLabel({ context_percent: 0 }), contextLabel({ context_percent: 99.6 }),
     contextLabel({ context_percent: 140 }), contextLabel({ context_percent: "42" }), contextLabel({}), contextLabel(null)]
 }));`, map[string]any{
@@ -609,20 +621,29 @@ process.stdout.write(JSON.stringify({
 			[]any{map[string]any{"status": "live"}, nil},
 			[]any{map[string]any{"status": "stale", "agent_state": "idle"}, nil},
 			[]any{map[string]any{"status": "ended"}, nil},
+			[]any{map[string]any{"status": "live", "agent_state": "done", "state_since": "2026-10-02T09:00:00Z"}, nil},
+			[]any{map[string]any{"status": "live", "agent_state": "idle", "latest_report": map[string]any{"ts": "2026-10-02T11:56:00Z", "waiting_on": []any{"x"}}}, nil},
+			[]any{map[string]any{"status": "live", "agent_state": "idle", "last_prompt_at": "2026-10-02T11:59:00Z",
+				"latest_report": map[string]any{"ts": "2026-10-02T11:56:00Z", "waiting_on": []any{"x"}}}, nil},
+			[]any{map[string]any{"status": "live", "agent_state": "idle", "move": map[string]any{"state": "failed", "updated_at": "2026-10-02T11:56:00Z"}}, nil},
 		},
 	})
 	var got struct {
-		Clean    []map[string]bool `json:"clean"`
-		Prune    map[string]bool   `json:"prune"`
-		Toggle   []map[string]bool `json:"toggle"`
-		Open     []bool            `json:"open"`
-		AllColl  []bool            `json:"allColl"`
-		All      []map[string]bool `json:"all"`
-		Labels   []string          `json:"labels"`
-		Needs    map[string]int    `json:"needs"`
-		Ages     []string          `json:"ages"`
-		Badges   []string          `json:"badges"`
-		Contexts []string          `json:"contexts"`
+		Clean    []map[string]bool   `json:"clean"`
+		Prune    map[string]bool     `json:"prune"`
+		Toggle   []map[string]bool   `json:"toggle"`
+		Open     []bool              `json:"open"`
+		AllColl  []bool              `json:"allColl"`
+		All      []map[string]bool   `json:"all"`
+		Labels   []string            `json:"labels"`
+		Needs    map[string]int      `json:"needs"`
+		Ages     []string            `json:"ages"`
+		Badges   []string            `json:"badges"`
+		Prompts  []string            `json:"prompts"`
+		Lines    []string            `json:"lines"`
+		Titles   []string            `json:"titles"`
+		Reach    []map[string]string `json:"reach"`
+		Contexts []string            `json:"contexts"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("node output %s: %v", out, err)
@@ -641,7 +662,15 @@ process.stdout.write(JSON.stringify({
 		{"machineLabel", got.Labels, []string{"3 active", "3 active, 2 ended · 1 needs you", "0 active, 1 ended · 2 need you"}},
 		{"needsByMachine", got.Needs, map[string]int{"m1": 2, "m2": 1}},
 		{"shortAge", got.Ages, []string{"12s", "4m", "3h", "3d", "0s", "", ""}},
-		{"cardBadge", got.Badges, []string{"blocked 4m", "blocked", "working", "idle", "live", "stale", "ended"}},
+		{"cardState", got.Badges, []string{"alert|\u270b|needs you 4m", "alert|\u270b|needs you", "work||working", "idle||idle",
+			"idle||live", "stale|\u26a0\ufe0f|machine silent", "ended||ended", "unread||finished 3h", "warn|\U0001F4AC|waiting on you 4m",
+			"idle||idle", "alert|\U0001F69A|move failed 4m"}},
+		{"promptText", got.Prompts, []string{"fix it", "(message from telegram)", "(background task finished)", "/model sonnet", "", ""}},
+		{"cardLine", got.Lines, []string{"Q?", "Waiting on: a; b", "Done. Next: deploy.", "r", "You: (background task finished)", "",
+			"Move to togh failed: boom"}},
+		{"machineReach", got.Reach, []map[string]string{{"kind": "work", "text": "online"}, {"kind": "stale", "text": "silent 4m"},
+			{"kind": "idle", "text": "not in herdr"}, nil}},
+		{"displayTitle", got.Titles, []string{"Fix login", "booking pilot", "Claude Code", "abcdefgh"}},
 		{"contextLabel", got.Contexts, []string{"context 42%", "context 0%", "context 100%", "context 100%", "", "", ""}},
 	}
 	for _, c := range checks {

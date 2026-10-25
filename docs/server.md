@@ -160,6 +160,7 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `POST /v1/sessions/{id}/events` | machine | `200`, the `Session` | Record an event (`EventIn`). |
 | `POST /v1/sessions/{id}/report` | machine | `200`, the `Session` | Store a progress report (`ReportIn`). |
 | `POST /v1/sessions/{id}/title` | machine | `200`, the `Session` | Set a user title (`TitleIn`). |
+| `POST /v1/sessions/{id}/rename` | machine, or cookie with `X-Hub-Action: rename` | `200`, the `Session` | Set a user title from the dashboard (`TitleIn`), on any machine's session; an ended session stays ended. `404` for an unknown one. |
 | `PUT /v1/sessions/{id}/digest` | machine | `200`, the `Session` | Store the session's digest (`DigestIn`). See [Digests](#digests). |
 | `POST /v1/sessions/{id}/remote-control` | machine, or cookie with `X-Hub-Action: remote-control` | `202` new, `200` open one; a `ControlRequest` | Ask the session's machine to turn on Remote Control. See [Remote Control requests](#remote-control-requests). |
 | `GET /v1/machines/self/control?wait=30` | machine | `200` a `ControlClaim`; `204` none | The watcher's long poll. |
@@ -519,6 +520,10 @@ Only `as_of` is required. The server rejects a bad value with `400`:
 
 - `as_of` is at most 5 minutes in the future.
 - `recap` is at most 600 characters. Titles are at most 200.
+- `last_reply` is the start of the last text Claude wrote, at most 300
+  characters, with `last_reply_at`. It is the only message text a digest
+  carries; prompt text never is. The session list carries both in
+  `summary`.
 - `git.commits` has at most 5 entries, and each subject is at most 120
   characters.
 - `links` has at most 20 entries. Each `url` starts with `https://` and is at

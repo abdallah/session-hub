@@ -96,7 +96,7 @@ func (b Builder) clamp(d api.DigestIn) api.DigestIn {
 		}
 		return t
 	}
-	d.FirstAt, d.RecapAt, d.CostAt = keep(d.FirstAt), keep(d.RecapAt), keep(d.CostAt)
+	d.FirstAt, d.RecapAt, d.CostAt, d.LastReplyAt = keep(d.FirstAt), keep(d.RecapAt), keep(d.CostAt), keep(d.LastReplyAt)
 	if d.CostUSD != nil && (*d.CostUSD < 0 || *d.CostUSD > maxCostUSD) {
 		d.CostUSD = nil
 	}

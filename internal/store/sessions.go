@@ -531,6 +531,27 @@ func (s *Store) SetTitle(ctx context.Context, machineID int64, id, title string)
 	return tx.Commit()
 }
 
+// RenameSession sets session id's title from the dashboard, as a user
+// title. Unlike SetTitle it needs no owning machine and leaves an ended
+// session ended.
+func (s *Store) RenameSession(ctx context.Context, id, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return invalidf("title is empty")
+	}
+	if err := checkText("title", title, MaxTitleRunes); err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE sessions SET title = ?, title_source = ? WHERE id = ?`, title, TitleSourceUser, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("%w: session %s", ErrNotFound, id)
+	}
+	return nil
+}
+
 // ReconcileResult is the response to a herdr-sessions snapshot.
 type ReconcileResult struct {
 	Upserted  int       `json:"upserted"`

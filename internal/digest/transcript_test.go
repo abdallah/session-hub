@@ -108,10 +108,9 @@ func TestReadExtractsFields(t *testing.T) {
 			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)
 		}
 	}
-	// The reply text must never reach the digest.
-	b, _ := json.Marshal(d)
-	if strings.Contains(string(b), "reply text") {
-		t.Errorf("digest contains reply text: %s", b)
+	// Of the message text, only the last reply's start reaches the digest.
+	if d.LastReply != "reply text" {
+		t.Errorf("last reply %q, want %q", d.LastReply, "reply text")
 	}
 }
 
@@ -242,5 +241,25 @@ func TestReadNoTranscriptAndLocked(t *testing.T) {
 	defer unlock()
 	if _, err := r2.Read(sid); !errors.Is(err, ErrLocked) {
 		t.Errorf("held lock: %v, want ErrLocked", err)
+	}
+}
+
+func TestLastReply(t *testing.T) {
+	st := newState()
+	long := strings.Repeat("x", 400)
+	for _, l := range []string{
+		`{"type":"assistant","timestamp":"2026-10-01T10:00:00Z","message":{"id":"m1","content":[{"type":"text","text":"First answer."}]}}`,
+		`{"type":"user","timestamp":"2026-10-01T10:01:00Z","message":{"content":"a secret prompt"}}`,
+		`{"type":"assistant","timestamp":"2026-10-01T10:02:00Z","message":{"id":"m2","content":[{"type":"tool_use","name":"Bash"}]}}`,
+		`{"type":"assistant","timestamp":"2026-10-01T10:03:00Z","message":{"id":"m3","content":[{"type":"text","text":"Done.\nNext: deploy."},{"type":"tool_use"}]}}`,
+	} {
+		st.apply([]byte(l), true)
+	}
+	if st.LastReply != "Done. Next: deploy." || st.LastReplyAt == nil || st.LastReplyAt.Format(time.RFC3339) != "2026-10-01T10:03:00Z" {
+		t.Errorf("last reply %q at %v", st.LastReply, st.LastReplyAt)
+	}
+	st.apply([]byte(`{"type":"assistant","timestamp":"2026-10-01T10:04:00Z","message":{"id":"m4","content":[{"type":"text","text":"`+long+`"}]}}`), true)
+	if n := len([]rune(st.LastReply)); n > maxReply {
+		t.Errorf("last reply has %d runes, want at most %d", n, maxReply)
 	}
 }

@@ -32,7 +32,9 @@ func TestReadLongLinesAndPrivacy(t *testing.T) {
 	}
 	b, _ := json.Marshal(d)
 	sb, _ := os.ReadFile(filepath.Join(r.StateDir, sid+".json"))
-	for _, leak := range []string{"reply text", "SECRETPROMPT"} {
+	// Prompt text never leaves; of the replies, only the last one's start
+	// does (TestLastReply).
+	for _, leak := range []string{"SECRETPROMPT"} {
 		if strings.Contains(string(b), leak) || strings.Contains(string(sb), leak) {
 			t.Fatalf("leak %q", leak)
 		}
