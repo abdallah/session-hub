@@ -81,6 +81,10 @@ func (e *env) move(ctx context.Context, args []string) error {
 		}
 		fmt.Fprintf(e.out, "%s  moving %s (%s) from %s to %s\n", clean(mv.ID, 0), shortID(d.ID), clean(title(d.Session), 0),
 			clean(mv.Source, 0), clean(mv.Target, 0))
+		if mv.SnapshotAt != nil {
+			fmt.Fprintf(e.out, "%s is offline: using its snapshot from %s ago; work after that is not carried\n",
+				clean(mv.Source, 0), age(e.now(), *mv.SnapshotAt))
+		}
 		return e.followMove(ctx, mv)
 	}
 	return fmt.Errorf("move: unexpected arguments\n%s", moveUsage)

@@ -201,6 +201,9 @@ type Session struct {
 	Summary *SessionSummary `json:"summary,omitempty"`
 	// Move is the session's latest move, open or not; nil with none.
 	Move *Move `json:"move,omitempty"`
+	// Snapshots are the session's snapshots, one per machine they are
+	// sealed to, by machine name.
+	Snapshots []Snapshot `json:"snapshots,omitempty"`
 	// Messageable is true when sessionhub can deliver a message to the session:
 	// it is Controllable, or its Claude Code mod polled for messages in the
 	// last 2 minutes.
@@ -243,6 +246,9 @@ type Machine struct {
 	LastSeen  *time.Time `json:"last_seen,omitempty"`
 	// MoveKey is the fingerprint of the machine's move key, or "".
 	MoveKey string `json:"move_key,omitempty"`
+	// MovePublicKey is the move key itself, in standard base64, or "".
+	// Watchers seal snapshots to it.
+	MovePublicKey string `json:"move_public_key,omitempty"`
 	// MoveReady is true when the machine has a move key and its watcher
 	// polled in the last 2 minutes: it can take a moved session.
 	MoveReady bool `json:"move_ready"`

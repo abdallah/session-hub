@@ -1184,6 +1184,10 @@ process.stdout.write(JSON.stringify({
     moveBlocked(Object.assign({}, idle, { move: withMove("packing") })), moveBlocked(Object.assign({}, idle, { move: withMove("failed") }))],
   targets: moveTargets(idle, machines),
   noCloud: moveTargets(Object.assign({}, idle, { git_repo: "git@gitlab.com:o/r.git" }), machines.slice(0, 2)),
+  snapTargets: moveTargets(Object.assign({}, idle, { controllable: false,
+    snapshots: [{ machine: "tower", taken_at: "2026-10-01T11:48:00Z", size: 10 }] }), machines, Date.parse("2026-10-01T12:00:00Z")),
+  snapBlocked: moveBlocked(Object.assign({}, idle, { controllable: false, agent_state: "working", snapshots: [{ machine: "tower" }] })),
+  snapConfirm: moveConfirm(idle, { target: "tower", label: "tower (snapshot, 12m old)", age: "12m" }),
   confirm: [moveConfirm(idle, { target: "tower", label: "tower" }), moveConfirm(idle, { target: "cloud", label: "Cloud" }),
     moveConfirm(Object.assign({}, idle, { title: "a\u202eb\nc" }), { target: "tower", label: "tower" })],
   req: moveRequest("3f2a/x", "tower"),
@@ -1194,7 +1198,7 @@ process.stdout.write(JSON.stringify({
     moveView(withMove("failed", { detail: "find clone: no clone of github.com/o/r on tower" })),
     moveView(withMove("cancelled"))]
 }));`
-	out := runBlocks(t, []string{"move-state"}, script, map[string]any{})
+	out := runBlocks(t, []string{"layout-state", "move-state"}, script, map[string]any{})
 	want := `{
   "github": [true, true, true, false, false, true, true, false, false, false, false],
   "blocked": ["", "Wait until the agent is idle or done.", "", "Not in herdr, or its machine's watcher is offline.",
@@ -1204,6 +1208,12 @@ process.stdout.write(JSON.stringify({
     {"target": "pi", "label": "pi", "ok": false, "why": "no move key yet"},
     {"target": "cloud", "label": "Cloud", "ok": true, "why": ""}],
   "noCloud": [{"target": "tower", "label": "tower", "ok": true, "why": ""}],
+  "snapTargets": [{"target": "tower", "label": "tower (snapshot, 12m old)", "ok": true, "why": "", "age": "12m"},
+    {"target": "nas", "label": "nas", "ok": false, "why": "no snapshot for it"},
+    {"target": "pi", "label": "pi", "ok": false, "why": "no snapshot for it"},
+    {"target": "cloud", "label": "Cloud", "ok": false, "why": "needs bluebox online"}],
+  "snapBlocked": "",
+  "snapConfirm": "Move \"auth work\" to tower from its snapshot taken 12m ago? Work on bluebox after that is not carried. When bluebox is back, its copy ends.",
   "confirm": ["Move \"auth work\" to tower? Its conversation, branch main, and uncommitted changes move; the session ends here and resumes on tower.",
     "Hand \"auth work\" to a new Claude Code cloud session? Uncommitted work goes on a sessionhub branch on GitHub, and the session ends here.",
     "Move \"a\ufffdb\ufffdc\" to tower? Its conversation, branch main, and uncommitted changes move; the session ends here and resumes on tower."],

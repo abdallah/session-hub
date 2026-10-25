@@ -545,7 +545,9 @@ a new Claude Code cloud session instead (GitHub remotes only). You can run it
 on any machine.
 
 The session must be in herdr on a machine whose watcher runs, and its agent
-must be idle or done. The target machine needs a running watcher and a clone
+must be idle or done. If that machine's watcher is offline, the move uses the
+snapshot it last uploaded for the target and says how old it is; work after
+that snapshot is not carried. The target machine needs a running watcher and a clone
 of the same repository under `~/Code` (or a `move_roots` entry in
 `~/.config/sessionhub/config.toml`) with no uncommitted changes, and the same Claude
 Code version. When a rule fails, the server says which, and nothing moves.

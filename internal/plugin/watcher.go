@@ -138,6 +138,9 @@ type watcher struct {
 	// accepted heartbeat and every moveKeyEvery after that; "" sends none.
 	moveKey   string
 	moveKeyAt time.Time // when the server last took it
+	// snaps takes snapshots of the idle sessions after each accepted
+	// heartbeat; nil turns snapshots off.
+	snaps *snapper
 }
 
 // moveKeyEvery is how often the watcher registers its move key again, so a
@@ -259,6 +262,9 @@ func (w *watcher) heartbeat(ctx context.Context, now time.Time) {
 		w.logf(now, "heartbeat: server skipped session %q: %s", in.ID, in.Reason)
 	}
 	w.lastBeatOK = now
+	if w.snaps != nil {
+		w.snaps.offer(w.snapCands())
+	}
 	w.reportInbox(ctx, c, now)
 	w.refreshInstructions(ctx, c, now)
 	w.refreshKnowledge(ctx, c, now)
@@ -738,11 +744,22 @@ func runWatcher(ctx context.Context, stateDir, socketPath string, newClient func
 		}
 		w.moveKey = move.PublicKeyString(key)
 		ctl.move = newMover(socketPath, digest.DefaultClaudeDir(), stateDir, move.DefaultRoots(cfg.MoveRoots), key, logger).handle
+		if cfg.Machine != "" {
+			w.snaps = newSnapper(cfg.Machine, digest.DefaultClaudeDir(), move.DefaultRoots(cfg.MoveRoots), key, newClient, w.transcriptStat, logger)
+		}
 	}
 	ctlCtx, stopCtl := context.WithCancel(ctx)
 	ctlDone := make(chan struct{})
 	go func() {
 		defer close(ctlDone)
+		if w.snaps != nil {
+			snapDone := make(chan struct{})
+			go func() {
+				defer close(snapDone)
+				w.snaps.loop(ctlCtx)
+			}()
+			defer func() { <-snapDone }()
+		}
 		ctl.loop(ctlCtx)
 	}()
 	defer func() {

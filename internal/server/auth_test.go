@@ -275,6 +275,8 @@ func TestAuthMatrix(t *testing.T) {
 		"GET /v1/starts/{id}": {path: "/v1/starts/" + started.ID, ok: 200},
 		"PUT /v1/moves/{id}/bundle": {fresh: func() string { return "/v1/moves/" + packed() + "/bundle" },
 			body: []byte("sealed bundle"), ok: 200, okB: 409},
+		"PUT /v1/sessions/{id}/snapshots/{machine}": {fresh: func() string { return "/v1/sessions/" + movable(e.tokA) + "/snapshots/bluebox" },
+			hdr: map[string]string{api.SnapshotHeaderID: "mv_authmatrixsnapshot0001"}, body: []byte("sealed snapshot"), ok: 204, okB: 409},
 		"GET /v1/moves/{id}/bundle": {path: "/v1/moves/" + downloadID + "/bundle", ok: 200, okB: 409},
 		"POST /v1/moves/{id}/result": {fresh: func() string { return "/v1/moves/" + unpacking() + "/result" },
 			body: api.MoveResultIn{State: api.MoveFailed, Detail: "matrix"}, ok: 200, okB: 409},

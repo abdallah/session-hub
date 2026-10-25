@@ -1305,10 +1305,17 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     return !!m && ["requested", "packing", "uploaded", "unpacking"].indexOf(m.state) !== -1;
   }
 
+  // fromSnapshot reports whether a move of s would use a snapshot: its
+  // machine is out of reach, and it left one.
+  function fromSnapshot(s) {
+    return s.controllable !== true && Array.isArray(s.snapshots) && s.snapshots.length > 0;
+  }
+
   // moveBlocked is why the session cannot move now, or "". The server
   // checks again and has the last word.
   function moveBlocked(s) {
     if (!s || s.status === "ended") return "The session has ended.";
+    if (fromSnapshot(s)) return moveOpen(s.move) ? "A move is under way." : "";
     if (s.controllable !== true) return "Not in herdr, or its machine's watcher is offline.";
     if (s.agent_state !== "idle" && s.agent_state !== "done") return "Wait until the agent is idle or done.";
     if (moveOpen(s.move)) return "A move is under way.";
@@ -1316,15 +1323,32 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   }
 
   // moveTargets is where the session can go: every other machine, ready or
-  // not with the reason, then Cloud for a GitHub remote.
-  function moveTargets(s, machines) {
+  // not with the reason, then Cloud for a GitHub remote. From a snapshot, a
+  // machine needs one sealed for it, and its label says how old it is;
+  // Cloud needs the session's machine.
+  function moveTargets(s, machines, now) {
     var out = [];
+    var snap = fromSnapshot(s);
     (machines || []).forEach(function (m) {
       if (!m || typeof m.name !== "string" || m.name === s.machine) return;
       var ok = m.move_ready === true;
-      out.push({ target: m.name, label: m.name, ok: ok, why: ok ? "" : (m.move_key ? "its watcher is offline" : "no move key yet") });
+      var why = ok ? "" : (m.move_key ? "its watcher is offline" : "no move key yet");
+      if (!snap) {
+        out.push({ target: m.name, label: m.name, ok: ok, why: why });
+        return;
+      }
+      var sn = s.snapshots.filter(function (x) { return x && x.machine === m.name; })[0];
+      if (!sn) {
+        out.push({ target: m.name, label: m.name, ok: false, why: "no snapshot for it" });
+        return;
+      }
+      var age = shortAge(sn.taken_at, now);
+      out.push({ target: m.name, label: m.name + " (snapshot, " + age + " old)", ok: ok, why: why, age: age });
     });
-    if (isGitHub(s.git_repo)) out.push({ target: "cloud", label: "Cloud", ok: true, why: "" });
+    if (isGitHub(s.git_repo)) {
+      out.push(snap ? { target: "cloud", label: "Cloud", ok: false, why: "needs " + s.machine + " online" } :
+        { target: "cloud", label: "Cloud", ok: true, why: "" });
+    }
     return out;
   }
 
@@ -1334,6 +1358,10 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       .replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g, "\ufffd");
     if (t.target === "cloud") {
       return "Hand \"" + name + "\" to a new Claude Code cloud session? Uncommitted work goes on a sessionhub branch on GitHub, and the session ends here.";
+    }
+    if (t.age) {
+      return "Move \"" + name + "\" to " + t.target + " from its snapshot taken " + t.age + " ago? Work on " + s.machine +
+        " after that is not carried. When " + s.machine + " is back, its copy ends.";
     }
     return "Move \"" + name + "\" to " + t.label + "? Its conversation, branch" + (s.git_branch ? " " + s.git_branch : "") +
       ", and uncommitted changes move; the session ends here and resumes on " + t.label + ".";
@@ -1361,7 +1389,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     switch (m.state) {
       case "requested": return { kind: "note", text: "Moving to " + to + ": waiting for " + m.source + "\u2026", url: "" };
       case "packing": return { kind: "note", text: "Moving to " + to + ": packing on " + m.source + "\u2026", url: "" };
-      case "uploaded": return { kind: "note", text: "Moving to " + to + ": waiting for " + m.target + "\u2026", url: "" };
+      case "uploaded": return { kind: "note", text: "Moving to " + to + (m.snapshot_at ? " from a snapshot" : "") + ": waiting for " + m.target + "\u2026", url: "" };
       case "unpacking": return { kind: "note", text: "Moving to " + to + ": unpacking on " + m.target + "\u2026", url: "" };
       case "done":
         if (m.target === "cloud" && MOVE_LINK.test(m.cloud_url || "")) return { kind: "link", text: "Moved to the cloud.", url: m.cloud_url };
@@ -1920,7 +1948,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
         if (menu.open && !was) loadMachines(s.id);
       });
       if (machinesList === null) menu.appendChild(el("p", machinesError ? "rc-error" : "note", machinesError || "Reading the machines\u2026"));
-      var targets = moveTargets(s, machinesList || []);
+      var targets = moveTargets(s, machinesList || [], Date.now());
       if (machinesList !== null && !targets.length) menu.appendChild(el("p", "note", "No other machine, and no GitHub remote for the cloud."));
       targets.forEach(function (t) {
         var b = el("button", "textbtn", t.label);

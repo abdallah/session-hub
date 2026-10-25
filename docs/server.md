@@ -197,6 +197,7 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `POST /v1/sessions/{id}/move` | machine, or cookie with `X-Hub-Action: move` | `202`, the `Move` | Move the session to a machine or to `cloud` (`MoveIn`). `409` with the reason when a rule fails. See [Moves](#moves). |
 | `GET /v1/moves/{id}` | read | `200`, the `Move` | One move and its state. |
 | `PUT /v1/moves/{id}/bundle` | machine (the move's source, while `packing`) | `200`, the `Move` | Upload the sealed bundle (`application/octet-stream`, at most 64 MiB; `413` above). |
+| `PUT /v1/sessions/{id}/snapshots/{machine}` | machine (the session's) | `204` | Upload a sealed snapshot for `{machine}`, ID in `X-Snapshot-Id`. See [Snapshots](#snapshots). |
 | `GET /v1/moves/{id}/bundle` | machine (the move's target, while `unpacking`) | `200`, the bundle | Download the sealed bundle. `410` when its file is gone. |
 | `POST /v1/moves/{id}/result` | machine (the source while `packing`, the target while `unpacking`; the source again once the move ended and its part closed) | `200`, the `Move` | Report `done` or `failed` (`MoveResultIn`). After the move ended, the source's result with the final state adds its `detail` as a note. |
 | `PUT /v1/machines/self/move-key` | machine | `204` | Register this machine's move public key (`MoveKeyIn`). |
@@ -911,6 +912,43 @@ upload streams to a temp file and is renamed when complete. The server
 deletes a bundle when its move ends, and any file in that directory older
 than one hour. It only ever holds ciphertext.
 
+### Snapshots
+
+Each watcher uploads a sealed snapshot of its idle sessions, so a move can
+take a session while its machine is offline.
+
+`PUT /v1/sessions/{id}/snapshots/{machine}`, machine auth, the session's own
+machine only, with header `X-Snapshot-Id: mv_…` and the sealed bundle as the
+body (at most 64 MiB) answers `204`. The bundle is sealed for `{machine}`
+under the snapshot's ID, which has the move ID shape. It replaces the
+session's snapshot for that machine. `409` for another machine's session, an
+ended one, `{machine}` itself, a machine without a move key, or an ID already
+used.
+
+`GET /v1/sessions` and `GET /v1/sessions/{id}` list them as `snapshots`:
+`machine`, `taken_at`, `size`. `GET /v1/machines` gives each machine's
+`move_public_key`, which watchers seal to.
+
+When `POST /v1/sessions/{id}/move` finds the session's watcher offline (no
+poll in 2 minutes), it uses the snapshot sealed for the target instead:
+
+- The move starts `uploaded`, with `snapshot_at` set, and the snapshot file
+  is hard-linked in as its bundle. The target's `move-in` claim carries
+  `seal_id`, the snapshot's ID, which the target opens the bundle with and
+  checks the manifest against.
+- The pane and agent-state checks are skipped: they are only what the
+  source last reported. A cloud target is refused.
+- Without a snapshot for the target, the move is refused: "the sessionhub
+  watcher on X is offline, and it left no snapshot of this session for Y".
+- The source's part stays open. When its watcher is back, it claims the
+  finish as usual; the finish claim also carries `seal_id`.
+
+Snapshots live in `snapshots/<id>.sealed` next to the database, mode `0600`.
+The once-a-minute sweep deletes a snapshot when its session ends or moves
+to another machine, when it is older than 14 days, and, oldest first, while
+all snapshots pass 1 GiB. It also deletes files without a row and partial
+uploads after 11 minutes.
+
 ### Starting sessions
 
 `POST /v1/machines/{name}/start` with `{"dir": "~/Code/app", "prompt": "..."}`
@@ -1297,7 +1335,8 @@ Text from a session is cleaned first.
 ### Limits
 
 - A request body over 64 KiB returns `413`, except a move bundle
-  (`PUT /v1/moves/{id}/bundle`), which may be 64 MiB. Uploads and downloads
+  (`PUT /v1/moves/{id}/bundle`) or a snapshot
+  (`PUT /v1/sessions/{id}/snapshots/{machine}`), which may be 64 MiB. Uploads and downloads
   of a bundle may take 10 minutes; every other request has 30 seconds.
 - A digest body over 16 KiB (`MaxDigestBytes`) returns `413`.
 - A report list (`done`, `in_flight`, `waiting_on`) holds at most 20 items of
@@ -1507,6 +1546,15 @@ Schema version 12 adds five `sessions` columns for the mod:
 
 The version 11 binary refuses a version 12 database; restoring the backup is
 the only rollback.
+
+### Snapshots table
+
+Schema version 18 adds `moves.seal_id` (the snapshot's ID for a move from a
+snapshot, else empty), `moves.snapshot_at`, and `snapshots`: `id`,
+`session_id`, `source_machine_id`, `recipient_machine_id` (each
+`ON DELETE CASCADE`), `taken_at`, and `size`, unique per session and
+recipient. Snapshot files are never rows. The version 17 binary refuses a
+version 18 database; restoring the backup is the only rollback.
 
 The source is in `internal/store` (schema, queries, status) and
 `internal/server` (HTTP, auth, config, commands).

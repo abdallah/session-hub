@@ -33,7 +33,7 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 		{"journal_mode", "wal"},
 		{"busy_timeout", "5000"},
 		{"foreign_keys", "1"},
-		{"user_version", "17"},
+		{"user_version", "18"},
 	}
 	for _, c := range checks {
 		var got string
@@ -50,7 +50,7 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 
 	cols := map[string][]string{}
 	for _, table := range []string{"machines", "sessions", "events", "reports", "control_requests", "session_digests", "login_codes", "web_sessions", "inbox_triage", "inbox_alerts",
-		"knowledge", "messages", "permission_requests", "moves", "start_requests"} {
+		"knowledge", "messages", "permission_requests", "moves", "start_requests", "snapshots"} {
 		rows, err := s.db.QueryContext(ctx, "SELECT name FROM pragma_table_info(?)", table)
 		if err != nil {
 			t.Fatal(err)
@@ -65,7 +65,8 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 	}
 	want := map[string]string{
 		"machines":            "herdr_host id last_poll last_seen move_key name ssh_host token_hash",
-		"moves":               "bundle_size cloud_url created_at detail id requested_by session_id source_closed_at source_machine_id state target target_machine_id updated_at",
+		"moves":               "bundle_size cloud_url created_at detail id requested_by seal_id session_id snapshot_at source_closed_at source_machine_id state target target_machine_id updated_at",
+		"snapshots":           "id recipient_machine_id session_id size source_machine_id taken_at",
 		"sessions":            "agent agent_state blocked_at blocked_on context_percent cwd ended_at first_prompt git_branch git_repo herdr_pane herdr_session herdr_workspace id last_prompt last_prompt_at last_seen_at live_cost_usd machine_id mod_seen_at rc_at rc_url started_at state_ts title title_source turn_ended_at usage_at",
 		"events":              "id kind payload_json session_id source ts",
 		"reports":             "done_json id in_flight_json note session_id ts waiting_on_json",

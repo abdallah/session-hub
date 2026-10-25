@@ -1,6 +1,6 @@
 # Move from a snapshot
 
-Status: draft, 2026-10-25.
+Status: built, 2026-10-25.
 
 ## Problem
 
@@ -22,9 +22,10 @@ Facts that shape the design:
   once per other machine with a move key: one copy today.
 - `Seal` binds the move ID into the key and AAD (`internal/move/seal.go:29`),
   and the target checks `Manifest.MoveID` against the claim
-  (`internal/plugin/move.go:594`). Each snapshot gets its own `mv_` ID, and
-  a move from a snapshot reuses that ID as its move ID. No crypto or
-  manifest format change.
+  (`internal/plugin/move.go:594`). Each snapshot gets its own `mv_`-shaped
+  seal ID. A move from a snapshot gets a fresh move ID and carries the seal
+  ID as `moves.seal_id` / claim `seal_id`, so a failed move can be retried
+  from the same snapshot. No crypto change.
 - A live move pushes the branch (`internal/plugin/move.go:164`). Snapshots
   do not push, since a push per turn triggers CI. Commits missing from
   `origin/<branch>` go in the bundle as `git/commits.bundle` (`git bundle`).
@@ -35,7 +36,7 @@ Facts that shape the design:
 
 - [ ] **Store: `snapshots` table**, schema bump (~0.5d). Columns:
   `id` (`mv_…`), `session_id` (cascade), `source_machine_id`,
-  `recipient_machine_id`, `taken_at`, `size`, `head`, `branch`. One row per
+  `recipient_machine_id`, `taken_at`, `size`. (`head`, `branch` dropped: unused.) One row per
   session and recipient; a new upload replaces the row and file. Files live
   in `snapshots/<id>.sealed` next to the DB, mode `0600`.
 - [ ] **Server: `PUT /v1/sessions/{id}/snapshots/{recipient}`** (~0.5d).
@@ -55,7 +56,7 @@ Facts that shape the design:
   `NewerBundleError`.
 - [ ] **Move from a snapshot** (~0.5d). In `CreateMove`, if the source
   watcher is offline and a snapshot for the target exists, create the move
-  with `id` = snapshot ID, state `uploaded`, and hard-link the snapshot file
+  with `seal_id` = snapshot ID, state `uploaded`, and hard-link the snapshot file
   to `moves/<id>.sealed`. The target claims `move-in` as today. The move
   response and row carry `from_snapshot` and `snapshot_taken_at`. Cloud
   targets stay refused when the source is offline.

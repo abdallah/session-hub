@@ -115,17 +115,21 @@ func (s *Store) SetMoveKey(ctx context.Context, machineID int64, key string) err
 
 // moveSelect reads a move and its source machine's name.
 const moveSelect = `SELECT mv.id, mv.session_id, ms.name, mv.target, mv.state, mv.detail, mv.cloud_url,
-	mv.requested_by, mv.bundle_size, mv.created_at, mv.updated_at
+	mv.requested_by, mv.bundle_size, mv.created_at, mv.updated_at, mv.snapshot_at
 FROM moves mv JOIN machines ms ON ms.id = mv.source_machine_id`
 
 func scanMove(sc scanner) (api.Move, error) {
 	var m api.Move
 	var created, updated string
+	var snapAt sql.NullString
 	if err := sc.Scan(&m.ID, &m.SessionID, &m.Source, &m.Target, &m.State, &m.Detail, &m.CloudURL,
-		&m.By, &m.BundleSize, &created, &updated); err != nil {
+		&m.By, &m.BundleSize, &created, &updated, &snapAt); err != nil {
 		return api.Move{}, err
 	}
 	var err error
+	if m.SnapshotAt, err = parseNullTS(snapAt); err != nil {
+		return api.Move{}, err
+	}
 	if m.CreatedAt, err = parseTS(created); err != nil {
 		return api.Move{}, err
 	}
@@ -137,8 +141,8 @@ func scanMove(sc scanner) (api.Move, error) {
 
 // nullMove is a moves row read through a LEFT JOIN.
 type nullMove struct {
-	id, target, state, detail, cloudURL, by, created, updated, source sql.NullString
-	size                                                              sql.NullInt64
+	id, target, state, detail, cloudURL, by, created, updated, source, snapshotAt sql.NullString
+	size                                                                          sql.NullInt64
 }
 
 // move returns the row as a move, or nil when the join found none.
@@ -153,6 +157,9 @@ func (n nullMove) move(sessionID string) (*api.Move, error) {
 		return nil, err
 	}
 	if m.UpdatedAt, err = parseTS(n.updated.String); err != nil {
+		return nil, err
+	}
+	if m.SnapshotAt, err = parseNullTS(n.snapshotAt); err != nil {
 		return nil, err
 	}
 	return &m, nil
@@ -286,9 +293,18 @@ func (s *Store) CreateMove(ctx context.Context, sessionID, target, by string) (a
 	if err != nil {
 		return api.Move{}, err
 	}
+	// With the source's watcher offline, the move uses a snapshot instead,
+	// and the pane and agent state are only what the source last reported.
+	online, err := polled(srcPoll, now)
+	if err != nil {
+		return api.Move{}, err
+	}
 	switch {
 	case ended.Valid:
 		return api.Move{}, refusef("session %s has ended", sessionID)
+	case !online && target == api.MoveCloud:
+		return api.Move{}, refusef("the sessionhub watcher on %q is offline", srcName)
+	case !online:
 	case pane == "":
 		return api.Move{}, refusef("session %s is not in herdr", sessionID)
 	case agentState != "idle" && agentState != "done":
@@ -297,11 +313,6 @@ func (s *Store) CreateMove(ctx context.Context, sessionID, target, by string) (a
 			state = "in an unknown state"
 		}
 		return api.Move{}, refusef("the agent is %s; a session moves only when it is idle or done", state)
-	}
-	if ok, err := polled(srcPoll, now); err != nil {
-		return api.Move{}, err
-	} else if !ok {
-		return api.Move{}, refusef("the sessionhub watcher on %q is offline", srcName)
 	}
 	if srcKey == "" {
 		return api.Move{}, refusef("machine %q has no move key yet; run sessionhub install-plugin there", srcName)
@@ -345,16 +356,38 @@ func (s *Store) CreateMove(ctx context.Context, sessionID, target, by string) (a
 		return api.Move{}, err
 	}
 	nowS := formatTS(now)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO moves (id, session_id, source_machine_id, target, target_machine_id,
-		state, created_at, updated_at, requested_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, sessionID, srcID, target, targetID, api.MoveRequested, nowS, nowS, by); err != nil {
+	mv := api.Move{ID: id, SessionID: sessionID, Source: srcName, Target: target, State: api.MoveRequested,
+		By: by, CreatedAt: now, UpdatedAt: now}
+	if online {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO moves (id, session_id, source_machine_id, target, target_machine_id,
+			state, created_at, updated_at, requested_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, sessionID, srcID, target, targetID, api.MoveRequested, nowS, nowS, by); err != nil {
+			return api.Move{}, err
+		}
+		return mv, tx.Commit()
+	}
+	// From a snapshot: the move starts uploaded, for the target to claim.
+	// The source's part stays open, so it gets the finish when it is back.
+	sealID, taken, size, ok, err := snapshotFor(ctx, tx, sessionID, srcID, targetID.Int64)
+	if err != nil {
 		return api.Move{}, err
+	}
+	if !ok || s.linkSnapshot == nil {
+		return api.Move{}, refusef("the sessionhub watcher on %q is offline, and it left no snapshot of this session for %q", srcName, target)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO moves (id, session_id, source_machine_id, target, target_machine_id,
+		state, created_at, updated_at, requested_by, bundle_size, seal_id, snapshot_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, sessionID, srcID, target, targetID, api.MoveUploaded, nowS, nowS, by, size, sealID, formatTS(taken)); err != nil {
+		return api.Move{}, err
+	}
+	if err := s.linkSnapshot(id, sealID); err != nil {
+		return api.Move{}, fmt.Errorf("put snapshot %s in place: %w", sealID, err)
 	}
 	if err := tx.Commit(); err != nil {
 		return api.Move{}, err
 	}
-	return api.Move{ID: id, SessionID: sessionID, Source: srcName, Target: target, State: api.MoveRequested,
-		By: by, CreatedAt: now, UpdatedAt: now}, nil
+	mv.State, mv.BundleSize, mv.SnapshotAt = api.MoveUploaded, size, &taken
+	return mv, nil
 }
 
 // ClaimMove hands machineID its next move step, oldest first: a requested
@@ -417,6 +450,10 @@ func (s *Store) ClaimMove(ctx context.Context, machineID int64) (api.ControlClai
 	if err != nil {
 		return api.ControlClaim{}, false, err
 	}
+	var sealID string
+	if err := s.db.QueryRowContext(ctx, `SELECT seal_id FROM moves WHERE id = ?`, id).Scan(&sealID); err != nil {
+		return api.ControlClaim{}, false, err
+	}
 	machine := mv.Source
 	if action == api.ActionMoveIn {
 		machine = mv.Target
@@ -424,7 +461,7 @@ func (s *Store) ClaimMove(ctx context.Context, machineID int64) (api.ControlClai
 	req := api.ControlRequest{ID: mv.ID, SessionID: mv.SessionID, Machine: machine, Action: action, State: api.ControlClaimed,
 		RequestedBy: mv.By, CreatedAt: mv.CreatedAt, ExpiresAt: mv.UpdatedAt.Add(MoveStepTTL), ClaimedAt: &now}
 	return api.ControlClaim{Request: req, Session: sess, Move: &api.MoveClaim{ID: mv.ID, Source: mv.Source,
-		Target: mv.Target, State: mv.State, PeerKey: peerKey, Detail: mv.Detail}}, true, nil
+		Target: mv.Target, State: mv.State, PeerKey: peerKey, Detail: mv.Detail, SealID: sealID}}, true, nil
 }
 
 // moveRow is what the step checks read.

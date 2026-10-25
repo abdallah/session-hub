@@ -42,6 +42,8 @@ type Server struct {
 	knowledgeProposed func(api.Knowledge)
 	// moveDir holds sealed move bundles; "" turns the bundle routes off.
 	moveDir string
+	// snapshotDir holds sealed snapshots; "" turns the snapshot route off.
+	snapshotDir string
 }
 
 // New returns a Server. publicURL is the server's public_url.

@@ -273,6 +273,7 @@ func newMoveHub(t *testing.T, order *orderLog) *moveHub {
 	}
 	s := server.New(st, "https://sessionhub.example.test", nil)
 	s.SetMoveDir(h.moveDir)
+	s.SetSnapshotDir(filepath.Join(dir, "snapshots"))
 	handler := s.Handler()
 	h.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/bundle") {

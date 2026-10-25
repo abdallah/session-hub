@@ -48,11 +48,26 @@ func (c *Client) PostMoveResult(ctx context.Context, id string, in api.MoveResul
 
 // PutMoveBundle streams a sealed bundle of size bytes from r.
 func (c *Client) PutMoveBundle(ctx context.Context, id string, r io.Reader, size int64) error {
+	return c.putSealed(ctx, "/v1/moves/"+url.PathEscape(id)+"/bundle", nil, r, size)
+}
+
+// PutSnapshot uploads snapshot id of session sessionID, size bytes, sealed
+// for machine.
+func (c *Client) PutSnapshot(ctx context.Context, sessionID, machine, id string, r io.Reader, size int64) error {
+	return c.putSealed(ctx, "/v1/sessions/"+url.PathEscape(sessionID)+"/snapshots/"+url.PathEscape(machine),
+		map[string]string{api.SnapshotHeaderID: id}, r, size)
+}
+
+// putSealed streams a sealed bundle of size bytes to path.
+func (c *Client) putSealed(ctx context.Context, path string, hdr map[string]string, r io.Reader, size int64) error {
 	ctx, cancel := context.WithTimeout(ctx, BundleTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.base+"/v1/moves/"+url.PathEscape(id)+"/bundle", r)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.base+path, r)
 	if err != nil {
 		return err
+	}
+	for k, v := range hdr {
+		req.Header.Set(k, v)
 	}
 	req.ContentLength = size
 	req.Header.Set("Content-Type", "application/octet-stream")

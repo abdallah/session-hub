@@ -183,7 +183,7 @@ func TestPrepareCloneApplyUndo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	co, err := PrepareClone(ctx, clone, "main", b.Manifest.Head)
+	co, err := PrepareClone(ctx, clone, "main", b.Manifest.Head, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestPrepareCloneUndoDeletesCreatedBranch(t *testing.T) {
 	gitT(t, work, "add", "f.txt")
 	gitT(t, work, "commit", "-qm", "feature")
 	gitT(t, work, "push", "-q", "-u", "origin", "feature/x")
-	co, err := PrepareClone(ctx, clone, "feature/x", gitT(t, work, "rev-parse", "HEAD"))
+	co, err := PrepareClone(ctx, clone, "feature/x", gitT(t, work, "rev-parse", "HEAD"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func TestApplyRefusesLinkedFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	co, err := PrepareClone(ctx, clone, "main", b.Manifest.Head)
+	co, err := PrepareClone(ctx, clone, "main", b.Manifest.Head, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,13 +311,13 @@ func TestPrepareCloneFastForwardOnly(t *testing.T) {
 	gitT(t, clone, "commit", "-qm", "only here")
 	localMain := gitT(t, clone, "rev-parse", "main")
 	gitT(t, clone, "checkout", "-q", "other")
-	if _, err := PrepareClone(ctx, clone, "main", gitT(t, work, "rev-parse", "HEAD")); err == nil || !strings.Contains(err.Error(), "fast-forward") {
+	if _, err := PrepareClone(ctx, clone, "main", gitT(t, work, "rev-parse", "HEAD"), nil); err == nil || !strings.Contains(err.Error(), "fast-forward") {
 		t.Errorf("diverged: %v", err)
 	}
 	if br := gitT(t, clone, "symbolic-ref", "--short", "HEAD"); br != "other" || gitT(t, clone, "rev-parse", "main") != localMain {
 		t.Errorf("a refused checkout left the clone on %s, main at %s", br, gitT(t, clone, "rev-parse", "main"))
 	}
-	if _, err := PrepareClone(ctx, clone, "main", strings.Repeat("ab", 20)); err == nil || !strings.Contains(err.Error(), "not on origin") {
+	if _, err := PrepareClone(ctx, clone, "main", strings.Repeat("ab", 20), nil); err == nil || !strings.Contains(err.Error(), "not on origin") {
 		t.Errorf("unknown commit: %v", err)
 	}
 }
@@ -343,7 +343,7 @@ func TestPrepareCloneReportsFailedRestore(t *testing.T) {
 	head := gitT(t, work, "rev-parse", "HEAD")
 	hook := "#!/bin/sh\n[ \"$1\" = prepared ] || exit 0\nif grep -q '^[0-9a-f]* 0* refs/heads/feature/x$'; then exit 1; fi\nexit 0\n"
 	writeFile(t, filepath.Join(clone, ".git", "hooks", "reference-transaction"), hook, 0o755)
-	_, err := PrepareClone(ctx, clone, "feature/x", head)
+	_, err := PrepareClone(ctx, clone, "feature/x", head, nil)
 	if err == nil || !strings.Contains(err.Error(), "cannot fast-forward") || !strings.Contains(err.Error(), "putting the clone back failed") {
 		t.Errorf("PrepareClone: %v", err)
 	}
@@ -362,5 +362,39 @@ func TestCurrentBranch(t *testing.T) {
 	}
 	if _, err := CurrentBranch(ctx, t.TempDir()); err == nil {
 		t.Error("not a repository: no error")
+	}
+}
+
+// A commit the source never pushed travels in git/commits.bundle, and
+// PrepareClone checks it out without origin having it.
+func TestPrepareCloneUnpushedCommits(t *testing.T) {
+	ctx := context.Background()
+	origin, work := dirtyRepo(t)
+	clone := moved(t, origin)
+	writeFile(t, filepath.Join(work, "c.txt"), "local only\n", 0o644)
+	gitT(t, work, "add", "c.txt")
+	gitT(t, work, "commit", "-qm", "not pushed", "--", "c.txt")
+	data, _ := buildFor(t, work, newClaudeDir(t, testSessionID))
+	b, err := Extract(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Commits) == 0 {
+		t.Fatal("no commits bundle for an unpushed commit")
+	}
+	if _, err := PrepareClone(ctx, clone, "main", b.Manifest.Head, nil); err == nil || !strings.Contains(err.Error(), "not on origin") {
+		t.Fatalf("without the bundle: %v", err)
+	}
+	if _, err := PrepareClone(ctx, clone, "main", b.Manifest.Head, b.Commits); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitT(t, clone, "rev-parse", "HEAD"); got != b.Manifest.Head {
+		t.Errorf("HEAD %s, want %s", got, b.Manifest.Head)
+	}
+	// Everything pushed: no bundle.
+	gitT(t, work, "push", "-q")
+	data, _ = buildFor(t, work, newClaudeDir(t, testSessionID))
+	if b, err = Extract(data); err != nil || b.Commits != nil {
+		t.Errorf("after the push: %d bytes, %v", len(b.Commits), err)
 	}
 }

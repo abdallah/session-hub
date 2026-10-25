@@ -35,11 +35,16 @@ var maxBundleBytes int64 = api.MaxSealedBundle
 // the database; without one, the bundle routes answer 503.
 func (s *Server) SetMoveDir(dir string) { s.moveDir = dir }
 
-// isBundleUpload reports whether r is PUT /v1/moves/{id}/bundle, the one
-// request whose body may pass MaxBodyBytes.
+// isBundleUpload reports whether r is PUT /v1/moves/{id}/bundle or PUT
+// /v1/sessions/{id}/snapshots/{machine}, the requests whose body may pass
+// MaxBodyBytes.
 func isBundleUpload(r *http.Request) bool {
 	if r.Method != http.MethodPut {
 		return false
+	}
+	if rest, ok := strings.CutPrefix(r.URL.Path, "/v1/sessions/"); ok {
+		parts := strings.Split(rest, "/")
+		return len(parts) == 3 && parts[0] != "" && parts[1] == "snapshots" && parts[2] != ""
 	}
 	rest, ok := strings.CutPrefix(r.URL.Path, "/v1/moves/")
 	id, tail, _ := strings.Cut(rest, "/")
@@ -123,6 +128,7 @@ func (s *Server) runMoveSweeper(ctx context.Context) {
 			return
 		case <-t.C:
 			s.sweepMoves(ctx)
+			s.sweepSnapshots(ctx)
 		}
 	}
 }
@@ -144,6 +150,9 @@ func (s *Server) postMove(w http.ResponseWriter, r *http.Request, p principal) {
 		return
 	}
 	s.control.notify(mv.Source)
+	if mv.SnapshotAt != nil {
+		s.control.notify(mv.Target) // a move from a snapshot is uploaded already
+	}
 	writeJSON(w, http.StatusAccepted, mv)
 }
 
@@ -193,46 +202,11 @@ func (s *Server) putMoveBundle(w http.ResponseWriter, r *http.Request, p princip
 		s.storeError(w, err)
 		return
 	}
-	rc := http.NewResponseController(w)
-	_ = rc.SetReadDeadline(time.Now().Add(bundleIOFor))
-	_ = rc.SetWriteDeadline(time.Now().Add(bundleIOFor))
-	if err := os.MkdirAll(s.moveDir, 0o700); err != nil {
-		s.internalError(w, err)
+	tmp, n, ok := s.receiveSealed(w, r, s.moveDir, id)
+	if !ok {
 		return
 	}
-	if err := os.Chmod(s.moveDir, 0o700); err != nil { // fix a directory that already existed
-		s.internalError(w, err)
-		return
-	}
-	f, err := os.CreateTemp(s.moveDir, id+".*.tmp")
-	if err != nil {
-		s.internalError(w, err)
-		return
-	}
-	tmp := f.Name()
 	defer os.Remove(tmp) // the final name is a hard link, so this never removes the bundle
-	body := &errRecorder{r: r.Body}
-	n, err := io.Copy(f, body)
-	cerr := f.Close()
-	var tooBig *http.MaxBytesError
-	switch {
-	case errors.As(body.err, &tooBig):
-		writeError(w, http.StatusRequestEntityTooLarge, "the bundle is larger than "+strconv.FormatInt(maxBundleBytes, 10)+" bytes")
-		return
-	case body.err != nil:
-		s.log.Printf("moves: read bundle %s: %v", id, body.err)
-		writeError(w, http.StatusBadRequest, "the upload was cut off")
-		return
-	case err != nil:
-		s.internalError(w, err)
-		return
-	case cerr != nil:
-		s.internalError(w, cerr)
-		return
-	case n == 0:
-		writeError(w, http.StatusBadRequest, "the bundle is empty")
-		return
-	}
 	// Link, not rename: a concurrent upload for the same move must not
 	// replace a bundle that is already in place.
 	if err := os.Link(tmp, s.bundlePath(id)); err != nil {
@@ -251,6 +225,50 @@ func (s *Server) putMoveBundle(w http.ResponseWriter, r *http.Request, p princip
 	}
 	s.control.notify(mv.Target)
 	writeJSON(w, http.StatusOK, mv)
+}
+
+// receiveSealed streams r's body, a sealed bundle, into a temp file in dir
+// named after id, and returns its path and size. On failure it writes the
+// answer, removes the file, and returns ok false.
+func (s *Server) receiveSealed(w http.ResponseWriter, r *http.Request, dir, id string) (tmp string, n int64, ok bool) {
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Now().Add(bundleIOFor))
+	_ = rc.SetWriteDeadline(time.Now().Add(bundleIOFor))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		s.internalError(w, err)
+		return "", 0, false
+	}
+	if err := os.Chmod(dir, 0o700); err != nil { // fix a directory that already existed
+		s.internalError(w, err)
+		return "", 0, false
+	}
+	f, err := os.CreateTemp(dir, id+".*.tmp")
+	if err != nil {
+		s.internalError(w, err)
+		return "", 0, false
+	}
+	tmp = f.Name()
+	body := &errRecorder{r: r.Body}
+	n, err = io.Copy(f, body)
+	cerr := f.Close()
+	var tooBig *http.MaxBytesError
+	switch {
+	case errors.As(body.err, &tooBig):
+		writeError(w, http.StatusRequestEntityTooLarge, "the bundle is larger than "+strconv.FormatInt(maxBundleBytes, 10)+" bytes")
+	case body.err != nil:
+		s.log.Printf("moves: read bundle %s: %v", id, body.err)
+		writeError(w, http.StatusBadRequest, "the upload was cut off")
+	case err != nil:
+		s.internalError(w, err)
+	case cerr != nil:
+		s.internalError(w, cerr)
+	case n == 0:
+		writeError(w, http.StatusBadRequest, "the bundle is empty")
+	default:
+		return tmp, n, true
+	}
+	os.Remove(tmp)
+	return "", 0, false
 }
 
 // getMoveBundle is GET /v1/moves/{id}/bundle: the target streams the

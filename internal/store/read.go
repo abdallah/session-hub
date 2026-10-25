@@ -51,7 +51,7 @@ const sessionSelect = `SELECT s.id, s.agent, m.name, m.ssh_host, s.cwd, s.git_re
 	m.last_poll, s.rc_url, s.rc_at,
 	c.id, c.action, c.state, c.requested_by, c.created_at, c.expires_at, c.claimed_at, c.finished_at, c.url, c.detail,
 	s.last_prompt, s.last_prompt_at, dg.body,
-	mv.id, mv.target, mv.state, mv.detail, mv.cloud_url, mv.requested_by, mv.bundle_size, mv.created_at, mv.updated_at, mvs.name,
+	mv.id, mv.target, mv.state, mv.detail, mv.cloud_url, mv.requested_by, mv.bundle_size, mv.created_at, mv.updated_at, mvs.name, mv.snapshot_at,
 	s.blocked_on, s.context_percent, s.live_cost_usd, s.usage_at, s.mod_seen_at
 FROM sessions s
 JOIN machines m ON m.id = s.machine_id
@@ -79,7 +79,7 @@ func (s *Store) scanSession(sc scanner, now time.Time) (api.Session, error) {
 		&lastPoll, &x.RemoteControlURL, &rcAt,
 		&rc.id, &rc.action, &rc.state, &rc.requestedBy, &rc.created, &rc.expires, &rc.claimed, &rc.finished, &rc.url, &rc.detail,
 		&x.LastPrompt, &lastPromptAt, &digestBody,
-		&mv.id, &mv.target, &mv.state, &mv.detail, &mv.cloudURL, &mv.by, &mv.size, &mv.created, &mv.updated, &mv.source,
+		&mv.id, &mv.target, &mv.state, &mv.detail, &mv.cloudURL, &mv.by, &mv.size, &mv.created, &mv.updated, &mv.source, &mv.snapshotAt,
 		&x.BlockedOn, &contextPercent, &liveCost, &usageAt, &modSeen)
 	if err != nil {
 		return x, err
@@ -206,8 +206,13 @@ func (s *Store) ListSessions(ctx context.Context, f ListFilter) ([]api.Session, 
 	if err != nil {
 		return nil, err
 	}
+	snaps, err := s.sessionSnapshots(ctx, "")
+	if err != nil {
+		return nil, err
+	}
 	for i := range out {
 		out[i].LastNote = notes[out[i].ID]
+		out[i].Snapshots = snaps[out[i].ID]
 	}
 	return out, nil
 }
@@ -222,7 +227,12 @@ func (s *Store) GetSession(ctx context.Context, id string) (api.Session, error) 
 		return x, err
 	}
 	notes, err := s.lastNotes(ctx, id)
+	if err != nil {
+		return x, err
+	}
 	x.LastNote = notes[id]
+	snaps, err := s.sessionSnapshots(ctx, id)
+	x.Snapshots = snaps[id]
 	return x, err
 }
 

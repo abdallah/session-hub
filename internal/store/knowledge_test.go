@@ -16,6 +16,7 @@ import (
 // left it.
 func rollbackV17(t *testing.T, s *Store) {
 	t.Helper()
+	rollbackV18(t, s)
 	for _, q := range []string{
 		`CREATE TABLE instructions (
 			id         INTEGER PRIMARY KEY,

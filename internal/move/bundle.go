@@ -24,8 +24,9 @@ import (
 )
 
 // manifestVersion is the bundle format. Version 1 was an uncompressed tar;
-// version 2 is a zstd-compressed tar.
-const manifestVersion = 2
+// version 2 is a zstd-compressed tar; version 3 may add git/commits.bundle.
+// Extract reads versions 2 and 3.
+const manifestVersion = 3
 
 // zstdMagic starts every zstd frame.
 var zstdMagic = []byte{0x28, 0xb5, 0x2f, 0xfd}
@@ -47,6 +48,7 @@ const (
 	entryManifest  = "manifest.json"
 	entryPatch     = "git/changes.patch"
 	entryUntracked = "git/untracked.tar"
+	entryCommits   = "git/commits.bundle"
 )
 
 var (
@@ -104,6 +106,9 @@ type Bundle struct {
 	History    []File
 	Patch      []byte
 	Untracked  []File
+	// Commits is a git bundle of the commits HEAD has that origin lacked on
+	// the source, or nil.
+	Commits []byte
 }
 
 // BuildInput is what Build packs.
@@ -222,6 +227,14 @@ func Build(ctx context.Context, in BuildInput) ([]byte, Manifest, error) {
 	if total += int64(len(patch)); total > budget {
 		return nil, m, tooBig("files", total, maxBundle, all)
 	}
+	commits, err := unpushedCommits(ctx, in.Repo.Root)
+	if err != nil {
+		return nil, m, err
+	}
+	all = append(all, sized{entryCommits, int64(len(commits))})
+	if total += int64(len(commits)); total > budget {
+		return nil, m, tooBig("files", total, maxBundle, all)
+	}
 	m.Skipped = append(append(m.Skipped, secret...), skipped...)
 
 	// Read, allowing a file to grow only into what is left of the budget.
@@ -247,6 +260,9 @@ func Build(ctx context.Context, in BuildInput) ([]byte, Manifest, error) {
 		add(c.name, data)
 	}
 	add(entryPatch, patch)
+	if len(commits) > 0 {
+		add(entryCommits, commits)
+	}
 	var files []File
 	for _, c := range untracked {
 		data, err := read(c, maxUntrackedFile)
@@ -556,6 +572,30 @@ func trackedChanges(ctx context.Context, root string, env []string) ([]byte, []s
 	return patch, secret, err
 }
 
+// unpushedCommits is a git bundle of the commits HEAD has that no
+// origin branch has here, or nil when there are none. A snapshot carries
+// them instead of pushing.
+func unpushedCommits(ctx context.Context, root string) ([]byte, error) {
+	n, err := git(ctx, root, "rev-list", "--count", "HEAD", "--not", "--remotes=origin")
+	if err != nil {
+		return nil, err
+	}
+	if n == "0" {
+		return nil, nil
+	}
+	f, err := os.CreateTemp("", "sessionhub-commits-*.bundle")
+	if err != nil {
+		return nil, err
+	}
+	name := f.Name()
+	f.Close()
+	defer os.Remove(name)
+	if _, err := gitRaw(ctx, root, gitOpts{}, "bundle", "create", "-q", name, "HEAD", "--not", "--remotes=origin"); err != nil {
+		return nil, fmt.Errorf("bundle unpushed commits: %w", err)
+	}
+	return os.ReadFile(name)
+}
+
 // tarFiles packs untracked files with mode 0755 or 0644.
 func tarFiles(files []File, now time.Time) ([]byte, error) {
 	var buf bytes.Buffer
@@ -710,7 +750,7 @@ func extractTar(data []byte) (*Bundle, error) {
 			switch v := b.Manifest.V; {
 			case v > manifestVersion:
 				return nil, &NewerBundleError{v}
-			case v < manifestVersion:
+			case v < 2:
 				return nil, ErrOldBundle
 			}
 			if err := checkManifest(b.Manifest); err != nil {
@@ -731,6 +771,8 @@ func extractTar(data []byte) (*Bundle, error) {
 			b.Patch, havePatch = body, true
 		case name == entryUntracked:
 			untracked, haveUntracked = body, true
+		case name == entryCommits && b.Manifest.V >= 3:
+			b.Commits = body
 		default:
 			return nil, fmt.Errorf("bundle entry %q is not part of a move", name)
 		}

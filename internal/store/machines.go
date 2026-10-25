@@ -163,7 +163,7 @@ func (s *Store) ListMachines(ctx context.Context) ([]api.Machine, error) {
 			return nil, err
 		}
 		if raw, err := api.ParseMoveKey(key); err == nil {
-			m.MoveKey = api.MoveKeyFingerprint(raw)
+			m.MoveKey, m.MovePublicKey = api.MoveKeyFingerprint(raw), key
 		}
 		ok, err := polled(poll, now)
 		if err != nil {

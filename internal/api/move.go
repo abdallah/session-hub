@@ -79,6 +79,9 @@ type Move struct {
 	BundleSize int64     `json:"bundle_size"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+	// SnapshotAt is when the snapshot a move from a snapshot carries was
+	// taken; nil for a move the source packs.
+	SnapshotAt *time.Time `json:"snapshot_at,omitempty"`
 }
 
 // MoveClaim is the move part of a control claim. State is packing (pack and
@@ -93,6 +96,9 @@ type MoveClaim struct {
 	State   string `json:"state"`
 	PeerKey string `json:"peer_key,omitempty"`
 	Detail  string `json:"detail,omitempty"`
+	// SealID is the ID the bundle is sealed under and its manifest names:
+	// the snapshot's ID for a move from a snapshot, else "" (the move ID).
+	SealID string `json:"seal_id,omitempty"`
 }
 
 // MoveOpen reports whether a move in state is still under way.
@@ -131,4 +137,20 @@ func MoveFailedText(m *Move) string {
 		return ""
 	}
 	return "Move to " + m.Target + " failed: " + m.Detail
+}
+
+// SnapshotHeaderID is the header of PUT /v1/sessions/{id}/snapshots/{machine}
+// that carries the snapshot's ID: the ID the bundle is sealed under, in the
+// move ID shape.
+const SnapshotHeaderID = "X-Snapshot-Id"
+
+// SnapshotTTL is how long the server keeps a snapshot.
+const SnapshotTTL = 14 * 24 * time.Hour
+
+// Snapshot is the newest sealed snapshot of a session for one machine: a
+// move to that machine can use it while the session's machine is offline.
+type Snapshot struct {
+	Machine string    `json:"machine"`
+	TakenAt time.Time `json:"taken_at"`
+	Size    int64     `json:"size"`
 }

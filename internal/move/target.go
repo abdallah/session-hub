@@ -183,12 +183,13 @@ func CurrentBranch(ctx context.Context, root string) (string, error) {
 	return out, err
 }
 
-// PrepareClone fetches origin and checks out branch at head: the local
+// PrepareClone fetches origin, adds the commits of the git bundle commits
+// (nil for none), and checks out branch at head: the local
 // branch when there is one, else a tracking branch from origin, else a new
 // branch at head. It moves the branch by fast-forward only, and fails, back
 // on the previous branch with the moved branch as it was, when the branch
 // here has commits head lacks.
-func PrepareClone(ctx context.Context, root, branch, head string) (*Checkout, error) {
+func PrepareClone(ctx context.Context, root, branch, head string, commits []byte) (*Checkout, error) {
 	c := &Checkout{root: root, branch: branch}
 	prev, err := git(ctx, root, "symbolic-ref", "--short", "-q", "HEAD")
 	if err != nil || prev == "" {
@@ -202,6 +203,11 @@ func PrepareClone(ctx context.Context, root, branch, head string) (*Checkout, er
 		gitOK(ctx, root, "config", "--get", "branch."+branch+".merge")
 	if _, err := gitRaw(ctx, root, gitOpts{timeout: gitNetTimeout}, "fetch", "-q", "origin"); err != nil {
 		return nil, err
+	}
+	if len(commits) > 0 {
+		if err := unbundle(ctx, root, commits); err != nil {
+			return nil, fmt.Errorf("unpushed commits: %w", err)
+		}
 	}
 	if _, err := git(ctx, root, "cat-file", "-e", head+"^{commit}"); err != nil {
 		return nil, fmt.Errorf("commit %.12s is not on origin; push it from the source machine", head)
@@ -489,4 +495,24 @@ func RemoveFiles(paths []string) {
 	for _, d := range dirs {
 		os.Remove(d) // only succeeds when empty
 	}
+}
+
+// unbundle adds the objects of git bundle data to the repository at root,
+// without changing a ref.
+func unbundle(ctx context.Context, root string, data []byte) error {
+	f, err := os.CreateTemp("", "sessionhub-commits-*.bundle")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	defer os.Remove(name)
+	_, werr := f.Write(data)
+	if err := f.Close(); werr == nil {
+		werr = err
+	}
+	if werr != nil {
+		return werr
+	}
+	_, err = gitRaw(ctx, root, gitOpts{}, "bundle", "unbundle", name)
+	return err
 }

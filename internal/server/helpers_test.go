@@ -114,6 +114,7 @@ func newEnv(t *testing.T) *env {
 	s := New(st, testPublicURL, log.New(logBuf, "", 0))
 	moveDir := filepath.Join(t.TempDir(), "moves")
 	s.SetMoveDir(moveDir)
+	s.SetSnapshotDir(filepath.Join(filepath.Dir(moveDir), "snapshots"))
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
 	e := &env{t: t, st: st, clock: clock, srv: srv, server: s, log: logBuf, tokA: tokA, tokB: tokB, dbPath: dbPath, moveDir: moveDir}

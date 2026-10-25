@@ -416,6 +416,9 @@ func (m *mover) finish(ctx context.Context, cl *client.Client, claim api.Control
 	case mv.State == api.MoveDone && mv.Target == api.MoveCloud:
 		m.log.Printf("move: %s: done in the cloud; the transcript stays here", mv.ID)
 	case mv.State == api.MoveDone:
+		if mv.SealID != "" {
+			m.endLeftover(ctx, cl, s, mv)
+		}
 		var err error
 		for try := 1; ; try++ {
 			if err = move.Archive(m.claudeDir, m.stateDir, s.ID, mv.ID, m.now()); err == nil || try >= m.archiveTries {
@@ -436,6 +439,36 @@ func (m *mover) finish(ctx context.Context, cl *client.Client, claim api.Control
 	default:
 		m.log.Printf("move: %s: %s (%s); restarting session %s", mv.ID, mv.State, termtext.Clean(mv.Detail, 200), s.ID)
 		m.restart(ctx, cl, s, mv.ID, mv.State)
+	}
+}
+
+// endLeftover ends Claude in a pane here that still runs session s after
+// move mv, from a snapshot, took it elsewhere: this machine was offline
+// during the move, so nothing ended it. An /exit that fails is added to the
+// move's detail.
+func (m *mover) endLeftover(ctx context.Context, cl *client.Client, s api.Session, mv *api.MoveClaim) {
+	h, err := herdr.Dial(m.socket)
+	if err != nil {
+		return // no herdr here, so no pane runs it
+	}
+	snap, err := h.Snapshot()
+	h.Close()
+	if err != nil {
+		m.log.Printf("move: %s: read herdr snapshot: %s", mv.ID, cleanErr(err))
+		return
+	}
+	for _, p := range snap.Panes {
+		if p.Agent == "" || p.SessionID() != s.ID {
+			continue
+		}
+		if err := m.endSession(ctx, p.PaneID, s.ID, true); err != nil {
+			note := fmt.Sprintf("Claude still runs session %s in pane %s on %s; end it there: %s",
+				s.ID, termtext.Clean(p.PaneID, 64), termtext.Clean(mv.Source, 64), cleanErr(err))
+			m.log.Printf("move: %s: %s", mv.ID, note)
+			m.postResult(ctx, cl, mv.ID, api.MoveResultIn{State: api.MoveDone, Detail: note})
+			continue
+		}
+		m.log.Printf("move: %s: ended the copy of session %s left in pane %s", mv.ID, s.ID, termtext.Clean(p.PaneID, 64))
 	}
 }
 
@@ -572,7 +605,13 @@ func (m *mover) moveIn(ctx context.Context, cl *client.Client, claim api.Control
 		fail(stepf("open", "the source's key: %v", err))
 		return
 	}
-	plain, err := move.Open(m.key, peer, mv.ID, buf.Bytes())
+	// A move from a snapshot carries the bundle the source sealed under the
+	// snapshot's ID.
+	sealID := mv.SealID
+	if sealID == "" {
+		sealID = mv.ID
+	}
+	plain, err := move.Open(m.key, peer, sealID, buf.Bytes())
 	if err != nil {
 		fail(&stepError{"open", err})
 		return
@@ -591,7 +630,7 @@ func (m *mover) moveIn(ctx context.Context, cl *client.Client, claim api.Control
 		return
 	}
 	man := b.Manifest
-	if man.MoveID != mv.ID || man.SessionID != claim.Session.ID || man.SourceMachine != mv.Source {
+	if man.MoveID != sealID || man.SessionID != claim.Session.ID || man.SourceMachine != mv.Source {
 		fail(stepf("open", "the bundle's manifest does not match the move"))
 		return
 	}
@@ -629,7 +668,7 @@ func (m *mover) moveIn(ctx context.Context, cl *client.Client, claim api.Control
 		fail(&stepError{"check clone", err})
 		return
 	}
-	co, err := move.PrepareClone(ctx, clone, man.Branch, man.Head)
+	co, err := move.PrepareClone(ctx, clone, man.Branch, man.Head, b.Commits)
 	if err != nil {
 		fail(&stepError{"checkout", err})
 		return

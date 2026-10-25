@@ -85,7 +85,7 @@ func TestBuildAndExtract(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := b.Manifest
-	if m.V != 2 || m.MoveID != "mv_AAAAAAAAAAAAAAAAAAAAAA" || m.SessionID != testSessionID || m.SourceMachine != "bluebox" ||
+	if m.V != 3 || m.MoveID != "mv_AAAAAAAAAAAAAAAAAAAAAA" || m.SessionID != testSessionID || m.SourceMachine != "bluebox" ||
 		m.RelPath != "sub" || m.RootRel != "work" || m.Branch != "main" || m.Head != gitT(t, work, "rev-parse", "HEAD") ||
 		m.Remote != origin || m.ClaudeVersion != "2.1.285" || !m.Created.Equal(bundleNow) || m.SourceCWD != filepath.Join(work, "sub") {
 		t.Errorf("manifest %+v", m)
@@ -486,9 +486,12 @@ func TestExtractVersions(t *testing.T) {
 	if _, err := Extract(withV(1)); !errors.Is(err, ErrOldBundle) {
 		t.Errorf("manifest version 1: %v, want ErrOldBundle", err)
 	}
+	if _, err := Extract(withV(2)); err != nil {
+		t.Errorf("manifest version 2: %v", err)
+	}
 	var newer *NewerBundleError
-	if _, err := Extract(withV(3)); !errors.As(err, &newer) || newer.V != 3 {
-		t.Errorf("manifest version 3: %v, want a NewerBundleError", err)
+	if _, err := Extract(withV(4)); !errors.As(err, &newer) || newer.V != 4 {
+		t.Errorf("manifest version 4: %v, want a NewerBundleError", err)
 	}
 }
 

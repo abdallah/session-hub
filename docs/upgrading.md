@@ -4,6 +4,14 @@ The general upgrade steps and how to roll back are in
 [`self-hosting.md`](self-hosting.md#upgrade). This page lists the releases
 that need more than that. Newest first.
 
+## Upgrade to snapshots
+
+This release moves the database to schema version 18 and the move bundle to
+format 3. Deploy the server first, then run `make install` and
+`sessionhub install-plugin` on every machine: an older target refuses a
+format 3 bundle. Back up the database before the deploy; restoring it is the
+only rollback. Snapshots need `machine` set in each machine's client config.
+
 ## Upgrade to knowledge
 
 This release replaces standing rules with knowledge entries and moves the

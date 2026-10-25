@@ -73,6 +73,9 @@ type Store struct {
 	db         *sql.DB
 	now        func() time.Time
 	staleAfter time.Duration
+	// linkSnapshot puts a snapshot's file in place as a move's bundle; see
+	// SetSnapshotLinker.
+	linkSnapshot func(moveID, sealID string) error
 }
 
 // Open opens (and creates or migrates) the database at path.
@@ -114,7 +117,7 @@ func (s *Store) Now() time.Time { return s.now().UTC() }
 // StaleAfter returns the configured staleness threshold.
 func (s *Store) StaleAfter() time.Duration { return s.staleAfter }
 
-const schemaVersion = 17
+const schemaVersion = 18
 
 const schemaV1 = `
 CREATE TABLE machines (
@@ -481,6 +484,20 @@ INSERT INTO knowledge (id, kind, scope, text, state, every, created_at, created_
 DROP TABLE instructions;
 `
 
+const schemaV18 = `
+ALTER TABLE moves ADD COLUMN seal_id TEXT NOT NULL DEFAULT '';  -- the snapshot's ID for a move from a snapshot, else ''
+ALTER TABLE moves ADD COLUMN snapshot_at TEXT;                  -- when that snapshot was taken
+CREATE TABLE snapshots (
+	id                   TEXT PRIMARY KEY,   -- the seal ID, in the move ID shape
+	session_id           TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+	source_machine_id    INTEGER NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+	recipient_machine_id INTEGER NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+	taken_at             TEXT NOT NULL,
+	size                 INTEGER NOT NULL,
+	UNIQUE (session_id, recipient_machine_id)
+);
+`
+
 // afterVersionRead runs in migrate between the unlocked version read and the
 // transaction. Tests use it to line two opens up on the same stale version.
 var afterVersionRead = func() {}
@@ -598,6 +615,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if v < 17 {
 		if _, err := tx.ExecContext(ctx, schemaV17); err != nil {
 			return fmt.Errorf("migrate schema to v17: %w", err)
+		}
+	}
+	if v < 18 {
+		if _, err := tx.ExecContext(ctx, schemaV18); err != nil {
+			return fmt.Errorf("migrate schema to v18: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {

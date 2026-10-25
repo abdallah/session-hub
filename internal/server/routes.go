@@ -70,6 +70,7 @@ func (s *Server) routes() []route {
 		{"POST", "/v1/permissions/{id}/decide", accessApprove, s.actor(api.HeaderActionApprove, s.decidePermission)},
 		{"POST", "/v1/sessions/{id}/move", accessMove, s.actor(api.HeaderActionMove, s.postMove)},
 		{"PUT", "/v1/moves/{id}/bundle", accessWrite, s.writer(s.putMoveBundle)},
+		{"PUT", "/v1/sessions/{id}/snapshots/{machine}", accessWrite, s.writer(s.putSnapshot)},
 		{"GET", "/v1/moves/{id}/bundle", accessWrite, s.writer(s.getMoveBundle)},
 		{"POST", "/v1/moves/{id}/result", accessWrite, s.writer(s.postMoveResult)},
 		{"PUT", "/v1/machines/self/move-key", accessWrite, s.writer(s.putMoveKey)},

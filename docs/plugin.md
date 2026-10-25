@@ -493,6 +493,23 @@ Log lines start with `move:`. Results are posted to
 `POST /v1/moves/{id}/result`, retried up to 5 times on a network error or a
 `5xx`. After the move ended, the same route takes the source's notes.
 
+### Snapshots
+
+After each heartbeat the server accepts, the watcher snapshots its sessions
+that are idle or done, in the background: for each other machine with a move
+key, it builds the move bundle, seals it for that machine, and uploads it
+with `PUT /v1/sessions/{id}/snapshots/{machine}`. It never pushes; commits
+that no `origin` branch has go in the bundle as `git/commits.bundle`
+(bundle format 3), which the target adds after its fetch. A session is
+snapshotted again only when its transcript changed, and at most every 10
+minutes. It needs `machine` in the client config. Log lines start with
+`snapshot`.
+
+When a move from a snapshot ended `done` and this machine is back, the
+finish first ends any Claude still running the session in a herdr pane here
+with `/exit`, then archives the transcript. If `/exit` fails, the move's
+detail says which pane to end by hand.
+
 ## Files in the state dir
 
 `~/.local/state/sessionhub/` (env `SESSIONHUB_STATE_DIR`):
