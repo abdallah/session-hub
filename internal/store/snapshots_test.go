@@ -12,6 +12,7 @@ import (
 // rollbackV18 removes what schema v18 added.
 func rollbackV18(t *testing.T, s *Store) {
 	t.Helper()
+	rollbackV19(t, s)
 	for _, q := range []string{"DROP TABLE snapshots", "ALTER TABLE moves DROP COLUMN seal_id", "ALTER TABLE moves DROP COLUMN snapshot_at"} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatalf("%s: %v", q, err)
@@ -172,5 +173,13 @@ func TestSweepSnapshotsEnded(t *testing.T) {
 	gone, err := e.s.SweepSnapshots(ctx, MaxSnapshotBytes)
 	if err != nil || len(gone) != 1 {
 		t.Errorf("ended: %v %v", gone, err)
+	}
+}
+
+// rollbackV19 removes what schema v19 added.
+func rollbackV19(t *testing.T, s *Store) {
+	t.Helper()
+	if _, err := s.db.Exec("ALTER TABLE permission_requests DROP COLUMN answers"); err != nil {
+		t.Fatalf("drop answers: %v", err)
 	}
 }

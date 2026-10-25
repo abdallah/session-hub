@@ -51,7 +51,8 @@
   can sessions whose sessionhub mod polls.
 - `sessionhub install-mod` installs the sessionhub Claude Code mod on this
   machine. In sessions started after that, an `AskUserQuestion` shows in the
-  inbox with its question, the dashboard shows each session's context window
+  inbox with its question (answer it there: tap an option, or type under
+  **Other**, then **Send answer**), the dashboard shows each session's context window
   fill, `sessionhub send` reaches sessions outside herdr, and the status line
   shows the inbox counts. In Claude Code, `/inbox` opens the inbox in a pane
   where you allow, deny, or dismiss items; see

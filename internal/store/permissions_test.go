@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -442,5 +443,45 @@ func TestPollPermissionOwner(t *testing.T) {
 	}
 	if _, err := e.s.PollPermission(ctx, e.tower.ID, "nope"); !errors.Is(err, ErrInvalid) {
 		t.Errorf("bad id: %v, want ErrInvalid", err)
+	}
+}
+
+func TestDecidePermissionAnswers(t *testing.T) {
+	e := newControlEnv(t)
+	ctx := context.Background()
+	e.session(e.tower, "s1", "w1:p1")
+	q := `{"questions":[{"question":"Which DB?","options":[{"label":"Postgres"},{"label":"SQLite"}]},{"question":"Tests?","options":[{"label":"Yes"}]}]}`
+	bad := []api.DecisionIn{
+		{Decision: api.DecisionDeny, Answers: map[string]string{"Which DB?": "SQLite", "Tests?": "Yes"}},
+		{Decision: api.DecisionAllow, Answers: map[string]string{"Which DB?": "SQLite"}},
+		{Decision: api.DecisionAllow, Answers: map[string]string{"Which DB?": "SQLite", "Tests?": "  "}},
+		{Decision: api.DecisionAllow, Answers: map[string]string{"Which DB?": "SQLite", "Tests?": "Yes", "Other?": "x"}},
+	}
+	for i, in := range bad {
+		p := e.permission("s1", api.ToolAskUserQuestion, q)
+		if _, err := e.s.DecidePermission(ctx, p.ID, in, "web:phone"); !errors.Is(err, ErrInvalid) {
+			t.Errorf("bad %d: err %v, want ErrInvalid", i, err)
+		}
+	}
+	bash := e.permission("s1", "Bash", `{"command":"ls"}`)
+	if _, err := e.s.DecidePermission(ctx, bash.ID, api.DecisionIn{Decision: api.DecisionAllow, Answers: map[string]string{"x": "y"}}, "web:phone"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("answers on Bash: err %v, want ErrInvalid", err)
+	}
+	p := e.permission("s1", api.ToolAskUserQuestion, q)
+	got, err := e.s.DecidePermission(ctx, p.ID, api.DecisionIn{Decision: api.DecisionAllow,
+		Answers: map[string]string{"Which DB?": " SQLite ", "Tests?": "Yes"}}, "web:phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"Which DB?": "SQLite", "Tests?": "Yes"}
+	if !reflect.DeepEqual(got.Answers, want) {
+		t.Errorf("answers %v, want %v", got.Answers, want)
+	}
+	read, err := e.s.GetPermission(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(read.Answers, want) {
+		t.Errorf("read answers %v, want %v", read.Answers, want)
 	}
 }

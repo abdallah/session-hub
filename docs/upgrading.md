@@ -4,6 +4,13 @@ The general upgrade steps and how to roll back are in
 [`self-hosting.md`](self-hosting.md#upgrade). This page lists the releases
 that need more than that. Newest first.
 
+## Upgrade to Inbox answers
+
+This release moves the database to schema version 19, which adds
+`permission_requests.answers`. Deploy the server, then run `make install` on
+every machine so the permission hook returns the answers. Back up the
+database before the deploy; restoring it is the only rollback.
+
 ## Upgrade to snapshots
 
 This release moves the database to schema version 18 and the move bundle to

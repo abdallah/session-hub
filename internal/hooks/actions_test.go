@@ -672,3 +672,20 @@ func TestContextKnowledgeSubagentSilent(t *testing.T) {
 		t.Errorf("subagent: err %v, printed %q", err, fx.out.String())
 	}
 }
+
+func TestPermissionHookAnswers(t *testing.T) {
+	b, _ := json.Marshal(api.PermissionRequest{ID: "pr_AAAAAAAAAAAAAAAAAAAAAA", State: api.PermissionDecided,
+		Decision: api.DecisionAllow, Answers: map[string]string{"Which DB?": "SQLite"}})
+	srv := newPermServer(t, answer{200, string(b)})
+	fx := newFixture(t, srv.URL)
+	stdin := `{"session_id":"` + sessionID + `","hook_event_name":"PermissionRequest","cwd":"/p","tool_name":"AskUserQuestion",` +
+		`"tool_input":{"questions":[{"question":"Which DB?","header":"DB","multiSelect":false,"options":[{"label":"SQLite","description":"file"}]}]}}`
+	if err := fx.call(t, "permission-request", stdin); err != nil {
+		t.Fatal(err)
+	}
+	want := `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":` +
+		`{"answers":{"Which DB?":"SQLite"},"questions":[{"question":"Which DB?","header":"DB","multiSelect":false,"options":[{"label":"SQLite","description":"file"}]}]}}}}` + "\n"
+	if got := fx.out.String(); got != want {
+		t.Errorf("stdout\n%s\nwant\n%s", got, want)
+	}
+}

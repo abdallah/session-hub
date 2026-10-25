@@ -66,6 +66,8 @@ type contextOutput struct {
 type permissionDecision struct {
 	Behavior string `json:"behavior"`
 	Message  string `json:"message,omitempty"`
+	// UpdatedInput answers an AskUserQuestion: its input plus "answers".
+	UpdatedInput json.RawMessage `json:"updatedInput,omitempty"`
 }
 
 // permissionOutput is the permission hook's output. Structs, not maps, keep
@@ -399,7 +401,7 @@ func (h *handler) permissionRequest(ctx context.Context) error {
 		if r.ID != req.ID {
 			return nil // not this request's answer: never act on it
 		}
-		out, ok := decisionOutput(*r)
+		out, ok := decisionOutput(*r, in.ToolInput)
 		if !ok {
 			return nil // expired, answered in the terminal, or closed
 		}
@@ -421,8 +423,9 @@ func (h *handler) permissionError(err error) error {
 }
 
 // decisionOutput is the hook output for a decided request. ok is false for
-// any other state or an unknown decision.
-func decisionOutput(r api.PermissionRequest) (permissionOutput, bool) {
+// any other state or an unknown decision. An allow with answers returns
+// input, the tool input from Claude Code, with the answers added.
+func decisionOutput(r api.PermissionRequest, input json.RawMessage) (permissionOutput, bool) {
 	var out permissionOutput
 	if r.State != api.PermissionDecided {
 		return out, false
@@ -431,6 +434,20 @@ func decisionOutput(r api.PermissionRequest) (permissionOutput, bool) {
 	switch r.Decision {
 	case api.DecisionAllow:
 		out.HookSpecificOutput.Decision = permissionDecision{Behavior: "allow"}
+		if len(r.Answers) > 0 {
+			var m map[string]json.RawMessage
+			if json.Unmarshal(input, &m) != nil || m == nil {
+				return out, false // nothing to answer: the terminal dialog stays
+			}
+			a, err := json.Marshal(r.Answers)
+			if err != nil {
+				return out, false
+			}
+			m["answers"] = a
+			if out.HookSpecificOutput.Decision.UpdatedInput, err = json.Marshal(m); err != nil {
+				return out, false
+			}
+		}
 	case api.DecisionDeny:
 		msg := cleanText(r.Reason, 200)
 		if msg == "" {

@@ -201,13 +201,26 @@ type PermissionRequest struct {
 	CreatedAt time.Time       `json:"created_at"`
 	ExpiresAt time.Time       `json:"expires_at"`
 	DecidedAt *time.Time      `json:"decided_at,omitempty"`
+	// Answers are an AskUserQuestion allow's answers: question text to the
+	// chosen option label, labels joined with ", " for a multi-select.
+	Answers map[string]string `json:"answers,omitempty"`
 }
 
 // DecisionIn is the body of POST /v1/permissions/{id}/decide.
 type DecisionIn struct {
 	Decision string `json:"decision"`
 	Reason   string `json:"reason,omitempty"`
+	// Answers answer an AskUserQuestion request on an allow: one per
+	// question, keyed by the question text.
+	Answers map[string]string `json:"answers,omitempty"`
 }
+
+// ToolAskUserQuestion is Claude Code's question tool. An allow from outside
+// answers it only when the decision carries Answers.
+const ToolAskUserQuestion = "AskUserQuestion"
+
+// MaxAnswerRunes caps one answer in DecisionIn.Answers.
+const MaxAnswerRunes = 1000
 
 // permissionFields are the tool input fields that say what a tool will do,
 // in the order PermissionInputText tries them.

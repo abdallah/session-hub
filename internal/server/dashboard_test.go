@@ -539,8 +539,13 @@ func TestDashboardPermissionConfirm(t *testing.T) {
 			t.Errorf("page lacks %q", want)
 		}
 	}
-	if n := strings.Count(page, "decide(pv, \"allow\""); n != 1 {
-		t.Errorf("page calls decide(pv, \"allow\" %d times, want 1 (the confirm step)", n)
+	// Two allow calls: the confirm step, and Send answer for an
+	// AskUserQuestion, which carries answers and runs nothing.
+	if n := strings.Count(page, "decide(pv, \"allow\""); n != 2 {
+		t.Errorf("page calls decide(pv, \"allow\" %d times, want 2", n)
+	}
+	if n := strings.Count(page, "if (a) decide(pv, \"allow\", \"\", s, since, a);"); n != 1 {
+		t.Errorf("Send answer allow appears %d times, want 1", n)
 	}
 	if strings.Contains(strings.ToLower(page), "always allow") {
 		t.Error("page offers an always-allow choice")
@@ -1577,5 +1582,37 @@ process.stdout.write(JSON.stringify(input.map(noteLine)));`, sessions)
 		g, _ := json.Marshal(got)
 		w, _ := json.Marshal(want)
 		t.Errorf("noteLine = %s, want %s", g, w)
+	}
+}
+
+// TestDashboardAskAnswers runs the AskUserQuestion parts of the actions
+// block under node: the questions a row shows and the answers it sends.
+func TestDashboardAskAnswers(t *testing.T) {
+	script := `
+var input = { questions: [
+  { question: "Which DB?", header: "DB", options: [{ label: "Postgres", description: "server" }, { label: "SQLite" }] },
+  { question: "Which checks?", multiSelect: true, options: [{ label: "lint" }, { label: "test" }] },
+  { header: "no text" }] };
+var v = permissionView({ id: "pr_q", tool_name: "AskUserQuestion", tool_input: input });
+var qs = v.questions;
+console.log(JSON.stringify({
+  qs: qs,
+  plainHasNone: permissionView({ id: "pr_b", tool_name: "Bash", tool_input: { command: "ls" } }).questions === undefined,
+  cutHasNone: permissionView({ id: "pr_c", tool_name: "AskUserQuestion", truncated: true, tool_input: "{" }).questions === undefined,
+  partial: askAnswers(qs, { "Which DB?": { labels: ["SQLite"] } }),
+  full: askAnswers(qs, { "Which DB?": { labels: ["SQLite"] }, "Which checks?": { labels: ["test", "lint"], other: " fmt " } }),
+  other: askAnswers(qs, { "Which DB?": { labels: [], other: "MySQL" }, "Which checks?": { labels: ["lint"] } }),
+  body: JSON.parse(decideRequest("pr_q", "allow", "", { "Which DB?": "SQLite" }).init.body),
+  denyBody: JSON.parse(decideRequest("pr_q", "deny", "no", { "Which DB?": "SQLite" }).init.body),
+  outcome: decisionOutcome(200, "answer", null)
+}));`
+	out := runBlocks(t, []string{"inbox-state", "actions-state"}, script, map[string]any{})
+	want := `{"qs":[{"question":"Which DB?","header":"DB","multi":false,"options":[{"label":"Postgres","description":"server"},{"label":"SQLite","description":""}]},` +
+		`{"question":"Which checks?","header":"","multi":true,"options":[{"label":"lint","description":""},{"label":"test","description":""}]}],` +
+		`"plainHasNone":true,"cutHasNone":true,"partial":null,"full":{"Which DB?":"SQLite","Which checks?":"lint, test, fmt"},` +
+		`"other":{"Which DB?":"MySQL","Which checks?":"lint"},"body":{"decision":"allow","answers":{"Which DB?":"SQLite"}},` +
+		`"denyBody":{"decision":"deny","reason":"no"},"outcome":"Answered."}`
+	if got := strings.TrimSpace(string(out)); got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
 }

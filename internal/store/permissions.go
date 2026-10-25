@@ -43,20 +43,25 @@ func ValidPermissionID(id string) bool { return permissionIDRE.MatchString(id) }
 
 // permissionSelect reads a request, its machine's name, and its machine ID.
 const permissionSelect = `SELECT p.id, p.session_id, m.name, p.tool_name, p.tool_input, p.truncated, p.state,
-	p.decision, p.reason, p.decided_by, p.created_at, p.expires_at, p.decided_at, p.machine_id, p.polled_at
+	p.decision, p.reason, p.decided_by, p.created_at, p.expires_at, p.decided_at, p.machine_id, p.polled_at, p.answers
 FROM permission_requests p JOIN machines m ON m.id = p.machine_id`
 
 // scanPermission reads one permissionSelect row. An open request past
 // expires_at, or abandoned (see abandoned), reads as expired.
 func scanPermission(sc scanner, now time.Time) (api.PermissionRequest, int64, error) {
 	var p api.PermissionRequest
-	var input, created, expires string
+	var input, created, expires, answers string
 	var truncated int
 	var decided, polled sql.NullString
 	var machineID int64
 	if err := sc.Scan(&p.ID, &p.SessionID, &p.Machine, &p.ToolName, &input, &truncated, &p.State,
-		&p.Decision, &p.Reason, &p.DecidedBy, &created, &expires, &decided, &machineID, &polled); err != nil {
+		&p.Decision, &p.Reason, &p.DecidedBy, &created, &expires, &decided, &machineID, &polled, &answers); err != nil {
 		return p, 0, err
+	}
+	if answers != "" {
+		if err := json.Unmarshal([]byte(answers), &p.Answers); err != nil {
+			return p, 0, fmt.Errorf("stored answers of %s: %w", p.ID, err)
+		}
 	}
 	p.ToolInput = json.RawMessage(input)
 	p.Truncated = truncated != 0
@@ -273,6 +278,10 @@ func (s *Store) DecidePermission(ctx context.Context, id string, in api.Decision
 		}
 		return api.PermissionRequest{}, fmt.Errorf("%w: request %s is %s", ErrGone, id, strings.ReplaceAll(state, "_", " "))
 	}
+	answers, err := checkAnswers(in, tool, input)
+	if err != nil {
+		return api.PermissionRequest{}, err
+	}
 	if truncated != 0 && in.Decision == api.DecisionAllow {
 		// Nobody can have read all of a cut input, so only the terminal,
 		// which shows it whole, may allow it. A deny is still fine.
@@ -283,7 +292,7 @@ func (s *Store) DecidePermission(ctx context.Context, id string, in api.Decision
 	}
 	nowS := formatTS(now)
 	res, err := tx.ExecContext(ctx, `UPDATE permission_requests SET state = ?, decision = ?, reason = ?, decided_by = ?,
-		decided_at = ?, updated_at = ? WHERE id = ? AND state = ?`, api.PermissionDecided, in.Decision, reason, by, nowS, nowS, id, api.PermissionOpen)
+		decided_at = ?, updated_at = ?, answers = ? WHERE id = ? AND state = ?`, api.PermissionDecided, in.Decision, reason, by, nowS, nowS, answers, id, api.PermissionOpen)
 	if err != nil {
 		return api.PermissionRequest{}, err
 	}
@@ -327,4 +336,40 @@ func (s *Store) openPermissions(ctx context.Context) (map[string]api.PermissionR
 		out[p.SessionID] = p // later rows are newer
 	}
 	return out, rows.Err()
+}
+
+// checkAnswers validates a decision's answers against the request and
+// returns them as stored JSON, or "" for none. Answers come only with an
+// allow of an AskUserQuestion request, one non-empty answer per question.
+func checkAnswers(in api.DecisionIn, tool, input string) (string, error) {
+	if len(in.Answers) == 0 {
+		return "", nil
+	}
+	if in.Decision != api.DecisionAllow || tool != api.ToolAskUserQuestion {
+		return "", invalidf("answers come only with an allow of an %s request", api.ToolAskUserQuestion)
+	}
+	var q struct {
+		Questions []struct {
+			Question string `json:"question"`
+		} `json:"questions"`
+	}
+	if err := json.Unmarshal([]byte(input), &q); err != nil || len(q.Questions) == 0 {
+		return "", invalidf("the request's input has no questions to answer")
+	}
+	out := make(map[string]string, len(q.Questions))
+	for _, x := range q.Questions {
+		a := strings.TrimSpace(in.Answers[x.Question])
+		if a == "" {
+			return "", invalidf("no answer for question %q", firstRunes(x.Question, 80))
+		}
+		if err := checkText("answer", a, api.MaxAnswerRunes); err != nil {
+			return "", err
+		}
+		out[x.Question] = a
+	}
+	if len(in.Answers) != len(out) {
+		return "", invalidf("answers name a question the request does not ask")
+	}
+	b, err := json.Marshal(out)
+	return string(b), err
 }

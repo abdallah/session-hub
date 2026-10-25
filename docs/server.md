@@ -195,7 +195,7 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `GET /v1/messages/{id}` | read | `200`, `Message` | One message and its delivery state. |
 | `POST /v1/sessions/{id}/permissions` | machine (the owning one) | `201`, `PermissionRequest` | The permission hook's request (`PermissionIn`). `410` for an ended session. See [Permission requests](#permission-requests). |
 | `GET /v1/permissions/{id}/decision?wait=30` | machine (the owning one) | `200` the request once it is not open; `204` none yet | The permission hook's long poll. |
-| `POST /v1/permissions/{id}/decide` | machine, or cookie with `X-Hub-Action: approve` | `200`, the `PermissionRequest` | Allow once or deny (`DecisionIn`). `409` already decided, or an allow for a request whose input was cut ("the input was cut; allow it in the terminal"; the request stays open and a deny still works), `410` expired, answered in the terminal, or closed. |
+| `POST /v1/permissions/{id}/decide` | machine, or cookie with `X-Hub-Action: approve` | `200`, the `PermissionRequest` | Allow once or deny (`DecisionIn`); an `AskUserQuestion` allow can carry `answers`. `409` already decided, or an allow for a request whose input was cut ("the input was cut; allow it in the terminal"; the request stays open and a deny still works), `410` expired, answered in the terminal, or closed. |
 | `POST /v1/sessions/{id}/move` | machine, or cookie with `X-Hub-Action: move` | `202`, the `Move` | Move the session to a machine or to `cloud` (`MoveIn`). `409` with the reason when a rule fails. See [Moves](#moves). |
 | `GET /v1/moves/{id}` | read | `200`, the `Move` | One move and its state. |
 | `PUT /v1/moves/{id}/bundle` | machine (the move's source, while `packing`) | `200`, the `Move` | Upload the sealed bundle (`application/octet-stream`, at most 64 MiB; `413` above). |
@@ -839,7 +839,15 @@ the request.
 closed request is `410`. An allow for a request whose input was cut
 (`truncated`) is `409` with "the input was cut; allow it in the terminal",
 whoever asks: nobody can have read all of it. The request stays open, and a
-deny still decides it. Each decision adds a `permission` event to the
+deny still decides it.
+
+An allow of an `AskUserQuestion` request may carry `"answers"`: question
+text to the chosen option label, labels joined with `, ` for a multi-select,
+or free text for **Other**; each at most 1,000 characters. It needs one
+answer for every question in the request and no other keys, or it is `400`;
+answers on a deny or on another tool are `400` too. The hook returns them to
+Claude Code as `updatedInput` (the tool input with `answers` added), which
+answers the question. The dashboard's **Send answer** sends them. Each decision adds a `permission` event to the
 session with `request_id`, `tool`, `input` (the first 200 characters of the
 input's main field), `decision`, `reason`, and `by` (`web:<name>` or
 `machine:<name>`). sessionhub only ever allows once: it never sends Claude Code a
@@ -1478,6 +1486,12 @@ is deleted with its session.
 
 To roll back to the v6 binary, restore the pre-deploy backup. The v6 binary
 refuses a version 7 database.
+
+### Inbox answers
+
+Schema version 19 adds `permission_requests.answers`: an `AskUserQuestion`
+allow's answers as a JSON object, or `''`. To roll back to the v18 binary,
+restore the pre-deploy backup. The v18 binary refuses a version 19 database.
 
 ### Shared instructions, messages, and permission requests
 

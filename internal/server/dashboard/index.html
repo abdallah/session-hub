@@ -283,6 +283,16 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
 .perm code.perm-input { max-height: 16em; overflow-y: auto; }
 .perm-cut { margin: 4px 0 0; color: var(--blocked); font-weight: 600; }
 .perm-confirm { margin-top: 8px; padding: 8px; border: 1px solid var(--blocked); border-radius: 6px; }
+.ask-q { margin: 6px 0 0; }
+.ask-text { margin: 0 0 6px; font-weight: 600; }
+.ask-opts { display: flex; flex-direction: column; gap: 6px; }
+button.ask-opt { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 8px 12px; color: var(--fg); border-color: var(--line); }
+button.ask-opt small { color: var(--muted); font-size: .8rem; }
+button.ask-opt.on { border-color: var(--accent); background: var(--hover); box-shadow: inset 3px 0 0 var(--accent); }
+input.ask-other {
+  width: 100%; box-sizing: border-box; margin: 6px 0 0; min-height: 44px; padding: 0 8px; font: inherit;
+  color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+}
 .perm-confirm p { margin: 0 0 4px; font-weight: 600; }
 .perm .actions { padding: 4px 0 0; }
 .perm .meta, .perm .inbox-error { margin: 4px 0 0; padding: 0; }
@@ -310,7 +320,9 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
 .review h2 { margin: 8px 0 4px; }
 .review h3 { font-size: .8rem; text-transform: uppercase; color: var(--muted); margin: 10px 0 2px; }
 details.untasked { margin: 16px 0 0; }
-details.untasked > summary, .review details.untasked > summary { font-size: .8rem; text-transform: uppercase; color: var(--muted); margin: 10px 0 2px; cursor: pointer; }
+details.untasked > summary, .review details.untasked > summary, details.kn-add > summary {
+  font-size: .85rem; color: var(--accent); margin: 10px 0 2px; cursor: pointer; min-height: 44px; display: flex; align-items: center;
+}
 .review-item { border-top: 1px solid var(--line); padding: 6px 0; }
 .review-item .actions { padding: 2px 0 0; gap: 4px; }
 .review-item select {
@@ -1455,8 +1467,43 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
     var code = p.tool_name === "Bash";
     // Without a main field, another tool shows only its input box.
     if (!main && code) main = all;
-    return { id: p.id, tool: permText(p.tool_name), main: permText(main), code: code, input: code ? "" : permText(all),
+    var v = { id: p.id, tool: permText(p.tool_name), main: permText(main), code: code, input: code ? "" : permText(all),
       cut: p.truncated === true };
+    var qs = p.tool_name === "AskUserQuestion" && !v.cut ? askQuestions(input) : null;
+    if (qs) v.questions = qs;
+    return v;
+  }
+
+  // askQuestions is an AskUserQuestion input's questions, each with its text
+  // (sent back as the answer key), header, options, and multiSelect, or
+  // null when the input holds none.
+  function askQuestions(input) {
+    var list = input && Array.isArray(input.questions) ? input.questions : [];
+    var out = [];
+    list.forEach(function (q) {
+      if (!q || typeof q.question !== "string" || !q.question) return;
+      var opts = (Array.isArray(q.options) ? q.options : []).filter(function (o) { return o && typeof o.label === "string" && o.label; })
+        .map(function (o) { return { label: o.label, description: typeof o.description === "string" ? o.description : "" }; });
+      out.push({ question: q.question, header: typeof q.header === "string" ? q.header : "", multi: q.multiSelect === true, options: opts });
+    });
+    return out.length ? out : null;
+  }
+
+  // askAnswers is the decide body's answers from picks (question text ->
+  // {labels: [...], other: "..."}), or null until every question has one.
+  // A multi-select joins its labels with ", "; Other text counts as a label.
+  function askAnswers(questions, picks) {
+    var out = {};
+    for (var i = 0; i < questions.length; i++) {
+      var q = questions[i];
+      var p = (picks && picks[q.question]) || {};
+      var labels = q.options.map(function (o) { return o.label; }).filter(function (l) { return (p.labels || []).indexOf(l) >= 0; });
+      var other = String(p.other || "").trim();
+      if (other) labels.push(other);
+      if (!labels.length) return null;
+      out[q.question] = q.multi ? labels.join(", ") : labels[labels.length - 1];
+    }
+    return out;
   }
 
   // denyProblem is why a Deny reason cannot be sent, or "". The server
@@ -1470,9 +1517,10 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
 
   // decideRequest is the Allow once or Deny write. Only a deny carries a
   // reason.
-  function decideRequest(id, decision, reason) {
+  function decideRequest(id, decision, reason, answers) {
     var body = { decision: decision };
     if (decision === "deny" && reason) body.reason = reason;
+    if (decision === "allow" && answers) body.answers = answers;
     return {
       url: "/v1/permissions/" + encodeURIComponent(id) + "/decide",
       init: {
@@ -1493,7 +1541,7 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
 
   // decisionOutcome is the line a row shows after the server answers.
   function decisionOutcome(status, decision, body) {
-    if (status === 200) return decision === "allow" ? "Allowed once." : "Denied.";
+    if (status === 200) return decision === "answer" ? "Answered." : decision === "allow" ? "Allowed once." : "Denied.";
     if (cutRefusal(status, body)) return "Not sent: the input was cut; allow it in the terminal.";
     if (status === 409) return "Someone already answered this request.";
     if (status === 410) return "Too late: the prompt was answered in the terminal or expired.";
@@ -3370,7 +3418,13 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
     var top = document.createDocumentFragment();
     top.appendChild(el("p", "meta", "Sessions see active entries that match their scope. " +
       "Agents propose entries; nothing reaches a session until you approve it here."));
-    top.appendChild(knAddBox());
+    // Adding is rare; the form waits behind its summary.
+    var addWrap = el("details", "kn-add");
+    addWrap.open = knAddOpen || !!knDraft.text;
+    addWrap.appendChild(keyed(el("summary", null, "+ Add entry"), "kn-add-open"));
+    addWrap.appendChild(knAddBox());
+    addWrap.addEventListener("toggle", function () { knAddOpen = addWrap.open; });
+    top.appendChild(addWrap);
     if (knError) top.appendChild(el("p", "error", knError));
     knSection(top, "Proposed", view.proposed.map(function (k) {
       var li = knRow(k, knMeta(k));
@@ -3448,6 +3502,8 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
   }
 
   // knAddBox adds an active entry: kind, scope, text, why, and interval.
+  var knAddOpen = false; // true while the Add entry form is open
+
   function knAddBox() {
     var form = el("div", "rule-add");
     var kind = keyed(el("select", null), "kn-kind");
@@ -3641,6 +3697,7 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
       box.appendChild(cf);
       return box;
     }
+    if (pv.questions) return askBlock(box, pv, s, since, st);
     var row = el("div", "actions");
     var allow = keyed(el("button", "textbtn act", "Allow once"), "allow:" + pv.id);
     allow.type = "button";
@@ -3676,12 +3733,95 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
     return box;
   }
 
+  // askPicks keeps each question request's choices across re-renders:
+  // request id -> question text -> {labels, other}.
+  var askPicks = {};
+
+  // askBlock is an AskUserQuestion request's questions with their options
+  // as buttons, an Other box, and Send answer, which allows the request
+  // with the answers; the session's hook hands them to Claude Code. Skip
+  // denies it.
+  function askBlock(box, pv, s, since, st) {
+    box.firstChild.textContent = "Claude asks";
+    var picks = askPicks[pv.id] || (askPicks[pv.id] = {});
+    var busy = !!(st && st.busy);
+    var send = keyed(el("button", null, "Send answer"), "ask-send:" + pv.id);
+    function sync() { send.disabled = busy || !askAnswers(pv.questions, picks); }
+    pv.questions.forEach(function (q, qi) {
+      var p = picks[q.question] || (picks[q.question] = { labels: [], other: "" });
+      var qbox = el("div", "ask-q");
+      qbox.appendChild(el("p", "ask-text", permText(q.question)));
+      var opts = el("div", "ask-opts");
+      q.options.forEach(function (o, oi) {
+        var on = p.labels.indexOf(o.label) >= 0;
+        var b = keyed(el("button", on ? "ask-opt on" : "ask-opt"), "ask:" + pv.id + ":" + qi + ":" + oi);
+        b.type = "button";
+        b.disabled = busy;
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+        b.appendChild(el("span", null, permText(o.label)));
+        if (o.description) b.appendChild(el("small", null, permText(o.description)));
+        b.addEventListener("click", function () {
+          var i = p.labels.indexOf(o.label);
+          if (q.multi) { if (i >= 0) p.labels.splice(i, 1); else p.labels.push(o.label); }
+          else { p.labels = i >= 0 ? [] : [o.label]; p.other = ""; }
+          renderInbox();
+        });
+        opts.appendChild(b);
+      });
+      qbox.appendChild(opts);
+      var other = keyed(el("input", "ask-other"), "ask-other:" + pv.id + ":" + qi);
+      other.type = "text";
+      other.maxLength = 1000;
+      other.placeholder = "Other…";
+      other.setAttribute("aria-label", "Other answer to: " + q.question);
+      other.value = p.other;
+      other.disabled = busy;
+      other.addEventListener("input", function () {
+        p.other = other.value;
+        if (!q.multi && other.value.trim()) p.labels = [];
+        sync();
+      });
+      other.addEventListener("change", function () { renderInbox(); });
+      qbox.appendChild(other);
+      box.appendChild(qbox);
+    });
+    var row = el("div", "actions");
+    send.type = "button";
+    send.addEventListener("click", function () {
+      var a = askAnswers(pv.questions, picks);
+      if (a) decide(pv, "allow", "", s, since, a);
+    });
+    sync();
+    var skip = keyed(el("button", "textbtn", "Skip"), "deny:" + pv.id);
+    skip.type = "button";
+    skip.disabled = busy;
+    skip.setAttribute("aria-label", "Skip the question in " + (s.title || s.id));
+    skip.addEventListener("click", function () {
+      var reason = window.prompt("Skip the question? Add a note Claude will see (optional).", "");
+      if (reason === null) return;
+      var problem = denyProblem(reason.trim());
+      if (problem) {
+        permState[pv.id] = { text: "Not sent: " + problem, session: s.id, since: since, view: pv };
+        renderInbox();
+        return;
+      }
+      decide(pv, "deny", reason.trim(), s, since);
+    });
+    row.appendChild(skip);
+    row.appendChild(send);
+    box.appendChild(row);
+    if (busy) box.appendChild(el("p", "meta", "Sending…"));
+    if (st && st.text) box.appendChild(el("p", "inbox-error", st.text));
+    return box;
+  }
+
   // decide sends Allow once or Deny and shows the outcome on the row.
-  function decide(pv, decision, reason, s, since) {
+  function decide(pv, decision, reason, s, since, answers) {
     var tag = { session: s.id, since: since, view: pv };
     permState[pv.id] = Object.assign({ busy: true }, tag);
     renderInbox();
-    var req = decideRequest(pv.id, decision, reason);
+    var req = decideRequest(pv.id, decision, reason, answers);
+    if (answers) decision = "answer";
     fetch(req.url, req.init)
       .then(function (resp) {
         if (resp.status === 401) {
