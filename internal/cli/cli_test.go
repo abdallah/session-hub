@@ -432,3 +432,21 @@ func TestShowLastNote(t *testing.T) {
 		}
 	}
 }
+
+func TestTitleFallsBackToTask(t *testing.T) {
+	note := &api.SessionNote{TaskTitle: "Fix CI token rotation"}
+	for _, c := range []struct {
+		s    api.Session
+		want string
+	}{
+		{api.Session{Title: "Claude Code", LastNote: note}, "Fix CI token rotation"},
+		{api.Session{Title: "", LastNote: note}, "Fix CI token rotation"},
+		{api.Session{Title: "Claude Code"}, "Claude Code"},
+		{api.Session{Title: "Upcoming talks", LastNote: note}, "Upcoming talks"},
+		{api.Session{CWD: "/srv"}, "/srv"},
+	} {
+		if got := title(c.s); got != c.want {
+			t.Errorf("title(%+v) = %q, want %q", c.s, got, c.want)
+		}
+	}
+}

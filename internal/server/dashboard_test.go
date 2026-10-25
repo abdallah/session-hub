@@ -255,9 +255,12 @@ func TestDashboardWrites(t *testing.T) {
 		{`"X-Hub-Action": "remote-control"`, 1},
 		{`"X-Hub-Action": "sign-out"`, 1},
 		{`"/remote-control"`, 1},
-		{"fetch(", 20}, // the list, the inbox, the request, the session poll, the Details read, sign-out, triage,
+		{"fetch(", 21}, // the list, the inbox, the request, the session poll, the Details read, sign-out, triage,
 		// the knowledge read, a knowledge write, the send, a decision, the machines read, a move, the move poll,
-		// the New session panel's machines read, a start, the start poll, a Tasks read, a Tasks write, and a rename
+		// the New session panel's machines read, a start, the start poll, a Tasks read, a Tasks write, a rename,
+		// and an inbox reply (which reuses sendRequest)
+		{"sendRequest([s.id], text)", 1},
+		{"replyRow(s))", 1},
 		{`"X-Hub-Action": "rename"`, 1},
 		{"// rc-state:begin", 1},
 		{"// rc-state:end", 1},

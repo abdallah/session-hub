@@ -327,6 +327,11 @@ func usageLine(s api.Session, now time.Time) string {
 }
 
 func title(s api.Session) string {
+	// A default "Claude Code" title says less than the session's task.
+	generic := strings.EqualFold(s.Title, "claude") || strings.EqualFold(s.Title, "claude code")
+	if (s.Title == "" || generic) && s.LastNote != nil && s.LastNote.TaskTitle != "" {
+		return s.LastNote.TaskTitle
+	}
 	if s.Title != "" {
 		return s.Title
 	}

@@ -294,6 +294,13 @@ resume command with **Copy resume**. **Done** (dismiss) and **Later**
 the row comes back with the error. The filter applies to the **Inbox** and
 **Sessions** tabs; the count ignores it.
 
+A row whose session sessionhub can message (`messageable`) has a reply box:
+a **Waiting** row shows it at once, other rows when expanded, and a row with
+an open permission request does not. **Send** posts the text to
+`/v1/messages` for that session, as the send bar does; the watcher or mod
+types it in when the session is idle. The draft and its caret survive the
+30-second refresh.
+
 A **Blocked** row whose session has an open permission request shows the
 tool and its input: a `Bash` command in code, with its newlines kept, and
 for another tool its file, path, URL, or pattern as text, then its whole

@@ -245,6 +245,11 @@ details.snooze .menu button { justify-content: flex-start; text-align: left; wid
 .start-status { margin: 0; font-size: .85rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .start-status .rc-error { color: var(--blocked); }
 .sendbar h2 { font-size: 1rem; margin: 4px 0; }
+.reply { margin-top: 6px; }
+.reply textarea {
+  width: 100%; box-sizing: border-box; font: inherit; padding: 8px;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
+}
 .sendbar textarea {
   width: 100%; box-sizing: border-box; font: inherit; padding: 8px;
   background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
@@ -1987,6 +1992,59 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     return row;
   }
 
+  // replyDrafts keeps each reply box's text and caret across re-renders.
+  var replyDrafts = {};
+
+  // replyRow is a box to send the session a message from its inbox row; the
+  // watcher or mod types it in when the session is idle.
+  function replyRow(s) {
+    var row = el("div", "reply");
+    var d = replyDrafts[s.id] || { text: "", start: 0, end: 0 };
+    var t = keyed(el("textarea"), "reply:" + s.id);
+    t.rows = 2;
+    t.maxLength = 4000;
+    t.placeholder = "Reply to this session";
+    t.setAttribute("aria-label", "Reply to " + displayTitle(s));
+    t.value = d.text;
+    function save() { replyDrafts[s.id] = { text: t.value, start: t.selectionStart, end: t.selectionEnd }; }
+    t.addEventListener("input", save);
+    t.addEventListener("select", save);
+    t.addEventListener("keyup", save);
+    t.addEventListener("focus", function () { t.setSelectionRange(d.start, d.end); });
+    var b = el("button", "textbtn", "Send");
+    b.type = "button";
+    var msg = el("span", "note", d.note || "");
+    b.addEventListener("click", function () {
+      var text = t.value;
+      if (!text.trim()) { msg.textContent = "Write the reply first."; return; }
+      b.disabled = true;
+      var req = sendRequest([s.id], text);
+      fetch(req.url, req.init).then(function (resp) {
+        if (resp.status === 401) { showSignedOut(); return null; }
+        return resp.json().then(function (body) { return { resp: resp, body: body }; },
+          function () { return { resp: resp, body: null }; });
+      }).then(function (r) {
+        b.disabled = false;
+        if (!r) return;
+        if (!r.resp.ok) { msg.textContent = rcRefusal(r.resp.status, r.body); return; }
+        var res = (r.body && r.body.results && r.body.results[0]) || {};
+        var sent = res.state === "queued";
+        replyDrafts[s.id] = { text: sent ? "" : t.value, start: 0, end: 0,
+          note: sent ? "Sent. sessionhub types it in when the session is idle." : "Not sent: " + (res.detail || res.state) };
+        refreshCard(s.id);
+      }).catch(function () {
+        b.disabled = false;
+        msg.textContent = "Could not reach the sessionhub.";
+      });
+    });
+    row.appendChild(t);
+    var bar = el("div", "rc");
+    bar.appendChild(b);
+    bar.appendChild(msg);
+    row.appendChild(bar);
+    return row;
+  }
+
   function summaryEl(s) {
     var parts = summaryParts(s.summary);
     if (!parts.length) return null;
@@ -2518,6 +2576,8 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
     if (!pv) pv = decidedView(s.id, it.since);
     if (pv) c.appendChild(permissionBlock(pv, s));
     c.appendChild(triageActions(it, s, p, open, tap));
+    // Waiting rows ask you something, so their reply box shows unexpanded.
+    if (canMessage(s) && !pv && (open || it.group === "waiting")) c.appendChild(replyRow(s));
     if (open) {
       var body = el("div", "n-body");
       // The need line shows the waiting_on items or the recap in full; the
