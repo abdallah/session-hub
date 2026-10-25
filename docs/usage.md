@@ -96,14 +96,20 @@ an email request, a chat request. They are separate from the small steps a
 session reports with `report_progress`.
 
 - Open the dashboard's **Tasks** tab, or run `sessionhub task ls`, to see a
-  day in sections, each task with its working time:
-  - **Now**: worked on in the last 15 minutes.
-  - **Waiting on**: its session's latest report waits on someone or
-    something, and the session has not worked since.
-  - **Done**, **Touched, not finished**, and **Todo**.
-  - **Carried over**: open, with no time that day. It is collapsed on the
-    dashboard. A task leaves it after 3 days with no activity; a note routed
-    to it brings it back.
+  day. The dashboard shows three groups, each task as one line with its
+  working time; tap a line for its notes and its buttons (**Done**,
+  **Start**, **Drop**, and so on):
+  - **Open**: in order, ⏳ worked on in the last 15 minutes, 💬 waiting
+    (its session's latest report waits on someone or something, and the
+    session has not worked since), ▶️ worked on today, ○ todo, and ⏸️ still
+    open with no time that day. A task leaves ⏸️ after 3 days with no
+    activity; a note routed to it brings it back.
+  - **💡 Ideas**, shown when there are any.
+  - **Done**. On a wide screen it sits beside **Open**.
+
+  `sessionhub task ls` lists the same tasks in sections: **Now**, **Waiting
+  on**, **Done**, **Touched, not finished**, **Todo**, **Ideas**, and
+  **Carried over**.
 
   Todo tasks carry over to each later day until you start, finish, or drop
   them. A past day is rebuilt from the task's history, and it is read-only

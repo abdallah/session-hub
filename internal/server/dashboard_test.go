@@ -1418,8 +1418,8 @@ func TestDashboardTasks(t *testing.T) {
 		`if (name === "tasks") loadTasks();`, "tasksRoot.hidden = name !== \"tasks\";",
 		`tabTasks.textContent = n ? "Tasks (" + n + ")" : "Tasks";`,
 		"saveMap(TASKS_DATE_KEY, dateMap(taskDate))", "taskDate = rememberedDate(loadMap(TASKS_DATE_KEY), localDate(Date.now()))",
-		"var readOnly = taskDate !== localDate(Date.now());", "section.column", // placement from the column
-		`var more = el("details", "carried");`,
+		"var readOnly = taskDate !== localDate(Date.now());", `"card t-row s-" + r.section`, // placement from the section
+		"taskGroups(taskSections(lastDay))", "(g.key === \"done\" ? right : left)",
 		// Sessions with no task: collapsed, outside the Review count, and an Ignore all button.
 		`h.appendChild(el("span", "count", String(prop.length + dp.length)));`,
 		`var more = el("details", "untasked");`, `"Ignore all"`, "session_ids: un.map(function (s) { return s.id; })",
@@ -1457,14 +1457,21 @@ process.stdout.write(JSON.stringify({
     { id: "w", waiting_on: ["Eran"] },
     { id: "t1", active_seconds: 120 }, { id: "t2", active_seconds: 600 },
     { id: "c1", last_active_at: "2026-10-07T10:00:00Z" }, { id: "c2", last_active_at: "2026-10-08T10:00:00Z" }
-  ], done: null, ideas: [{ id: "i" }] }).map(function (c) { return [c.key, c.column, c.collapsed, c.tasks.map(function (t) { return t.id; })]; }),
+  ], done: null, ideas: [{ id: "i" }] }).map(function (c) { return [c.key, c.column, c.tasks.map(function (t) { return t.id; })]; }),
   minutes: [taskMinutes(0), taskMinutes(59), taskMinutes(720), taskMinutes(4680), sectionMinutes([{ active_seconds: 600 }, {}])],
   ago: [lastActive("2026-10-07T10:00:00Z", Date.parse("2026-10-09T11:00:00Z")), lastActive("2026-10-09T08:00:00Z", Date.parse("2026-10-09T11:00:00Z")),
     lastActive("2026-10-09T10:30:00Z", Date.parse("2026-10-09T11:00:00Z")), lastActive(null, 0)],
   sess: [sessionLine({ title: "T", machine: "tower" }), sessionLine({ title: "", machine: "tower" }), sessionLine({ title: "T" }),
     sessionLine({ title: "WAF", machine: "blu", last_note: "SYSTEMSDEV-17906: failure test" }, "systemsdev-17906"),
     sessionLine({ title: "WAF", last_note: "done: canaries applied" }, "systemsdev-17906")],
-  evidence: [evidenceCount([{ done: ["a", "b"] }, { done: null }, { done: ["c"] }]), evidenceCount(null)]
+  groups: taskGroups(taskSections({ todo: [{ id: "a" }], in_progress: [{ id: "n", now: true }, { id: "c" }],
+    done: [{ id: "d" }], ideas: [] })).map(function (g) {
+    return [g.key, g.rows.map(function (r) { return r.task.id + ":" + r.section; })];
+  }),
+  rowAge: [rowAge({ active_seconds: 720 }, 0), rowAge({ last_active_at: "2026-10-07T10:00:00Z" }, Date.parse("2026-10-09T11:00:00Z")), rowAge({}, 0)],
+  rowTitle: [rowTitle({ title: "pin fleets", ref: "systemsdev-1" }), rowTitle({ title: "systemsdev-1 pin fleets", ref: "systemsdev-1" }), rowTitle({ title: "x" })],
+  same: [sameAsTitle("done: icons for every state · togh", { title: "Icons for every state" }), sameAsTitle("Netbird upgrade · blu", { title: "Netbird upgrade" }),
+    sameAsTitle("done: canaries applied · tower", { title: "WAF canaries" })]
 }));`
 	out := runBlocks(t, []string{"tasks-state"}, script, nil)
 	var got map[string]any
@@ -1481,7 +1488,7 @@ process.stdout.write(JSON.stringify({
 		"count":      []any{3.0, 0.0, 0.0},
 		"moves": []any{
 			[]any{map[string]any{"label": "Start", "to": "in_progress"}, map[string]any{"label": "Done", "to": "done"}, map[string]any{"label": "Drop", "to": "dropped"}},
-			[]any{map[string]any{"label": "Back to todo", "to": "todo"}, map[string]any{"label": "Done", "to": "done"}, map[string]any{"label": "Drop", "to": "dropped"}},
+			[]any{map[string]any{"label": "Done", "to": "done"}, map[string]any{"label": "Back to todo", "to": "todo"}, map[string]any{"label": "Drop", "to": "dropped"}},
 			[]any{map[string]any{"label": "Confirm done", "to": "done"}, map[string]any{"label": "Not done", "to": "in_progress"}, map[string]any{"label": "Drop", "to": "dropped"}},
 			[]any{map[string]any{"label": "Reopen", "to": "todo"}, map[string]any{"label": "Reopen and start", "to": "in_progress"}, map[string]any{"label": "Drop", "to": "dropped"}},
 			[]any{map[string]any{"label": "Reopen", "to": "todo"}, map[string]any{"label": "Reopen and start", "to": "in_progress"}},
@@ -1501,18 +1508,25 @@ process.stdout.write(JSON.stringify({
 		"addProblems": []any{"Enter a title.", "Enter a title.", "The URL must be an http or https link.", "", ""},
 		"make":        map[string]any{"title": "Rotate the CI token", "session_id": "s1"},
 		"sections": []any{
-			[]any{"now", "in_progress", false, []any{"n"}},
-			[]any{"waiting", "in_progress", false, []any{"w"}},
-			[]any{"done", "done", false, []any{}},
-			[]any{"touched", "in_progress", false, []any{"t2", "t1"}},
-			[]any{"todo", "todo", false, []any{"a"}},
-			[]any{"ideas", "ideas", false, []any{"i"}},
-			[]any{"carried", "in_progress", true, []any{"c2", "c1"}},
+			[]any{"now", "in_progress", []any{"n"}},
+			[]any{"waiting", "in_progress", []any{"w"}},
+			[]any{"done", "done", []any{}},
+			[]any{"touched", "in_progress", []any{"t2", "t1"}},
+			[]any{"todo", "todo", []any{"a"}},
+			[]any{"ideas", "ideas", []any{"i"}},
+			[]any{"carried", "in_progress", []any{"c2", "c1"}},
 		},
-		"minutes":  []any{"", "", "12m", "1h 18m", "10m"},
-		"ago":      []any{"last active 2d ago", "last active 3h ago", "last active just now", ""},
-		"sess":     []any{"T · tower", "(untitled) · tower", "T", "failure test · blu", "done: canaries applied"},
-		"evidence": []any{3.0, 0.0},
+		"minutes": []any{"", "", "12m", "1h 18m", "10m"},
+		"ago":     []any{"last active 2d ago", "last active 3h ago", "last active just now", ""},
+		"sess":    []any{"T · tower", "(untitled) · tower", "T", "failure test · blu", "done: canaries applied"},
+		"groups": []any{
+			[]any{"open", []any{"n:now", "a:todo", "c:carried"}},
+			[]any{"ideas", []any{}},
+			[]any{"done", []any{"d:done"}},
+		},
+		"rowAge":   []any{"12m", "2d", ""},
+		"rowTitle": []any{"systemsdev-1 pin fleets", "systemsdev-1 pin fleets", "x"},
+		"same":     []any{true, true, false},
 	}
 	for k, w := range want {
 		if !reflect.DeepEqual(got[k], w) {
