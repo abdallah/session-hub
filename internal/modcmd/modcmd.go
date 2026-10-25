@@ -52,7 +52,7 @@ The sessionhub Claude Code mod runs these; they are not meant to be run by hand.
   usage --session ID        read {"context": {...}, "cost": {...}} on stdin and report it
   poll --session ID         wait up to 25 s for a message; print it as JSON, or nothing
   result --message ID --state delivered|busy|refused [--detail TEXT]
-  inbox-count               print {"blocked": n, "waiting": n, "finished": n}
+  inbox-count               print {"move_failed": n, "blocked": n, "waiting": n, "finished": n}
 `
 
 // env is what the subcommands need; tests build their own.

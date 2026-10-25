@@ -123,3 +123,12 @@ func MoveKeyFingerprint(raw []byte) string {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])[:16]
 }
+
+// MoveFailedText is the inbox line for a failed move m: its target and
+// error.
+func MoveFailedText(m *Move) string {
+	if m == nil {
+		return ""
+	}
+	return "Move to " + m.Target + " failed: " + m.Detail
+}

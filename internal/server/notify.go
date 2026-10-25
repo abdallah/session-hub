@@ -140,7 +140,7 @@ func (n *notifier) run(ctx context.Context, ticks <-chan time.Time) {
 
 // alertable reports whether an inbox group alerts. Finished items stay silent.
 func alertable(group string) bool {
-	return group == api.InboxBlocked || group == api.InboxWaiting
+	return group == api.InboxMoveFailed || group == api.InboxBlocked || group == api.InboxWaiting
 }
 
 // tick sends the alerts that are due and returns how many it sent. An item
@@ -323,8 +323,11 @@ func alertMessage(it api.InboxItem, now time.Time, publicURL string) (string, []
 		title = "session " + string(id)
 	}
 	head, verb := "⏸ Blocked: ", "blocked"
-	if it.Group == api.InboxWaiting {
+	switch it.Group {
+	case api.InboxWaiting:
 		head, verb = "💬 Waiting on you: ", "waiting"
+	case api.InboxMoveFailed:
+		head, verb = "🚚 Move failed: ", "failed"
 	}
 	lines := []string{
 		head + title,
@@ -348,10 +351,14 @@ func alertMessage(it api.InboxItem, now time.Time, publicURL string) (string, []
 	return strings.Join(lines, "\n"), buttons
 }
 
-// alertDetail is what the session waits on: for a Blocked item, the question
+// alertDetail is what the session waits on: for a Move failed item, the
+// move's error; for a Blocked item, the question
 // its mod reported; else the item's waiting_on, else the latest report's when
 // no prompt came after that report, else the recap.
 func alertDetail(it api.InboxItem) string {
+	if it.Group == api.InboxMoveFailed {
+		return api.MoveFailedText(it.Session.Move)
+	}
 	if it.Group == api.InboxBlocked && it.Session.BlockedOn != "" {
 		return it.Session.BlockedOn
 	}

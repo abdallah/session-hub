@@ -98,7 +98,7 @@ func TestInboxShapeAndOrder(t *testing.T) {
 			t.Errorf("waiting item lacks %q", k)
 		}
 	}
-	if !reflect.DeepEqual(raw.Counts, map[string]int{"blocked": 1, "waiting": 1, "finished": 2}) {
+	if !reflect.DeepEqual(raw.Counts, map[string]int{"move_failed": 0, "blocked": 1, "waiting": 1, "finished": 2}) {
 		t.Errorf("counts %v", raw.Counts)
 	}
 }

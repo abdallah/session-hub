@@ -621,3 +621,56 @@ func TestInboxBlockedSinceFromSnapshots(t *testing.T) {
 		t.Fatalf("after re-block: %+v, want since after %v", it, first.Since)
 	}
 }
+
+// TestInboxMoveFailed: a failed move puts its session first in the inbox,
+// with the move's end as since, until a later prompt or a dismiss.
+func TestInboxMoveFailed(t *testing.T) {
+	e := newControlEnv(t)
+	ctx := context.Background()
+	e.moveReady(moveSID)
+	e.session(e.tower, "blk", "")
+	e.setState("blk", "blocked")
+	mv, _ := e.s.CreateMove(ctx, moveSID, "bluebox", "machine:tower")
+	e.s.ClaimMove(ctx, e.tower.ID)
+	e.clock.Advance(time.Minute)
+	f, err := e.s.FinishMove(ctx, e.tower.ID, mv.ID, api.MoveResultIn{State: api.MoveFailed, Detail: "end session: Claude was still in the pane"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := e.readInbox()
+	if len(in.Items) != 2 || in.Items[0].Group != api.InboxMoveFailed || in.Items[0].Session.ID != moveSID {
+		t.Fatalf("items %+v", in.Items)
+	}
+	if !in.Items[0].Since.Equal(f.UpdatedAt) || in.Counts.MoveFailed != 1 {
+		t.Errorf("since %v want %v, counts %+v", in.Items[0].Since, f.UpdatedAt, in.Counts)
+	}
+	if got := api.MoveFailedText(in.Items[0].Session.Move); got != "Move to bluebox failed: end session: Claude was still in the pane" {
+		t.Errorf("text %q", got)
+	}
+	e.clock.Advance(time.Minute)
+	e.sendPrompt(moveSID)
+	if it := e.inboxFor(moveSID); it != nil && it.Group == api.InboxMoveFailed {
+		t.Error("a prompt after the failure did not clear the item")
+	}
+}
+
+// TestInboxFinishedExpiry: a Finished item leaves after FinishedExpiry; a
+// Blocked one stays.
+func TestInboxFinishedExpiry(t *testing.T) {
+	e := newControlEnv(t)
+	e.session(e.tower, "fin", "")
+	e.session(e.tower, "blk", "")
+	e.finishTurn("fin")
+	e.setState("blk", "blocked")
+	e.clock.Advance(FinishedExpiry)
+	if e.inboxFor("fin") == nil {
+		t.Error("Finished item gone at exactly FinishedExpiry")
+	}
+	e.clock.Advance(time.Minute)
+	if e.inboxFor("fin") != nil {
+		t.Error("Finished item still there after FinishedExpiry")
+	}
+	if e.inboxFor("blk") == nil {
+		t.Error("Blocked item expired")
+	}
+}

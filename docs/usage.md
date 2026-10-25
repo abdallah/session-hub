@@ -21,8 +21,8 @@
   with it on, in a new herdr workspace on its machine. Tap **Open in Claude**
   to continue in the Claude app.
 - The dashboard's **Inbox** tab, and `sessionhub inbox` in a terminal, list the
-  sessions that need you: blocked on a prompt, waiting on you, or finished a
-  turn you haven't answered. Open one from there, or dismiss or snooze it.
+  sessions that need you: a failed move, blocked on a prompt, waiting on you,
+  or finished a turn you haven't answered in the last 12 hours. Open one from there, or dismiss or snooze it.
   Triage is shared across browsers and machines. When herdr marks a finished
   pane seen, its **Finished** item leaves on its own.
 - A blocked session plays herdr's request sound with a notification on its

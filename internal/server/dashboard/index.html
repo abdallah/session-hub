@@ -150,7 +150,7 @@ button.textbtn { min-width: 0; padding: 0 10px; border-color: transparent; backg
   background: var(--card); border: 1px solid var(--line); border-left-width: 5px;
   border-radius: 8px; margin: 0 0 8px; overflow-wrap: anywhere; box-shadow: var(--shadow);
 }
-.notif.blocked { border-left-color: var(--blocked); }
+.notif.blocked, .notif.move_failed { border-left-color: var(--blocked); }
 .notif.waiting { border-left-color: var(--stale); }
 .notif.finished { border-left-color: var(--live); }
 .notif-main {
@@ -785,10 +785,11 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   // layout-state:end
 
   // row-state:begin
-  // inboxNeed is an inbox row's one line: what the session waits on (for a
-  // blocked item, the question its mod reported), else its recap, else the
-  // group's label.
+  // inboxNeed is an inbox row's one line: a failed move's error, what the
+  // session waits on (for a blocked item, the question its mod reported),
+  // else its recap, else the group's label.
   function inboxNeed(it, s, label) {
+    if (it.group === "move_failed" && s && s.move) return "Move to " + s.move.target + " failed: " + (s.move.detail || s.move.state);
     if (it.group === "blocked" && s && typeof s.blocked_on === "string" && s.blocked_on) return s.blocked_on;
     var w = (it.waiting_on || []).filter(function (x) { return typeof x === "string" && x; });
     if (w.length) return w.join("; ");
@@ -812,6 +813,7 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
 
   // inbox-state:begin
   var GROUPS = [
+    { key: "move_failed", label: "Move failed" },
     { key: "blocked", label: "Blocked" },
     { key: "waiting", label: "Waiting on you" },
     { key: "finished", label: "Finished" }
@@ -2304,6 +2306,9 @@ ul.rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
       if (sl) body.appendChild(sl);
       var rc = rcRow(s, now);
       if (rc) body.appendChild(rc);
+      // A failed move's row offers the Move menu, to retry from here.
+      var mr = it.group === "move_failed" ? moveRow(s) : null;
+      if (mr) body.appendChild(mr);
       var rr = resumeRow(s, "Copy resume");
       if (rr) body.appendChild(rr);
       if (body.childNodes.length) c.appendChild(body);

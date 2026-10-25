@@ -594,6 +594,21 @@ func TestNotifierSilentOnShutdown(t *testing.T) {
 	}
 }
 
+func TestAlertMessageMoveFailed(t *testing.T) {
+	at := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	s := api.Session{ID: "0a1b2c3d-1111", Title: "runners", Machine: "blu", Recap: "Done.",
+		Move: &api.Move{Target: "togh", State: api.MoveFailed, Detail: "end session: Claude was still in the pane"}}
+	it := api.InboxItem{Group: api.InboxMoveFailed, Since: at.Add(-time.Minute), Session: s}
+	text, _ := alertMessage(it, at, "https://sessionhub.example.test")
+	want := "🚚 Move failed: runners\nblu · failed 1m ago\nMove to togh failed: end session: Claude was still in the pane"
+	if text != want {
+		t.Errorf("text\n%q\nwant\n%q", text, want)
+	}
+	if !alertable(api.InboxMoveFailed) {
+		t.Error("move_failed does not alert")
+	}
+}
+
 func TestAlertMessageShowsPermission(t *testing.T) {
 	at := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 	s := api.Session{ID: "0a1b2c3d-1111", Title: "deploy", Machine: "tower", Recap: "Ready to push."}

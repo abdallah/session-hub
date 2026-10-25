@@ -18,10 +18,12 @@ const (
 	TriageSinceSkew = 5 * time.Minute
 	// MaxSnooze is the longest snooze.
 	MaxSnooze = 7 * 24 * time.Hour
+	// FinishedExpiry is how long a Finished item stays in the inbox.
+	FinishedExpiry = 12 * time.Hour
 )
 
 // inboxRank orders the groups. A session appears only in its first match.
-var inboxRank = map[string]int{api.InboxBlocked: 0, api.InboxWaiting: 1, api.InboxFinished: 2}
+var inboxRank = map[string]int{api.InboxMoveFailed: 0, api.InboxBlocked: 1, api.InboxWaiting: 2, api.InboxFinished: 3}
 
 // classifyInbox returns x's inbox item without its session, or ok=false when
 // x needs nothing. blockedAt, stateTS, and turnEndedAt are the sessions
@@ -29,6 +31,9 @@ var inboxRank = map[string]int{api.InboxBlocked: 0, api.InboxWaiting: 1, api.Inb
 func classifyInbox(x api.Session, blockedAt, stateTS, turnEndedAt *time.Time) (item api.InboxItem, ok bool) {
 	if x.EndedAt != nil {
 		return item, false
+	}
+	if m := x.Move; m != nil && m.State == api.MoveFailed && notAfter(x.LastPromptAt, m.UpdatedAt) {
+		return api.InboxItem{Group: api.InboxMoveFailed, Since: m.UpdatedAt}, true
 	}
 	if x.AgentState == "blocked" {
 		// blocked_at is when the state last moved into blocked. Rows from
@@ -107,8 +112,9 @@ func (s *Store) inboxStates(ctx context.Context) (map[string]inboxState, error) 
 	return out, rows.Err()
 }
 
-// Inbox returns the sessions that need you: blocked, waiting on you, or
-// finished a turn, without the ones a dismiss or snooze hides. Items are
+// Inbox returns the sessions that need you: a failed move, blocked, waiting
+// on you, or finished a turn less than FinishedExpiry ago, without the ones a
+// dismiss or snooze hides. Items are
 // sorted by group, then since, then session ID. Counts cover the returned
 // items only.
 func (s *Store) Inbox(ctx context.Context) (api.Inbox, error) {
@@ -135,12 +141,17 @@ func (s *Store) Inbox(ctx context.Context) (api.Inbox, error) {
 		if !ok || triageHides(item.Since, st.triagedSince, st.snoozeUntil, now) {
 			continue
 		}
+		if item.Group == api.InboxFinished && now.Sub(item.Since) > FinishedExpiry {
+			continue
+		}
 		item.Session = x
 		if p, ok := perms[x.ID]; ok && item.Group == api.InboxBlocked {
 			item.Permission = &p
 		}
 		out.Items = append(out.Items, item)
 		switch item.Group {
+		case api.InboxMoveFailed:
+			out.Counts.MoveFailed++
 		case api.InboxBlocked:
 			out.Counts.Blocked++
 		case api.InboxWaiting:

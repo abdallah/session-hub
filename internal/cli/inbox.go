@@ -29,9 +29,10 @@ const inboxUsage = `usage:
 
 // inboxHeadings are the group headings. Items arrive in group order.
 var inboxHeadings = map[string]string{
-	api.InboxBlocked:  "Blocked",
-	api.InboxWaiting:  "Waiting on you",
-	api.InboxFinished: "Finished",
+	api.InboxMoveFailed: "Move failed",
+	api.InboxBlocked:    "Blocked",
+	api.InboxWaiting:    "Waiting on you",
+	api.InboxFinished:   "Finished",
 }
 
 // RunInbox implements `sessionhub inbox`, `sessionhub inbox dismiss`, and
@@ -292,6 +293,9 @@ func inboxLine(it api.InboxItem, now time.Time, width int) string {
 	detail := s.Recap
 	if len(it.WaitingOn) > 0 {
 		detail = strings.Join(it.WaitingOn, "; ")
+	}
+	if it.Group == api.InboxMoveFailed {
+		detail = api.MoveFailedText(s.Move)
 	}
 	blockedOn := ""
 	if it.Group == api.InboxBlocked && s.BlockedOn != "" {

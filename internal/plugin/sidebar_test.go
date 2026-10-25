@@ -22,6 +22,7 @@ func TestInboxText(t *testing.T) {
 		{api.InboxCounts{Waiting: 2, Finished: 1}, "3"},
 		{api.InboxCounts{Blocked: 1, Waiting: 1, Finished: 1}, "3 · 1 blocked"},
 		{api.InboxCounts{Blocked: 2}, "2 · 2 blocked"},
+		{api.InboxCounts{MoveFailed: 1, Blocked: 1}, "2 · 1 move failed"},
 	}
 	for _, c := range cases {
 		if got := inboxText(c.c); got != c.want {

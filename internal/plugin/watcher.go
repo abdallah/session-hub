@@ -48,12 +48,15 @@ type workspaceReporter interface {
 const inboxToken = "inbox"
 
 // inboxText is the sidebar text for the inbox counts: the total, plus
-// " · n blocked" when any are blocked. "" means clear the token.
+// " · n move failed" when any moves failed, else " · n blocked" when any are
+// blocked. "" means clear the token.
 func inboxText(c api.InboxCounts) string {
-	total := c.Blocked + c.Waiting + c.Finished
+	total := c.MoveFailed + c.Blocked + c.Waiting + c.Finished
 	switch {
 	case total == 0:
 		return ""
+	case c.MoveFailed > 0:
+		return fmt.Sprintf("%d · %d move failed", total, c.MoveFailed)
 	case c.Blocked > 0:
 		return fmt.Sprintf("%d · %d blocked", total, c.Blocked)
 	}

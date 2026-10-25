@@ -44,7 +44,7 @@ because a Telegram setting never stops the server.
 | `public_url` | `https://sessionhub.example.com` | The URL clients use. `sessionhub machine add` prints it. |
 | `read_token` | none | Ignored. The server logs a warning when it is set. Delete it once you no longer need to roll back to a release before web sign-in. |
 | `stale_after` | `5m` | A Go duration. A session with no write for longer than this is `stale`. |
-| `telegram_bot_token` | none | A Telegram bot token, in quotes. An unquoted token (`123456:ABC...`) is a TOML syntax error and stops the server. With `telegram_chat_id`, turns on alerts for **Blocked** and **Waiting on you** inbox items. Never logged. |
+| `telegram_bot_token` | none | A Telegram bot token, in quotes. An unquoted token (`123456:ABC...`) is a TOML syntax error and stops the server. With `telegram_chat_id`, turns on alerts for **Move failed**, **Blocked**, and **Waiting on you** inbox items. Never logged. |
 | `telegram_chat_id` | none | The chat the alerts go to, as a quoted string (`"-1001234567890"` for a group) or an integer. Any other type turns alerts off and logs why. |
 | `task_ticket_url` | none | Link for a ticket ref in a note; `{ref}` is the ref, for example `"https://example.youtrack.cloud/issue/{ref}"`. Must be an `http` or `https` URL with a host. |
 | `task_mr_url` | none | Link for a merge request ref (`!NNNN`) in a note; `{n}` is the number. Same rules. |
@@ -1024,19 +1024,21 @@ session that has not ended is in at most one group, the first that matches:
 
 | Group | When | `since` |
 |---|---|---|
+| `move_failed` | The session's latest move failed, and no prompt is later than the failure. | The move's `updated_at`. |
 | `blocked` | `agent_state` is `blocked`. | When the session became blocked (`blocked_at`), else `state_ts`, else `started_at`. |
 | `waiting` | The latest report has `waiting_on` items, and no prompt is later than the report. | The report's `ts`. |
-| `finished` | `agent_state` is `idle` or `done`, `turn_ended_at` is set, and no prompt is later than it. | `turn_ended_at`. |
+| `finished` | `agent_state` is `idle` or `done`, `turn_ended_at` is set, no prompt is later than it, and it is at most 12 hours old. | `turn_ended_at`. |
 
-- The response is `{"items": [...], "counts": {"blocked": n, "waiting": n,
-  "finished": n}}`, sorted by group, then `since`, then session ID. Each item
+- The response is `{"items": [...], "counts": {"move_failed": n, "blocked": n,
+  "waiting": n, "finished": n}}`, sorted by group, then `since`, then session ID. Each item
   has `group`, `since`, `waiting_on` (for `waiting` only), and `session`, the
   same object as in `GET /v1/sessions`. The counts leave out hidden items.
 - Ended sessions never appear. Stale ones do, with `session.status` set to
   `stale`.
 - An item leaves on its own when its condition stops holding: the session
-  stops being blocked, a later report has no `waiting_on`, or a new prompt
-  arrives.
+  stops being blocked, a later report has no `waiting_on`, a new prompt
+  arrives, a newer move replaces the failed one, or a **Finished** item turns
+  12 hours old.
 - A **Blocked** item carries `permission`, the session's newest open
   permission request, when it has one. See "Permission requests".
 - A **Blocked** item's `session.blocked_on` is the question the session's
@@ -1164,8 +1166,8 @@ the second time.
 ### Telegram alerts
 
 When `telegram_bot_token` and `telegram_chat_id` are both set, the server
-sends a Telegram message for each new **Blocked** or **Waiting on you** inbox
-item. **Finished** items never alert. When either is
+sends a Telegram message for each new **Move failed**, **Blocked**, or
+**Waiting on you** inbox item. **Finished** items never alert. When either is
 empty, alerts are off, and the server logs one line at startup saying so.
 If `telegram_chat_id` or `telegram_bot_token` has the wrong type (an array, a
 float, a boolean), alerts are off and the line says why, for example

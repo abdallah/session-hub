@@ -150,8 +150,9 @@ never delays or fails the heartbeat.
 After a heartbeat the server accepts, the watcher reads `GET /v1/inbox` and
 writes the count on every workspace of its herdr session, as the
 display-only workspace token `inbox` (source `sessionhub`, herdr's
-`workspace.report_metadata`): the total, plus ` · <n> blocked` when any are
-blocked, for example `3 · 1 blocked`. An empty inbox clears the token. A
+`workspace.report_metadata`): the total, plus ` · <n> move failed` when any
+moves failed, else ` · <n> blocked` when any are blocked, for example
+`3 · 1 blocked`. An empty inbox clears the token. A
 workspace whose text didn't change since its last report gets no call; a
 report herdr refuses is retried at the next heartbeat. If the inbox read
 fails, the sidebar keeps the last count. herdr shows the token where you put

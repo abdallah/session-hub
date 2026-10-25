@@ -459,7 +459,7 @@ func TestInboxCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != `{"blocked":1,"waiting":0,"finished":0}`+"\n" {
+	if out != `{"move_failed":0,"blocked":1,"waiting":0,"finished":0}`+"\n" {
 		t.Errorf("inbox-count printed %q", out)
 	}
 	f.srv.Close()

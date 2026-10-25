@@ -354,9 +354,10 @@ type WebSessionList struct {
 
 // Inbox groups, in precedence order. See docs/server.md, "Inbox".
 const (
-	InboxBlocked  = "blocked"
-	InboxWaiting  = "waiting"
-	InboxFinished = "finished"
+	InboxMoveFailed = "move_failed"
+	InboxBlocked    = "blocked"
+	InboxWaiting    = "waiting"
+	InboxFinished   = "finished"
 )
 
 // InboxItem is one session that needs you. Since is the trigger time; a
@@ -374,9 +375,10 @@ type InboxItem struct {
 
 // InboxCounts counts the items GET /v1/inbox returns, per group.
 type InboxCounts struct {
-	Blocked  int `json:"blocked"`
-	Waiting  int `json:"waiting"`
-	Finished int `json:"finished"`
+	MoveFailed int `json:"move_failed"`
+	Blocked    int `json:"blocked"`
+	Waiting    int `json:"waiting"`
+	Finished   int `json:"finished"`
 }
 
 // Inbox is the response of GET /v1/inbox: items sorted by group, then since.

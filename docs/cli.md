@@ -15,7 +15,7 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub login --name <name> [--no-qr] [--json]` | Create a one-time link that signs a browser in to the dashboard as `<name>`, and print the link, when it expires, and a QR code of it. `--no-qr` omits the QR code. `--json` prints only `{"url":...,"name":...,"expires_at":...}`. See below. |
 | `sessionhub login ls [--json]` | Signed-in browsers: name, ID, machine, created, last used, and expiry. |
 | `sessionhub login rm <name\|id>` | Sign a browser out. It matches a name first, then an ID. No confirmation. |
-| `sessionhub inbox [--json]` | The sessions that need you, across machines, under the headings **Blocked**, **Waiting on you**, and **Finished**, oldest first in each. One line per item: ID prefix, title, machine, how long ago it arrived, `stale` for a stale session, and what it waits on (for a blocked session with a permission request, `asks to use <tool>: <command or file>`) or its recap, cut to the terminal width. `--json` prints the server response. See below. |
+| `sessionhub inbox [--json]` | The sessions that need you, across machines, under the headings **Move failed**, **Blocked**, **Waiting on you**, and **Finished**, oldest first in each. One line per item: ID prefix, title, machine, how long ago it arrived, `stale` for a stale session, and what it waits on (for a blocked session with a permission request, `asks to use <tool>: <command or file>`) or its recap, cut to the terminal width. `--json` prints the server response. See below. |
 | `sessionhub inbox --watch` | The same list, full screen, refreshed every 5 seconds, with a cursor you move with the keyboard. See below. |
 | `sessionhub inbox dismiss [--since <time>] <id\|prefix>` | Hide an inbox item until something new happens in that session. |
 | `sessionhub inbox snooze <id\|prefix> <1h\|4h\|tomorrow\|duration>` | Hide an inbox item for a while. `tomorrow` means 9:00 local time the next day. A Go duration such as `90m` also works, up to just under 7 days (167h59m). |
@@ -237,10 +237,13 @@ for 30 days after its last visit.
 `sessionhub inbox` lists the sessions that need you, the same list as the
 dashboard's **Inbox** tab:
 
+- **Move failed**: the session's latest move failed, with the move's error.
+  The session stays on its machine.
 - **Blocked**: Claude waits on a prompt in its pane.
 - **Waiting on you**: the latest report lists `waiting_on` items, and you
   haven't sent a prompt since.
-- **Finished**: Claude finished a turn, and you haven't sent a prompt since.
+- **Finished**: Claude finished a turn less than 12 hours ago, and you haven't
+  sent a prompt since.
 
 A session appears once, in the first group that matches. Ended sessions
 leave the inbox; stale ones stay, marked `stale`. The line width is the
@@ -497,7 +500,7 @@ the output below.
 | `usage --session ID` | `{"context": {"tokens", "window", "percent"}, "cost": {"usd"}}` | Reports the context window fill (`percent`, else `tokens` over `window`) and the cost. It skips the call unless the fill moved by at least 1 point or the cost by at least $0.01 since the last report it sent for that session, which it keeps in `<state dir>/mod-usage/<session>.json`. Never queued. |
 | `poll --session ID` | none | Waits up to 25 seconds for the session's next message, 30 seconds in all. Prints `{"id": "...", "text": "..."}` on one line, or nothing when none came. A transport or server error exits non-zero, so the mod backs off. |
 | `result --message ID --state delivered\|busy\|refused [--detail TEXT]` | none | Reports what happened to a message `poll` printed. |
-| `inbox-count` | none | Prints `{"blocked": n, "waiting": n, "finished": n}`. |
+| `inbox-count` | none | Prints `{"move_failed": n, "blocked": n, "waiting": n, "finished": n}`. |
 
 The state directory is `~/.local/state/sessionhub`, or `$SESSIONHUB_STATE_DIR`. State
 files of sessions that have not reported for 7 days are removed.
