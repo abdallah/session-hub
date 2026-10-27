@@ -6,7 +6,9 @@
 - `sessionhub resume <id-prefix>` focuses the session's herdr pane, restarts it in
   herdr, or prints the `ssh` command for a session on another machine. The
   herdr plugin's **resume** action opens a picker. Add `--remote-control` to
-  start Claude with Remote Control on.
+  start Claude with Remote Control on. Add `--jump` to jump the way the inbox's
+  **Enter** does: a session on another machine opens in a tab on this machine's
+  herdr instead of printing the `ssh` command.
 - `sessionhub remote-control <id-prefix>` turns on Claude Code Remote Control for a
   running session on this machine and prints its `claude.ai/code` URL. For a
   session on another machine it asks that machine through the sessionhub, and

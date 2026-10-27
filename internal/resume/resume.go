@@ -71,7 +71,7 @@ func defaultEnv() (*env, error) {
 	}, nil
 }
 
-const usage = "usage: sessionhub resume [--force] [--remote-control] <id-prefix> | sessionhub resume --pick [--force] [--remote-control]"
+const usage = "usage: sessionhub resume [--force] [--remote-control] [--jump] <id-prefix> | sessionhub resume --pick [--force] [--remote-control]"
 
 // Run implements `sessionhub resume <id-prefix>` and `sessionhub resume --pick`.
 func Run(ctx context.Context, args []string) error {
@@ -80,6 +80,7 @@ func Run(ctx context.Context, args []string) error {
 	pick := fs.Bool("pick", false, "choose a session from a numbered list")
 	force := fs.Bool("force", false, "start a session the server reports live even though its pane can't be focused")
 	rc := fs.Bool("remote-control", false, "start Claude with Remote Control on")
+	jump := fs.Bool("jump", false, "jump like the inbox's Enter: a session on another machine opens in a tab on this machine's herdr")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%s: %w", usage, err)
 	}
@@ -98,8 +99,28 @@ func Run(ctx context.Context, args []string) error {
 	if fs.NArg() != 1 {
 		return errors.New(usage)
 	}
+	if *jump {
+		return e.jump(ctx, fs.Arg(0))
+	}
 	_, err = e.resume(ctx, fs.Arg(0))
 	return err
+}
+
+// jump implements `sessionhub resume --jump`: the inbox's Jumper, with its
+// one-line result printed instead of shown in the inbox's status line.
+func (e *env) jump(ctx context.Context, prefix string) error {
+	d, err := e.api.GetSession(ctx, prefix)
+	if err != nil {
+		return err
+	}
+	e.in = strings.NewReader("")
+	j := &Jumper{e: e, ssh: runSSH, herdrBin: herdrBin(), alias: sshAlias}
+	msg, err := j.Jump(ctx, d.Session)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(e.out, msg)
+	return nil
 }
 
 // RunOpenPicker implements `sessionhub plugin open-picker`: it opens the herdr
