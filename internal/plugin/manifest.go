@@ -11,13 +11,28 @@ const ManifestFile = "herdr-plugin.toml"
 // PluginID is the herdr plugin id.
 const PluginID = "sessionhub"
 
+// IndexManifest is the herdr-plugin.toml committed at the repo root for the
+// herdr plugin index. herdr installs it from a clone with no shell and no
+// known binary path, so each command execs ~/.local/bin/sessionhub through sh.
+func IndexManifest() string {
+	return manifest("sh", "-c", `exec "$HOME/.local/bin/sessionhub" "$@"`, "sessionhub")
+}
+
 // Manifest returns the herdr plugin manifest from docs/dev/PLAN.md "herdr plugin",
 // with every command calling bin by absolute path: herdr runs plugin commands
 // without a shell and with its server's PATH.
 func Manifest(bin string) string {
-	q := strconv.Quote(bin)
+	return manifest(bin)
+}
+
+// manifest builds the manifest with prefix in front of every command's arguments.
+func manifest(prefix ...string) string {
+	var pre []string
+	for _, p := range prefix {
+		pre = append(pre, strconv.Quote(p))
+	}
 	cmd := func(args ...string) string {
-		parts := []string{q}
+		parts := append([]string{}, pre...)
 		for _, a := range args {
 			parts = append(parts, strconv.Quote(a))
 		}

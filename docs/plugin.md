@@ -32,6 +32,15 @@ sessionhub install-plugin
    link, so without this step nothing is registered until the next herdr
    restart.
 
+### From the herdr plugin index
+
+The repo root holds a `herdr-plugin.toml` for the [herdr plugin index](https://herdr.dev/plugins/),
+so you can also run `herdr plugin install abdallah/session-hub`. Each command
+in it runs `sh -c 'exec "$HOME/.local/bin/sessionhub" "$@"'`, so you still need
+`make install` and the client config first. It has the same plugin id as
+`sessionhub install-plugin`: use one or the other. Regenerate it after changing
+`Manifest` with `go test ./internal/plugin -run TestIndexManifest -update-index`.
+
 `sessionhub uninstall-plugin` runs `herdr plugin unlink sessionhub`, removes the plugin
 directory, and stops the watcher. It keeps the state directory, because the
 Claude Code hooks share its queue. Both commands are idempotent.

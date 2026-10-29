@@ -1,0 +1,55 @@
+id = "sessionhub"
+name = "sessionhub"
+version = "0.1.0"
+min_herdr_version = "0.9.3"
+description = "Register the Claude Code sessions in herdr panes with sessionhub."
+platforms = ["linux", "macos"]
+
+[[startup]]
+command = ["sh", "-c", "exec \"$HOME/.local/bin/sessionhub\" \"$@\"", "sessionhub", "plugin", "startup"]
+
+[[events]]
+on = "pane.agent_detected"
+command = ["sh", "-c", "exec \"$HOME/.local/bin/sessionhub\" \"$@\"", "sessionhub", "plugin", "event"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["sh", "-c", "exec \"$HOME/.local/bin/sessionhub\" \"$@\"", "sessionhub", "plugin", "event"]
+
+[[events]]
+on = "pane.closed"
+command = ["sh", "-c", "exec \"$HOME/.local/bin/sessionhub\" \"$@\"", "sessionhub", "plugin", "event"]
+
+[[events]]
+on = "pane.exited"
+command = ["sh", "-c", "exec \"$HOME/.local/bin/sessionhub\" \"$@\"", "sessionhub", "plugin", "event"]
+
+[[actions]]
+id = "status"
+title = "sessionhub: sessions on this machine"
+contexts = ["global"]
+command = ["sh", "-c", "exec \"$HOME/.local/bin/sessionhub\" \"$@\"", "sessionhub", "status"]
+
+[[actions]]
+id = "resume"
+title = "sessionhub: resume a session"
+contexts = ["global"]
+command = ["sh", "-c", "exec \"$HOME/.local/bin/sessionhub\" \"$@\"", "sessionhub", "plugin", "open-picker"]
+
+[[actions]]
+id = "inbox"
+title = "sessionhub: inbox"
+contexts = ["global"]
+command = ["sh", "-c", "exec \"$HOME/.local/bin/sessionhub\" \"$@\"", "sessionhub", "plugin", "open-inbox"]
+
+[[panes]]
+id = "resume-picker"
+title = "sessionhub: resume"
+placement = "overlay"
+command = ["sh", "-c", "exec \"$HOME/.local/bin/sessionhub\" \"$@\"", "sessionhub", "resume", "--pick"]
+
+[[panes]]
+id = "inbox"
+title = "sessionhub: inbox"
+placement = "split"
+command = ["sh", "-c", "exec \"$HOME/.local/bin/sessionhub\" \"$@\"", "sessionhub", "inbox", "--watch"]

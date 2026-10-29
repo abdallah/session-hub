@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/abdallah/session-hub/internal/paths"
 )
+
+var updateIndex = flag.Bool("update-index", false, "rewrite the repo-root herdr-plugin.toml")
 
 type manifestDoc struct {
 	ID              string   `toml:"id"`
@@ -289,5 +292,27 @@ func TestInstallHerdrFailure(t *testing.T) {
 	}
 	if err := uninstall(context.Background(), io.Discard); err == nil {
 		t.Error("uninstall succeeded with a failing herdr CLI")
+	}
+}
+
+// The committed index manifest must match IndexManifest; regenerate it with
+// `go test ./internal/plugin -run TestIndexManifest -update-index`.
+func TestIndexManifest(t *testing.T) {
+	path := filepath.Join("..", "..", ManifestFile)
+	if *updateIndex {
+		if err := os.WriteFile(path, []byte(IndexManifest()), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || string(b) != IndexManifest() {
+		t.Fatalf("%s is stale (err %v); run with -update-index", path, err)
+	}
+	var m manifestDoc
+	if _, err := toml.Decode(IndexManifest(), &m); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Startup[0].Command; len(got) != 6 || got[0] != "sh" || got[4] != "plugin" || got[5] != "startup" {
+		t.Fatalf("startup command = %q", got)
 	}
 }
