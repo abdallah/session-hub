@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/abdallah/session-hub/internal/api"
@@ -214,8 +215,15 @@ type controller struct {
 	// start starts a new session for a start request; nil fails every
 	// start. runWatcher sets it.
 	start func(ctx context.Context, req api.StartRequest) api.ControlResultIn
-	log   *log.Logger
-	wait  time.Duration
+	// mirrorFor returns the terminal mirror for an attach; nil fails every
+	// attach. runWatcher sets it.
+	mirrorFor func(s api.Session) (mirror, error)
+	// attachSlots holds one token per open attach, at most maxAttaches;
+	// attaches tracks their goroutines so loop waits for them.
+	attachSlots chan struct{}
+	attaches    sync.WaitGroup
+	log         *log.Logger
+	wait        time.Duration
 	// sleep pauses for d, or returns false when ctx ends first. Tests
 	// replace it.
 	sleep   func(ctx context.Context, d time.Duration) bool
@@ -234,7 +242,7 @@ type resumedPane struct {
 
 func newController(newClient func() (*client.Client, error), run controlFunc, logger *log.Logger) *controller {
 	return &controller{newClient: newClient, run: run, log: logger, wait: controlWait, sleep: sleepCtx,
-		resumed: map[string]resumedPane{}, now: time.Now}
+		resumed: map[string]resumedPane{}, now: time.Now, attachSlots: make(chan struct{}, maxAttaches)}
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {
@@ -248,8 +256,10 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// loop polls until ctx ends.
+// loop polls until ctx ends, then waits for open attaches to post their
+// results.
 func (c *controller) loop(ctx context.Context) {
+	defer c.attaches.Wait()
 	c.log.Printf("control: waiting for Remote Control requests")
 	for ctx.Err() == nil {
 		if d := c.once(ctx); d > 0 && !c.sleep(ctx, d) {
@@ -307,6 +317,10 @@ func (c *controller) handle(ctx context.Context, cl *client.Client, claim api.Co
 		c.handleMove(ctx, cl, claim)
 		return
 	}
+	if req.Action == api.ActionAttach {
+		c.startAttach(ctx, cl, claim)
+		return
+	}
 	in := api.ControlResultIn{State: api.ControlFailed, Detail: "unknown action " + termtext.Clean(req.Action, 40)}
 	switch req.Action {
 	case api.ActionRemoteControl:
@@ -326,11 +340,17 @@ func (c *controller) handle(ctx context.Context, cl *client.Client, claim api.Co
 	if req.Action == api.ActionStart {
 		target = "a new session"
 	}
-	c.log.Printf("control: request %s for %s: %s %s", req.ID, target, in.State, in.Detail)
+	c.postResult(ctx, cl, req.ID, target, in)
+}
+
+// postResult logs and posts the result of request id, also when ctx has
+// ended.
+func (c *controller) postResult(ctx context.Context, cl *client.Client, id, target string, in api.ControlResultIn) {
+	c.log.Printf("control: request %s for %s: %s %s", id, target, in.State, in.Detail)
 	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), controlPostFor)
 	defer cancel()
-	if err := cl.PostControlResult(pctx, req.ID, in); err != nil {
-		c.log.Printf("control: result for request %s not recorded: %v", req.ID, err)
+	if err := cl.PostControlResult(pctx, id, in); err != nil {
+		c.log.Printf("control: result for request %s not recorded: %v", id, err)
 	}
 }
 

@@ -29,6 +29,7 @@ type Server struct {
 	publicURL string
 	log       *log.Logger
 	control   *controlHub
+	attach    *attachHub
 	// after is the long poll's timer. Tests replace it.
 	after func(time.Duration) <-chan time.Time
 	// permCheck is how often an open decision poll rereads its request, to
@@ -52,7 +53,7 @@ func New(st *store.Store, publicURL string, logger *log.Logger) *Server {
 		logger = log.New(io.Discard, "", 0)
 	}
 	return &Server{store: st, publicURL: strings.TrimRight(publicURL, "/"), log: logger, control: newControlHub(),
-		after: time.After, permCheck: time.Second}
+		attach: newAttachHub(), after: time.After, permCheck: time.Second}
 }
 
 // Handler returns the API with request logging.
@@ -143,6 +144,8 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 		limit := int64(MaxBodyBytes)
 		if isBundleUpload(r) {
 			limit = maxBundleBytes // the handler checks the caller first
+		} else if isAttachOutput(r) {
+			limit = maxAttachOutput
 		}
 		r.Body = http.MaxBytesReader(sw, r.Body, limit)
 		next.ServeHTTP(sw, r.WithContext(context.WithValue(r.Context(), ctxKey{}, info)))

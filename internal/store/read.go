@@ -43,7 +43,7 @@ func ResumeCommand(sshHost, machine, id string) string {
 }
 
 // sessionSelect reads a session, its machine, its latest report, and its
-// latest control request.
+// latest Remote Control request (attach requests are not shown).
 const sessionSelect = `SELECT s.id, s.agent, m.name, m.ssh_host, s.cwd, s.git_repo, s.git_branch,
 	s.herdr_session, s.herdr_workspace, s.herdr_pane, s.rex_session, s.rex_block, s.title, s.title_source, s.agent_state,
 	s.started_at, s.last_seen_at, s.ended_at,
@@ -56,7 +56,7 @@ const sessionSelect = `SELECT s.id, s.agent, m.name, m.ssh_host, s.cwd, s.git_re
 FROM sessions s
 JOIN machines m ON m.id = s.machine_id
 LEFT JOIN reports r ON r.id = (SELECT id FROM reports WHERE session_id = s.id ORDER BY id DESC LIMIT 1)
-LEFT JOIN control_requests c ON c.id = (SELECT id FROM control_requests WHERE session_id = s.id
+LEFT JOIN control_requests c ON c.id = (SELECT id FROM control_requests WHERE session_id = s.id AND action = 'remote_control'
 	ORDER BY created_at DESC, rowid DESC LIMIT 1)
 LEFT JOIN session_digests dg ON dg.session_id = s.id
 LEFT JOIN moves mv ON mv.id = (SELECT id FROM moves WHERE session_id = s.id ORDER BY created_at DESC, rowid DESC LIMIT 1)

@@ -162,6 +162,17 @@ func findPane(h *herdr.Client, s api.Session, o ControlOptions, sameServer bool)
 	return "", nil
 }
 
+// FindPane returns the pane where Claude runs session s in the herdr at
+// socket: the recorded pane, else any pane in a fresh snapshot. "" means
+// none.
+func FindPane(h *herdr.Client, socket string, s api.Session) (string, error) {
+	sameServer := s.HerdrSession == "" || s.HerdrSession == herdr.SessionName(socket)
+	return findPane(h, s, ControlOptions{Resume: true}, sameServer)
+}
+
+// Runs reports whether herdr detects Claude running session id in p.
+func Runs(p herdr.PaneInfo, id string) bool { return runs(p, id) }
+
 // paneGet looks up pane id. found is false when herdr has no such pane.
 func paneGet(h *herdr.Client, id string) (p herdr.PaneInfo, found bool, err error) {
 	p, err = h.PaneGet(id)

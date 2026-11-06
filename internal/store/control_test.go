@@ -454,3 +454,54 @@ func TestMigrateV2Database(t *testing.T) {
 		t.Errorf("create after migration: %v %v", created, err)
 	}
 }
+
+// TestCreateAttach: an attach is a control request of its own action. It
+// does not reuse an open Remote Control request or a claimed attach, and a
+// claim keeps it open past ControlTTL.
+func TestCreateAttach(t *testing.T) {
+	e := newControlEnv(t)
+	ctx := context.Background()
+	e.session(e.tower, "s1", "p1")
+	e.poll(e.tower)
+	rc := e.create("s1")
+	a, created, err := e.s.CreateControlAction(ctx, "s1", api.ActionAttach, api.RequestedByDashboard)
+	if err != nil || !created || a.ID == rc.ID || a.Action != api.ActionAttach || a.Machine != "tower" {
+		t.Fatalf("attach: %+v %v %v", a, created, err)
+	}
+	again, created, err := e.s.CreateControlAction(ctx, "s1", api.ActionAttach, api.RequestedByDashboard)
+	if err != nil || created || again.ID != a.ID {
+		t.Fatalf("pending attach not returned: %+v %v %v", again, created, err)
+	}
+	if _, _, err := e.s.CreateControlAction(ctx, "s1", "shell", api.RequestedByDashboard); !errors.Is(err, ErrInvalid) {
+		t.Errorf("unknown action: %v, want ErrInvalid", err)
+	}
+	// Claim the Remote Control request, then the attach.
+	for _, want := range []string{rc.ID, a.ID} {
+		c, ok, err := e.s.ClaimControl(ctx, e.tower.ID)
+		if err != nil || !ok || c.Request.ID != want {
+			t.Fatalf("claim: %+v %v %v, want %s", c.Request, ok, err, want)
+		}
+		if want == a.ID && !c.Request.ExpiresAt.Equal(e.clock.Now().Add(AttachTTL)) {
+			t.Errorf("claimed attach expires %v, want now+AttachTTL", c.Request.ExpiresAt)
+		}
+	}
+	next, created, err := e.s.CreateControlAction(ctx, "s1", api.ActionAttach, api.RequestedByDashboard)
+	if err != nil || !created || next.ID == a.ID {
+		t.Fatalf("claimed attach reused: %+v %v %v", next, created, err)
+	}
+	e.clock.Advance(ControlTTL + time.Second)
+	if _, err := e.s.FinishControl(ctx, e.tower.ID, a.ID, api.ControlResultIn{State: api.ControlDone, Detail: "guest left"}); err != nil {
+		t.Errorf("finish attach after ControlTTL: %v", err)
+	}
+	// A Rex-only session takes an attach but not Remote Control.
+	if _, err := e.s.UpsertSession(ctx, e.tower.ID, api.SessionUpsert{ID: "rex1", Agent: "claude", Source: api.SourcePlugin, RexSession: "r", RexBlock: "b1"}); err != nil {
+		t.Fatal(err)
+	}
+	e.poll(e.tower)
+	if _, _, err := e.s.CreateControlAction(ctx, "rex1", api.ActionAttach, api.RequestedByDashboard); err != nil {
+		t.Errorf("attach to a Rex session: %v", err)
+	}
+	if _, _, err := e.s.CreateControl(ctx, "rex1", api.RequestedByDashboard); !errors.Is(err, ErrNotControllable) {
+		t.Errorf("remote control of a Rex session: %v, want ErrNotControllable", err)
+	}
+}

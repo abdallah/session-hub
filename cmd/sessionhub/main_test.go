@@ -13,7 +13,7 @@ import (
 )
 
 var commands = []string{"server", "machine", "plugin", "install-plugin", "uninstall-plugin", "hook", "install-hooks",
-	"uninstall-hooks", "install-mod", "uninstall-mod", "mod", "mcp", "install-mcp", "uninstall-mcp", "ls", "show", "status", "login", "inbox", "rules", "send",
+	"uninstall-hooks", "install-mod", "uninstall-mod", "mod", "mcp", "install-mcp", "uninstall-mcp", "ls", "show", "status", "login", "attach", "inbox", "rules", "send",
 	"approve", "deny", "move", "move-key", "resume", "remote-control", "join"}
 
 // pluginSubs are the plugin subcommands with their own route.

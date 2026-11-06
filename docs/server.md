@@ -129,7 +129,9 @@ Machines send `Authorization: Bearer <token>`. Browsers send the
   `X-Hub-Action: send`, `POST /v1/permissions/{id}/decide` with
   `X-Hub-Action: approve`, `POST /v1/sessions/{id}/move` with
   `X-Hub-Action: move`, `POST /v1/machines/{name}/start` with
-  `X-Hub-Action: start`, and
+  `X-Hub-Action: start`, `POST /v1/sessions/{id}/attach`,
+  `GET /v1/attach/{id}/output`, and `POST /v1/attach/{id}/input` with
+  `X-Hub-Action: attach`, and
   `POST /logout` with `X-Hub-Action: sign-out`. Nothing else: the cookie never
   reaches `/v1/logins` or `/v1/web-sessions`, and with any other write it gets
   `401`. A cookie write without the right header gets `403`. The header makes
@@ -138,8 +140,9 @@ Machines send `Authorization: Bearer <token>`. Browsers send the
   that one session (`web_sessions.session_id`). It may call `GET /`,
   `POST /logout`, `GET /v1/sessions` (filtered to the session, with
   `X-Hub-Scope: <id>`), `GET /v1/sessions/{id}`, `GET /v1/inbox` (filtered),
-  `POST /v1/messages` to that session, and `POST /v1/permissions/{id}/decide`
-  for that session's requests, with the same `X-Hub-Action` rules. Every
+  `POST /v1/messages` to that session, `POST /v1/permissions/{id}/decide`
+  for that session's requests, and the three attach routes for that
+  session, with the same `X-Hub-Action` rules. Every
   other route answers `403`; another session's ID or request answers `404`.
   Its session JSON has no `resume_command` or `remote_control_url`.
 - An unknown, revoked, or expired session counts as no credentials: `401`.
@@ -173,6 +176,11 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `POST /v1/sessions/{id}/remote-control` | machine, or cookie with `X-Hub-Action: remote-control` | `202` new, `200` open one; a `ControlRequest` | Ask the session's machine to turn on Remote Control. See [Remote Control requests](#remote-control-requests). |
 | `GET /v1/machines/self/control?wait=30` | machine | `200` a `ControlClaim`; `204` none | The watcher's long poll. |
 | `POST /v1/control/{id}/result` | machine (the claiming one) | `200`, the `ControlRequest`, the `Message` for a `msg_` ID, or the `StartRequest` for an `st_` ID | The watcher's result (`ControlResultIn`). |
+| `POST /v1/sessions/{id}/attach` | machine, or cookie with `X-Hub-Action: attach` | `202` new, `200` pending one; an `Attach` | Ask the session's machine to mirror its terminal. See [Attach](#attach). |
+| `GET /v1/attach/{id}/output` | machine, or cookie with `X-Hub-Action: attach` | `200`, a byte stream | Terminal bytes from the machine. |
+| `POST /v1/attach/{id}/input` | machine, or cookie with `X-Hub-Action: attach` | `204` | Keystrokes for the session, as raw bytes. |
+| `GET /v1/machines/self/attach/{id}/input` | machine (the attach's one) | `200`, a byte stream | The guest's keystrokes. |
+| `POST /v1/machines/self/attach/{id}/output` | machine (the attach's one) | `204` | Terminal bytes for the guest, as raw bytes. |
 | `GET /v1/sessions` | read | `200`, `[]Session` | List sessions, most recently seen first. |
 | `GET /v1/sessions/{id}` | read | `200`, `SessionDetail` | One session with every report and the last 50 events, newest first. |
 | `GET /v1/machines` | read | `200`, `[]Machine` | Machines, by name. `online` is true when the machine's watcher polled in the last 2 minutes. |
@@ -1027,6 +1035,37 @@ If it doesn't and `trust` is not set, the request fails with `<dir> is not
 trusted by Claude on <machine>; open it once or pass --trust`, and nothing
 starts. The watcher never answers Claude's trust prompt in a pane.
 
+### Attach
+
+An attach mirrors one session's terminal to a guest (`sessionhub attach`)
+through the server. It is a control request with `action` `attach`; its ID
+is the attach ID.
+
+- `POST /v1/sessions/{id}/attach` takes no body and needs the full ID. A
+  guest may attach only to its own session (`403` otherwise). The checks and
+  answers are those of `POST /v1/sessions/{id}/remote-control`, except that a
+  session with a Rex block and no herdr pane qualifies, and only a `pending`
+  attach is returned with `200`: a `claimed` one belongs to another guest.
+  A new attach wakes the machine's long poll.
+- The watcher claims it from `GET /v1/machines/self/control` like any
+  request. A claimed attach expires 24 hours after the claim, not 2 minutes
+  after creation.
+- The guest reads `GET /v1/attach/{id}/output` and sends
+  `POST /v1/attach/{id}/input`. The machine reads
+  `GET /v1/machines/self/attach/{id}/input` and sends
+  `POST /v1/machines/self/attach/{id}/output`; another machine gets `409`.
+- A stream is `application/octet-stream`, flushed per chunk. It has one
+  reader at a time; a second gets `409`. `HEAD` gets `405`.
+- A `POST` waits while the other side's buffer (64 chunks) is full, and
+  answers `410` when the attach ended meanwhile.
+- The attach ends when the machine posts its control result, when the
+  guest's output stream has been closed for 5 seconds (or never opened), when
+  no machine stream or output arrives within 2 minutes, or after 30 minutes
+  without bytes either way. Both streams then end, and the relay routes
+  answer `404`.
+- The relay is in memory. A server restart ends every attach; the guest
+  attaches again.
+
 ### The Claude Code mod
 
 The mod runs inside each Claude Code session and calls `sessionhub mod`, which
@@ -1372,7 +1411,9 @@ Text from a session is cleaned first.
 
 - A request body over 64 KiB returns `413`, except a move bundle
   (`PUT /v1/moves/{id}/bundle`) or a snapshot
-  (`PUT /v1/sessions/{id}/snapshots/{machine}`), which may be 64 MiB. Uploads and downloads
+  (`PUT /v1/sessions/{id}/snapshots/{machine}`), which may be 64 MiB, and
+  attach output (`POST /v1/machines/self/attach/{id}/output`), which may be
+  1 MiB. Uploads and downloads
   of a bundle may take 10 minutes; every other request has 30 seconds.
 - A digest body over 16 KiB (`MaxDigestBytes`) returns `413`.
 - A report list (`done`, `in_flight`, `waiting_on`) holds at most 20 items of

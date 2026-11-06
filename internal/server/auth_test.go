@@ -49,6 +49,7 @@ func TestAuthMatrix(t *testing.T) {
 		t.Fatalf("claim: %v %v", ok, err)
 	}
 	const link = "https://claude.ai/code/session_01AbCdEfGhIjKlMnOpQrStUv"
+	const closedAttach = "cr_matrixAttachEnded00000"
 
 	// A message to sid1 for GET /v1/messages/{id}. The authorized control
 	// poll may claim it, which its alsoOK covers.
@@ -306,10 +307,19 @@ func TestAuthMatrix(t *testing.T) {
 		"GET /v1/machines/self/control": {path: "/v1/machines/self/control?wait=1", ok: 204, alsoOK: 200},
 		"POST /v1/control/{id}/result": {path: "/v1/control/" + claim.Request.ID + "/result",
 			body: api.ControlResultIn{State: api.ControlDone, URL: link}, ok: 200, okB: 409},
-		"GET /v1/sessions":      {path: "/v1/sessions", ok: 200},
-		"GET /v1/sessions/{id}": {path: "/v1/sessions/" + sid1[:8], ok: 200},
-		"GET /v1/machines":      {path: "/v1/machines", ok: 200},
-		"GET /login/{code}":     {path: "/login/" + linkCode, ok: 200},
+		// The first authorized request creates (202); later ones return the
+		// pending one (200), or create again once the poll claimed it.
+		"POST /v1/sessions/{id}/attach": {path: "/v1/sessions/" + sid1 + "/attach", ok: 202, alsoOK: 200},
+		// The relay routes on an attach that is not open: an authorized
+		// request passes auth and gets 404. attach_test.go covers the relay.
+		"GET /v1/attach/{id}/output":                {path: "/v1/attach/" + closedAttach + "/output", ok: 404},
+		"POST /v1/attach/{id}/input":                {path: "/v1/attach/" + closedAttach + "/input", body: []byte("k"), ok: 404},
+		"GET /v1/machines/self/attach/{id}/input":   {path: "/v1/machines/self/attach/" + closedAttach + "/input", ok: 404},
+		"POST /v1/machines/self/attach/{id}/output": {path: "/v1/machines/self/attach/" + closedAttach + "/output", body: []byte("o"), ok: 404},
+		"GET /v1/sessions":                          {path: "/v1/sessions", ok: 200},
+		"GET /v1/sessions/{id}":                     {path: "/v1/sessions/" + sid1[:8], ok: 200},
+		"GET /v1/machines":                          {path: "/v1/machines", ok: 200},
+		"GET /login/{code}":                         {path: "/login/" + linkCode, ok: 200},
 		"POST /login/{code}": {fresh: func() string { return "/login/" + e.loginCode(nextName()) },
 			hdr: map[string]string{"Origin": testPublicURL}, ok: 303},
 		"POST /logout":         {path: "/logout", ok: 204},
@@ -366,6 +376,7 @@ func TestAuthMatrix(t *testing.T) {
 		{"cookie+start", "", newSession, api.HeaderActionStart},
 		{"cookie+tasks", "", newSession, api.HeaderActionTasks},
 		{"cookie+knowledge", "", newSession, api.HeaderActionKnowledge},
+		{"cookie+attach", "", newSession, api.HeaderActionAttach},
 		{"cookie+wrong action", "", newSession, "title"},
 		{"badcookie", "", "hub_s_wrong", ""},
 		{"guest", "", newGuest, ""},
@@ -373,6 +384,7 @@ func TestAuthMatrix(t *testing.T) {
 		{"guest+approve", "", newGuest, api.HeaderActionApprove},
 		{"guest+sign-out", "", newGuest, api.HeaderActionSignOut},
 		{"guest+tasks", "", newGuest, api.HeaderActionTasks},
+		{"guest+attach", "", newGuest, api.HeaderActionAttach},
 	}
 	// actionFor is the X-Hub-Action value each actor route needs with the
 	// cookie. The credential named cookie+<value> sends exactly that value.
@@ -388,6 +400,7 @@ func TestAuthMatrix(t *testing.T) {
 		accessTasks:        api.HeaderActionTasks,
 		accessKnowledge:    api.HeaderActionKnowledge,
 		accessKnowledgeWeb: api.HeaderActionKnowledge,
+		accessAttach:       api.HeaderActionAttach,
 	}
 	expect := func(rt route, c authCase, tk string) []int {
 		guest := strings.HasPrefix(tk, "guest")
