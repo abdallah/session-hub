@@ -377,6 +377,15 @@ func renderDetail(w io.Writer, d api.SessionDetail, now time.Time) {
 		}
 		field("herdr", strings.Join(parts, " "))
 	}
+	if d.RexSession != "" || d.RexBlock != "" {
+		var parts []string
+		for _, kv := range [][2]string{{"session", d.RexSession}, {"block", d.RexBlock}} {
+			if kv[1] != "" {
+				parts = append(parts, kv[0]+"="+kv[1])
+			}
+		}
+		field("rex", strings.Join(parts, " "))
+	}
 	field("started", fmt.Sprintf("%s (%s ago)", d.StartedAt.Format(time.RFC3339), age(now, d.StartedAt)))
 	field("last seen", fmt.Sprintf("%s (%s ago)", d.LastSeenAt.Format(time.RFC3339), age(now, d.LastSeenAt)))
 	if d.EndedAt != nil {

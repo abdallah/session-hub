@@ -662,7 +662,7 @@ func (s *Store) FinishMove(ctx context.Context, machineID int64, id string, in a
 			// The pane goes too, so no Remote Control resumes the local
 			// copy while the cloud session works on it.
 			if _, err := tx.ExecContext(ctx, `UPDATE sessions SET ended_at = COALESCE(ended_at, ?), rc_url = '', rc_at = NULL,
-				herdr_session = '', herdr_workspace = '', herdr_pane = '' WHERE id = ?`, nowS, r.sessionID); err != nil {
+				herdr_session = '', herdr_workspace = '', herdr_pane = '', rex_session = '', rex_block = '' WHERE id = ?`, nowS, r.sessionID); err != nil {
 				return api.Move{}, err
 			}
 			ended, _ := json.Marshal(map[string]string{"reason": api.EndedMovedToCloud})
@@ -673,7 +673,7 @@ func (s *Store) FinishMove(ctx context.Context, machineID int64, id string, in a
 				return api.Move{}, err
 			}
 		} else if _, err := tx.ExecContext(ctx, `UPDATE sessions SET machine_id = ?, herdr_session = '', herdr_workspace = '',
-			herdr_pane = '', rc_url = '', rc_at = NULL WHERE id = ?`, r.target.Int64, r.sessionID); err != nil {
+			herdr_pane = '', rex_session = '', rex_block = '', rc_url = '', rc_at = NULL WHERE id = ?`, r.target.Int64, r.sessionID); err != nil {
 			return api.Move{}, err
 		}
 		payload, err := json.Marshal(p)

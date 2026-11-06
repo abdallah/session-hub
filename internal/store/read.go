@@ -45,7 +45,7 @@ func ResumeCommand(sshHost, machine, id string) string {
 // sessionSelect reads a session, its machine, its latest report, and its
 // latest control request.
 const sessionSelect = `SELECT s.id, s.agent, m.name, m.ssh_host, s.cwd, s.git_repo, s.git_branch,
-	s.herdr_session, s.herdr_workspace, s.herdr_pane, s.title, s.title_source, s.agent_state,
+	s.herdr_session, s.herdr_workspace, s.herdr_pane, s.rex_session, s.rex_block, s.title, s.title_source, s.agent_state,
 	s.started_at, s.last_seen_at, s.ended_at,
 	r.ts, r.done_json, r.in_flight_json, r.waiting_on_json, r.note,
 	m.last_poll, s.rc_url, s.rc_at,
@@ -74,7 +74,7 @@ func (s *Store) scanSession(sc scanner, now time.Time) (api.Session, error) {
 	var liveCost sql.NullFloat64
 	var usageAt, modSeen, stateTS sql.NullString
 	err := sc.Scan(&x.ID, &x.Agent, &x.Machine, &sshHost, &x.CWD, &x.GitRepo, &x.GitBranch,
-		&x.HerdrSession, &x.HerdrWorkspace, &x.HerdrPane, &x.Title, &x.TitleSource, &x.AgentState,
+		&x.HerdrSession, &x.HerdrWorkspace, &x.HerdrPane, &x.RexSession, &x.RexBlock, &x.Title, &x.TitleSource, &x.AgentState,
 		&started, &lastSeen, &ended, &rTS, &rDone, &rInFlight, &rWaiting, &rNote,
 		&lastPoll, &x.RemoteControlURL, &rcAt,
 		&rc.id, &rc.action, &rc.state, &rc.requestedBy, &rc.created, &rc.expires, &rc.claimed, &rc.finished, &rc.url, &rc.detail,

@@ -121,6 +121,8 @@ type SessionUpsert struct {
 	HerdrSession   string `json:"herdr_session,omitempty"`
 	HerdrWorkspace string `json:"herdr_workspace,omitempty"`
 	HerdrPane      string `json:"herdr_pane,omitempty"`
+	RexSession     string `json:"rex_session,omitempty"` // REX_SESSION
+	RexBlock       string `json:"rex_block,omitempty"`   // REX_BLOCK
 	AgentState     string `json:"agent_state,omitempty"`
 	TitleHint      string `json:"title_hint,omitempty"`   // herdr terminal_title_stripped
 	FirstPrompt    string `json:"first_prompt,omitempty"` // truncated to 200 chars by the client
@@ -178,6 +180,8 @@ type Session struct {
 	HerdrSession   string    `json:"herdr_session,omitempty"`
 	HerdrWorkspace string    `json:"herdr_workspace,omitempty"`
 	HerdrPane      string    `json:"herdr_pane,omitempty"`
+	RexSession     string    `json:"rex_session,omitempty"`
+	RexBlock       string    `json:"rex_block,omitempty"`
 	Title          string    `json:"title,omitempty"`
 	TitleSource    string    `json:"title_source,omitempty"` // user|herdr|prompt
 	StartedAt      time.Time `json:"started_at"`

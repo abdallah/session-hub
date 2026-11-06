@@ -63,7 +63,7 @@ logs one line on stderr and does nothing.
 
 | Event | Sends |
 |---|---|
-| `session-start` | `POST /v1/sessions`: `id`, `agent: claude`, `source: hooks`, `cwd`, git repo and branch, `herdr_pane` (`HERDR_PANE_ID`), `herdr_workspace` (`HERDR_WORKSPACE_ID`), `herdr_session` (from `HERDR_SOCKET_PATH`), `title_hint` (`session_title` if present). Also writes `<state>/current/<claude-pid>` with the session ID. |
+| `session-start` | `POST /v1/sessions`: `id`, `agent: claude`, `source: hooks`, `cwd`, git repo and branch, `herdr_pane` (`HERDR_PANE_ID`), `herdr_workspace` (`HERDR_WORKSPACE_ID`), `herdr_session` (from `HERDR_SOCKET_PATH`), `rex_session` and `rex_block` (`REX_SESSION`, `REX_BLOCK`, set by Rex's Claude Code hook), `title_hint` (`session_title` if present). Also writes `<state>/current/<claude-pid>` with the session ID. |
 | `prompt` | `POST /v1/sessions` with `first_prompt` (first 200 characters) and `agent_state: working`; a `prompt` event with payload `{"prompt": "<first 200 characters>"}`; a `state_changed` event with `{"agent_state": "working"}`. |
 | `stop` | `state_changed` with `{"agent_state": "idle"}`. Also starts a detached `sessionhub digest <id>`; the hook never waits for it. |
 | `notification` | `state_changed` with `{"agent_state": "blocked"}` when `notification_type` is `permission_prompt` or `elicitation_dialog`. Any other type (`idle_prompt`, `auth_success`, a missing type) sends nothing. The filter is in code; the settings matcher stays `*`. |

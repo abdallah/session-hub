@@ -128,6 +128,7 @@ func validateUpsert(u api.SessionUpsert) error {
 	for _, f := range []struct{ name, v string }{
 		{"agent", u.Agent}, {"herdr_session", u.HerdrSession},
 		{"herdr_workspace", u.HerdrWorkspace}, {"herdr_pane", u.HerdrPane},
+		{"rex_session", u.RexSession}, {"rex_block", u.RexBlock},
 	} {
 		if err := checkIdent(f.name, f.v); err != nil {
 			return err
@@ -237,10 +238,10 @@ func (s *Store) upsertTx(ctx context.Context, tx *sql.Tx, machineID int64, u api
 		title, src, _ := nextTitle("", u.TitleHint, u.FirstPrompt)
 		nowS := formatTS(now)
 		_, err = tx.ExecContext(ctx, `INSERT INTO sessions (id, machine_id, agent, cwd, git_repo, git_branch,
-			herdr_session, herdr_workspace, herdr_pane, title, title_source, first_prompt, agent_state,
-			started_at, last_seen_at, blocked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			herdr_session, herdr_workspace, herdr_pane, rex_session, rex_block, title, title_source, first_prompt, agent_state,
+			started_at, last_seen_at, blocked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			u.ID, machineID, u.Agent, u.CWD, u.GitRepo, u.GitBranch, u.HerdrSession, u.HerdrWorkspace,
-			u.HerdrPane, title, src, u.FirstPrompt, u.AgentState, nowS, nowS, blockedAtInsert(u.AgentState, nowS))
+			u.HerdrPane, u.RexSession, u.RexBlock, title, src, u.FirstPrompt, u.AgentState, nowS, nowS, blockedAtInsert(u.AgentState, nowS))
 		if err != nil {
 			return false, err
 		}
@@ -268,6 +269,8 @@ func (s *Store) upsertTx(ctx context.Context, tx *sql.Tx, machineID int64, u api
 	set("herdr_session", u.HerdrSession)
 	set("herdr_workspace", u.HerdrWorkspace)
 	set("herdr_pane", u.HerdrPane)
+	set("rex_session", u.RexSession)
+	set("rex_block", u.RexBlock)
 	// state_ts is the event clock (client timestamps, clamped to server now).
 	// An upsert carries no event time, so it sets the state and leaves
 	// state_ts alone: stamping it with server time here would make a

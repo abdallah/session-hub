@@ -292,6 +292,8 @@ func minimalSession(id string) api.SessionUpsert {
 		CWD:            os.Getenv("CLAUDE_PROJECT_DIR"),
 		HerdrPane:      os.Getenv("HERDR_PANE_ID"),
 		HerdrWorkspace: os.Getenv("HERDR_WORKSPACE_ID"),
+		RexSession:     os.Getenv("REX_SESSION"),
+		RexBlock:       os.Getenv("REX_BLOCK"),
 	}
 	if u.HerdrPane != "" {
 		u.HerdrSession = herdr.SessionName(herdr.SocketPath())
