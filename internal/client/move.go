@@ -116,7 +116,14 @@ func (c *Client) authorize(req *http.Request) {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
+	if c.cookie != "" {
+		req.AddCookie(&http.Cookie{Name: SessionCookie, Value: c.cookie})
+		req.Header.Set(api.HeaderAction, c.action)
+	}
 }
+
+// SessionCookie is the dashboard's session cookie name.
+const SessionCookie = "__Host-hub_session"
 
 // responseError reads a non-2xx response as a *StatusError, like do.
 func responseError(resp *http.Response) error {

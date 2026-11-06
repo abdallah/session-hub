@@ -41,8 +41,23 @@ func (e *StatusError) Error() string {
 type Client struct {
 	base    string
 	token   string
+	cookie  string // a web session token sent as the session cookie, for a guest sign-in
+	action  string // X-Hub-Action sent with cookie auth
 	http    *http.Client
 	timeout time.Duration
+}
+
+// NewGuest builds a Client that signs in with a web session token (the
+// value of the dashboard's session cookie), as a guest limited to one
+// session does. action is the X-Hub-Action the server requires for the
+// routes it will call, for example api.HeaderActionAttach.
+func NewGuest(serverURL, token, action string) (*Client, error) {
+	c, err := New(Config{ServerURL: serverURL})
+	if err != nil {
+		return nil, err
+	}
+	c.cookie, c.action = token, action
+	return c, nil
 }
 
 // New builds a Client from cfg. It errors when server_url is empty.
@@ -349,4 +364,74 @@ func (c *Client) DecidePermission(ctx context.Context, id string, in api.Decisio
 	var out api.PermissionRequest
 	err := c.do(ctx, http.MethodPost, "/v1/permissions/"+url.PathEscape(id)+"/decide", in, &out)
 	return out, err
+}
+
+// CreateAttach asks for a terminal mirror of session id.
+func (c *Client) CreateAttach(ctx context.Context, id string) (api.Attach, error) {
+	var a api.Attach
+	err := c.do(ctx, http.MethodPost, "/v1/sessions/"+url.PathEscape(id)+"/attach", struct{}{}, &a)
+	return a, err
+}
+
+// AttachOutput opens the guest side's terminal byte stream for attach id.
+// The caller reads until EOF (the mirror ended) and closes it.
+func (c *Client) AttachOutput(ctx context.Context, id string) (io.ReadCloser, error) {
+	return c.stream(ctx, "/v1/attach/"+url.PathEscape(id)+"/output")
+}
+
+// SendAttachInput posts keystrokes from the guest to attach id.
+func (c *Client) SendAttachInput(ctx context.Context, id string, b []byte) error {
+	return c.postBytes(ctx, "/v1/attach/"+url.PathEscape(id)+"/input", b)
+}
+
+// MachineAttachInput opens the machine side's stream of guest keystrokes for
+// attach id. The caller reads until EOF (the guest left) and closes it.
+func (c *Client) MachineAttachInput(ctx context.Context, id string) (io.ReadCloser, error) {
+	return c.stream(ctx, "/v1/machines/self/attach/"+url.PathEscape(id)+"/input")
+}
+
+// PostAttachOutput posts terminal bytes from the machine to attach id.
+func (c *Client) PostAttachOutput(ctx context.Context, id string, b []byte) error {
+	return c.postBytes(ctx, "/v1/machines/self/attach/"+url.PathEscape(id)+"/output", b)
+}
+
+// stream GETs path and returns the body for a chunked response. No timeout:
+// ctx bounds it.
+func (c *Client) stream(ctx context.Context, path string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.authorize(req)
+	req.Header.Set("Accept", "application/octet-stream")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode/100 != 2 {
+		defer resp.Body.Close()
+		return nil, responseError(resp)
+	}
+	return resp.Body, nil
+}
+
+// postBytes POSTs b as application/octet-stream and expects a 2xx.
+func (c *Client) postBytes(ctx context.Context, path string, b []byte) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	c.authorize(req)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return responseError(resp)
+	}
+	return nil
 }
