@@ -223,6 +223,16 @@ func (s *Store) permission(ctx context.Context, id string) (api.PermissionReques
 	return p, owner, err
 }
 
+// PermissionSession returns the session a request belongs to, or ErrNotFound.
+func (s *Store) PermissionSession(ctx context.Context, id string) (string, error) {
+	var sid string
+	err := s.db.QueryRowContext(ctx, `SELECT session_id FROM permission_requests WHERE id = ?`, id).Scan(&sid)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("%w: request %s", ErrNotFound, id)
+	}
+	return sid, err
+}
+
 // DecidePermission records the one decision for an open request: allow or
 // deny, with a reason for a deny. by is web:<name> or machine:<name>. A
 // decided request is ErrRequestClosed; an expired, answered-locally, or

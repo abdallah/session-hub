@@ -2,17 +2,37 @@ package server
 
 import (
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/abdallah/session-hub/internal/api"
 )
 
 // getInbox is GET /v1/inbox: the sessions that need you, grouped.
-func (s *Server) getInbox(w http.ResponseWriter, r *http.Request, _ principal) {
+func (s *Server) getInbox(w http.ResponseWriter, r *http.Request, p principal) {
 	in, err := s.store.Inbox(r.Context())
 	if err != nil {
 		s.storeError(w, err)
 		return
+	}
+	if sc := p.scope(); sc != "" {
+		in.Items = slices.DeleteFunc(in.Items, func(it api.InboxItem) bool { return it.Session.ID != sc })
+		in.Counts = api.InboxCounts{}
+		for i := range in.Items {
+			guestView(&in.Items[i].Session)
+		}
+		for _, it := range in.Items {
+			switch it.Group {
+			case api.InboxMoveFailed:
+				in.Counts.MoveFailed++
+			case api.InboxBlocked:
+				in.Counts.Blocked++
+			case api.InboxWaiting:
+				in.Counts.Waiting++
+			case api.InboxFinished:
+				in.Counts.Finished++
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, in)
 }

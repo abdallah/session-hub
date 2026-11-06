@@ -79,6 +79,12 @@ func (s *Server) postMessages(w http.ResponseWriter, r *http.Request, p principa
 		return
 	}
 	sender, limitKey := api.SenderDashboard, "web:"+webName(p)
+	for _, id := range in.SessionIDs {
+		if !p.inScope(id) {
+			writeError(w, http.StatusForbidden, "this sign-in may message only its own session")
+			return
+		}
+	}
 	if p.web == nil {
 		sender, limitKey = "cli on "+p.machine.Name, "machine:"+p.machine.Name
 		if in.FromSession != "" {
@@ -221,6 +227,17 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request, p prin
 	var in api.DecisionIn
 	if !decode(w, r, &in) {
 		return
+	}
+	if sc := p.scope(); sc != "" {
+		owner, err := s.store.PermissionSession(r.Context(), id)
+		if err != nil {
+			s.storeError(w, err)
+			return
+		}
+		if owner != sc {
+			writeError(w, http.StatusNotFound, "no request "+id)
+			return
+		}
 	}
 	req, err := s.store.DecidePermission(r.Context(), id, in, decider(p))
 	if err != nil {

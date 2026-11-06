@@ -33,7 +33,7 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 		{"journal_mode", "wal"},
 		{"busy_timeout", "5000"},
 		{"foreign_keys", "1"},
-		{"user_version", "19"},
+		{"user_version", "20"},
 	}
 	for _, c := range checks {
 		var got string
@@ -72,13 +72,13 @@ func TestOpenPragmasAndSchema(t *testing.T) {
 		"reports":             "done_json id in_flight_json note session_id ts waiting_on_json",
 		"control_requests":    "action claimed_at created_at detail expires_at finished_at id machine_id requested_by session_id state url",
 		"session_digests":     "as_of body received_at session_id",
-		"login_codes":         "code_hash created_at expires_at machine_id name used_at",
+		"login_codes":         "code_hash created_at expires_at machine_id name session_id used_at",
 		"inbox_triage":        "session_id snooze_until triaged_since updated_at",
 		"inbox_alerts":        "sent_at session_id since",
 		"knowledge":           "client_id confirmed_at created_at created_by decided_at decided_by every id kind replaces scope source_session state text why",
 		"messages":            "created_at detail id limit_key machine_id offered_at sender session_id state text updated_at",
 		"permission_requests": "answers created_at decided_at decided_by decision expires_at id machine_id polled_at reason session_id state tool_input tool_name truncated updated_at",
-		"web_sessions":        "created_at expires_at id last_used_at machine_id name token_hash",
+		"web_sessions":        "created_at expires_at id last_used_at machine_id name session_id token_hash",
 		"start_requests":      "claimed_at created_at detail dir expires_at finished_at id machine_id prompt requested_by state trust url",
 	}
 	for table, w := range want {

@@ -179,7 +179,18 @@ func TestSweepSnapshotsEnded(t *testing.T) {
 // rollbackV19 removes what schema v19 added.
 func rollbackV19(t *testing.T, s *Store) {
 	t.Helper()
+	rollbackV20(t, s)
 	if _, err := s.db.Exec("ALTER TABLE permission_requests DROP COLUMN answers"); err != nil {
 		t.Fatalf("drop answers: %v", err)
+	}
+}
+
+// rollbackV20 removes what schema v20 added.
+func rollbackV20(t *testing.T, s *Store) {
+	t.Helper()
+	for _, q := range []string{"ALTER TABLE login_codes DROP COLUMN session_id", "ALTER TABLE web_sessions DROP COLUMN session_id"} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
 	}
 }

@@ -71,6 +71,43 @@ type reqInfo struct{ who string }
 
 type ctxKey struct{}
 
+// guestKey marks a request to a route a guest sign-in may call.
+type guestKey struct{}
+
+// errGuestRoute is authenticate's answer when a browser signed in for one
+// session calls a route outside that session.
+var errGuestRoute = errors.New("this sign-in is limited to one session")
+
+// guestRoute marks the request so authenticate lets a guest sign-in through.
+func guestRoute(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), guestKey{}, true)))
+	})
+}
+
+// scope is the one session a guest sign-in may see, else "".
+func (p principal) scope() string {
+	if p.web == nil {
+		return ""
+	}
+	return p.web.Session
+}
+
+// inScope reports whether p may see session id.
+func (p principal) inScope(id string) bool {
+	sc := p.scope()
+	return sc == "" || sc == id
+}
+
+// authFail writes the response for an authenticate error.
+func (s *Server) authFail(w http.ResponseWriter, err error) {
+	if errors.Is(err, errGuestRoute) {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	s.internalError(w, err)
+}
+
 type statusWriter struct {
 	http.ResponseWriter
 	status int
@@ -163,6 +200,9 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request, allowCooki
 			setSessionCookie(w, c.Value)
 		}
 		setWho(r, "web:"+ws.Name)
+		if ws.Session != "" && r.Context().Value(guestKey{}) == nil {
+			return p, false, errGuestRoute
+		}
 		return principal{web: &ws}, true, nil
 	}
 	if tok == "" {
@@ -200,7 +240,7 @@ func (s *Server) actor(action string, h authedHandler) http.Handler {
 		p, ok, err := s.authenticate(w, r, true)
 		switch {
 		case err != nil:
-			s.internalError(w, err)
+			s.authFail(w, err)
 			return
 		case !ok:
 			w.Header().Set("WWW-Authenticate", `Bearer realm="sessionhub"`)
@@ -243,7 +283,7 @@ func (s *Server) auth(write bool, h authedHandler) http.Handler {
 		p, ok, err := s.authenticate(w, r, !write)
 		switch {
 		case err != nil:
-			s.internalError(w, err)
+			s.authFail(w, err)
 			return
 		case !ok:
 			w.Header().Set("WWW-Authenticate", `Bearer realm="sessionhub"`)

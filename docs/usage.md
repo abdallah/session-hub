@@ -17,7 +17,9 @@
   `sessionhub login --name <device>` on any joined machine, then open the printed
   link on that device or scan the QR code, and press **Sign in**. The browser
   stays signed in for 30 days after its last visit. `sessionhub login ls` lists
-  signed-in browsers, and `sessionhub login rm <name>` signs one out.
+  signed-in browsers, and `sessionhub login rm <name>` signs one out. To let
+  someone see and reply to one session only, add `--session <id>`; see
+  [Share one session](cli.md#share-one-session).
 - On the dashboard, **Remote Control** turns on Claude Code Remote Control for
   a session in herdr, and **Resume with Remote Control** restarts an ended one
   with it on, in a new herdr workspace on its machine. Tap **Open in Claude**

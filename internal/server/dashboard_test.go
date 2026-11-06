@@ -331,7 +331,7 @@ func TestDashboardWrites(t *testing.T) {
 		"try { return cleanMap(JSON.parse(window.localStorage.getItem(key)", "try { window.localStorage.setItem(key, JSON.stringify(m)); } catch (e)",
 		"if (keep && focusedKey() !== keep) focusKeyed(keep);",
 		// The inbox row: one tap target, then Done and Later.
-		"var p = inboxPrimary(s, busy)", `el("a", "notif-main")`, `el("button", "notif-main")`, "requestRC(s.id);",
+		"var p = scope ? { kind: \"expand\", label: \"Show more\", url: \"\" } : inboxPrimary(s, busy)", `el("a", "notif-main")`, `el("button", "notif-main")`, "requestRC(s.id);",
 		`el("button", "textbtn", "Clear")`, `el("summary", null, "Later")`, "openRows[s.id] = !open", "delete openRows[id]",
 		`querySelector(".notif-main")`, "if (lastSessions.length) render(lastSessions);",
 		"main { padding: 4px 0 32px; }", ".page { padding: 0 16px; }", "h2.machine-h { font-size: 1.25rem;",
@@ -1387,7 +1387,7 @@ process.stdout.write(JSON.stringify({
 	for _, want := range []string{`<button id="new" class="textbtn" type="button" aria-expanded="false" aria-controls="startbar" hidden>New session</button>`,
 		`fetch("/v1/starts/" + encodeURIComponent(id)`, "var why = startProblem(startMachine.value, startDir.value, startPrompt.value, startTrust.checked);",
 		`<input id="start-trust" type="checkbox">`,
-		"o.disabled = !c.ok;", "newBtn.hidden = tab === \"inbox\" || tab === \"tasks\" || tab === \"knowledge\" || signedOut;", ".startbar[hidden] { display: none; }"} {
+		"o.disabled = !c.ok;", "newBtn.hidden = tab === \"inbox\" || tab === \"tasks\" || tab === \"knowledge\" || signedOut || !!scope;", ".startbar[hidden] { display: none; }"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q", want)
 		}

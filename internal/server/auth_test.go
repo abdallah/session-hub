@@ -24,6 +24,7 @@ type authCase struct {
 	ok     int               // status for an authorized request
 	alsoOK int               // another status an authorized request may get, or 0
 	okB    int               // status for the other machine's token (bluebox), if not ok
+	okG    int               // status for a guest sign-in (sid1 only) on a guest route, if not ok
 	fresh  func() string     // if set, makes the path for each request (the route uses it up)
 	hdr    map[string]string // extra request headers
 }
@@ -263,7 +264,7 @@ func TestAuthMatrix(t *testing.T) {
 			body: api.PermissionIn{ToolName: "Bash"}, ok: 201, okB: 409},
 		"GET /v1/permissions/{id}/decision": {path: "/v1/permissions/" + waitOn.ID + "/decision?wait=1", ok: 204, okB: 409},
 		"POST /v1/permissions/{id}/decide": {fresh: func() string { return "/v1/permissions/" + newPermission().ID + "/decide" },
-			body: api.DecisionIn{Decision: api.DecisionAllow}, ok: 200},
+			body: api.DecisionIn{Decision: api.DecisionAllow}, ok: 200, okG: 404}, // the request is sid3's
 		"POST /v1/inbox/{id}/dismiss": {fresh: freshInbox("dismiss"),
 			body: api.TriageIn{Since: triageSince}, ok: 204},
 		"POST /v1/inbox/{id}/snooze": {fresh: freshInbox("snooze"),
@@ -338,8 +339,10 @@ func TestAuthMatrix(t *testing.T) {
 	}
 
 	// Browser credentials get a fresh session for each request, because a
-	// request may end its session (POST /logout).
+	// request may end its session (POST /logout). A guest is signed in for
+	// sid1 only.
 	const newSession = "new session"
+	const newGuest = "new guest"
 	tokens := []struct {
 		name   string
 		bearer string
@@ -365,6 +368,11 @@ func TestAuthMatrix(t *testing.T) {
 		{"cookie+knowledge", "", newSession, api.HeaderActionKnowledge},
 		{"cookie+wrong action", "", newSession, "title"},
 		{"badcookie", "", "hub_s_wrong", ""},
+		{"guest", "", newGuest, ""},
+		{"guest+send", "", newGuest, api.HeaderActionSend},
+		{"guest+approve", "", newGuest, api.HeaderActionApprove},
+		{"guest+sign-out", "", newGuest, api.HeaderActionSignOut},
+		{"guest+tasks", "", newGuest, api.HeaderActionTasks},
 	}
 	// actionFor is the X-Hub-Action value each actor route needs with the
 	// cookie. The credential named cookie+<value> sends exactly that value.
@@ -382,20 +390,30 @@ func TestAuthMatrix(t *testing.T) {
 		accessKnowledgeWeb: api.HeaderActionKnowledge,
 	}
 	expect := func(rt route, c authCase, tk string) []int {
+		guest := strings.HasPrefix(tk, "guest")
+		isCookie := strings.HasPrefix(tk, "cookie") || guest
+		action := "" // the X-Hub-Action the credential sends
+		if i := strings.Index(tk, "+"); i >= 0 {
+			action = tk[i+1:]
+		}
 		switch {
 		case rt.access == accessPublic:
 		case tk == "none" || tk == "bad" || tk == "read token" || tk == "badcookie":
 			return []int{http.StatusUnauthorized}
-		case (rt.access == accessWrite || rt.access == accessMachine) && strings.HasPrefix(tk, "cookie"):
+		case (rt.access == accessWrite || rt.access == accessMachine) && isCookie:
 			return []int{http.StatusUnauthorized} // the cookie never authorizes a machine route
-		case actionFor[rt.access] != "" && strings.HasPrefix(tk, "cookie") && tk != "cookie+"+actionFor[rt.access]:
+		case guest && !rt.guest:
+			return []int{http.StatusForbidden} // a guest sign-in reaches only its routes
+		case actionFor[rt.access] != "" && isCookie && action != actionFor[rt.access]:
 			return []int{http.StatusForbidden} // the cookie only with the route's own X-Hub-Action
 		case rt.access == accessKnowledgeWeb && strings.HasPrefix(tk, "machine"):
 			return []int{http.StatusForbidden} // only the dashboard decides and retires
-		case rt.access == accessSignOut && tk != "cookie+sign-out":
+		case rt.access == accessSignOut && !(isCookie && action == api.HeaderActionSignOut):
 			return []int{http.StatusForbidden} // only a browser ends its own session
 		case tk == "machineB" && c.okB != 0:
 			return []int{c.okB}
+		case guest && c.okG != 0:
+			return []int{c.okG}
 		}
 		if c.alsoOK != 0 {
 			return []int{c.ok, c.alsoOK}
@@ -416,6 +434,10 @@ func TestAuthMatrix(t *testing.T) {
 			if cookie == newSession {
 				minted++
 				cookie, _ = e.webSession(fmt.Sprintf("matrix%d", minted))
+			}
+			if cookie == newGuest {
+				minted++
+				cookie = e.guestSession(fmt.Sprintf("guest%d", minted), sid1)
 			}
 			path := c.path
 			if c.fresh != nil {

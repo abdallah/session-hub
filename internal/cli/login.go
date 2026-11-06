@@ -16,13 +16,13 @@ import (
 
 // loginAPI is the part of *client.Client that sessionhub login uses.
 type loginAPI interface {
-	CreateLogin(ctx context.Context, name string) (api.Login, error)
+	CreateLogin(ctx context.Context, name, session string) (api.Login, error)
 	ListWebSessions(ctx context.Context) ([]api.WebSession, error)
 	RevokeWebSession(ctx context.Context, id string) error
 }
 
 const loginUsage = `usage:
-  sessionhub login --name <name> [--no-qr] [--json]
+  sessionhub login --name <name> [--session <id>] [--no-qr] [--json]
   sessionhub login ls [--json]
   sessionhub login rm <name|id>`
 
@@ -51,6 +51,7 @@ func (e *env) loginCreate(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("sessionhub login", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	name := fs.String("name", "", "the browser session's name")
+	session := fs.String("session", "", "limit the browser to this one session (ID or unique prefix)")
 	noQR := fs.Bool("no-qr", false, "omit the QR code")
 	asJSON := fs.Bool("json", false, "print only {url, name, expires_at}")
 	if err := fs.Parse(args); err != nil {
@@ -62,10 +63,13 @@ func (e *env) loginCreate(ctx context.Context, args []string) error {
 	if *name == "" {
 		return fmt.Errorf("login: --name is required\n%s", loginUsage)
 	}
-	l, err := e.login.CreateLogin(ctx, *name)
+	l, err := e.login.CreateLogin(ctx, *name, *session)
 	var se *client.StatusError
 	if errors.As(err, &se) && se.Status == http.StatusConflict {
 		return fmt.Errorf("login: a browser session named %s exists; revoke it with `sessionhub login rm %s` or pick another name", *name, *name)
+	}
+	if errors.As(err, &se) && se.Status == http.StatusNotFound && *session != "" {
+		return fmt.Errorf("login: no session %s; see `sessionhub ls`", *session)
 	}
 	if err != nil {
 		return fmt.Errorf("login: %w", err)
@@ -78,7 +82,11 @@ func (e *env) loginCreate(ctx context.Context, args []string) error {
 		_, err = fmt.Fprintf(e.out, "%s\n", b)
 		return err
 	}
-	fmt.Fprintf(e.out, "Open this link on the device to sign it in as %s:\n\n  %s\n\n", clean(l.Name, 0), clean(l.URL, 0))
+	what := "sign it in as " + clean(l.Name, 0)
+	if l.Session != "" {
+		what += " with access to session " + clean(l.Session, 0) + " only"
+	}
+	fmt.Fprintf(e.out, "Open this link on the device to %s:\n\n  %s\n\n", what, clean(l.URL, 0))
 	fmt.Fprintf(e.out, "The link works once and expires at %s.\n", l.ExpiresAt.Local().Format("15:04:05"))
 	if *noQR {
 		return nil
@@ -112,9 +120,16 @@ func (e *env) loginLs(ctx context.Context, args []string) error {
 	}
 	const day = "2006-01-02 15:04"
 	tw := tabwriter.NewWriter(e.out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tID\tMACHINE\tCREATED\tLAST_USED\tEXPIRES")
+	fmt.Fprintln(tw, "NAME\tID\tMACHINE\tSESSION\tCREATED\tLAST_USED\tEXPIRES")
 	for _, s := range list {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", clean(s.Name, 0), clean(s.ID, 0), clean(s.Machine, 0),
+		scope := "all"
+		if s.Session != "" {
+			scope = clean(s.Session, 0)
+			if len(scope) > 8 {
+				scope = scope[:8]
+			}
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", clean(s.Name, 0), clean(s.ID, 0), clean(s.Machine, 0), scope,
 			s.CreatedAt.Local().Format(day), age(e.now(), s.LastUsedAt), s.ExpiresAt.Local().Format(day))
 	}
 	return tw.Flush()

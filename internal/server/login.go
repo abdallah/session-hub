@@ -88,12 +88,20 @@ func (s *Server) createLogin(w http.ResponseWriter, r *http.Request, p principal
 	if !decode(w, r, &in) {
 		return
 	}
-	code, exp, err := s.store.CreateLoginCode(r.Context(), p.machine.ID, in.Name)
+	if in.Session != "" {
+		// Resolve here too, so the answer carries the full ID.
+		var err error
+		if in.Session, err = s.store.ResolveID(r.Context(), in.Session); err != nil {
+			s.storeError(w, err)
+			return
+		}
+	}
+	code, exp, err := s.store.CreateLoginCode(r.Context(), p.machine.ID, in.Name, in.Session)
 	if err != nil {
 		s.storeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, api.Login{URL: s.publicURL + "/login/" + code, Name: in.Name, ExpiresAt: exp})
+	writeJSON(w, http.StatusCreated, api.Login{URL: s.publicURL + "/login/" + code, Name: in.Name, Session: in.Session, ExpiresAt: exp})
 }
 
 // loginPage is GET /login/{code}: the confirm page. It changes nothing, so

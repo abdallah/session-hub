@@ -18,12 +18,14 @@ type fakeLogin struct {
 	sessions []api.WebSession
 	err      error
 	names    []string // CreateLogin calls
+	scopes   []string // the session each CreateLogin call limited to
 	revoked  []string
 	listed   int
 }
 
-func (f *fakeLogin) CreateLogin(_ context.Context, name string) (api.Login, error) {
+func (f *fakeLogin) CreateLogin(_ context.Context, name, session string) (api.Login, error) {
 	f.names = append(f.names, name)
+	f.scopes = append(f.scopes, session)
 	return f.login, f.err
 }
 func (f *fakeLogin) ListWebSessions(context.Context) ([]api.WebSession, error) {
@@ -183,5 +185,24 @@ func TestLoginRm(t *testing.T) {
 		if _, err := runLogin(t, &fakeLogin{}, args...); err == nil || !strings.Contains(err.Error(), "usage:") {
 			t.Errorf("args %q: %v, want a usage error", args, err)
 		}
+	}
+}
+
+func TestLoginSessionFlag(t *testing.T) {
+	f := &fakeLogin{login: api.Login{URL: testLoginURL, Name: "guest", Session: "3f2a9c10-1111-4a4a", ExpiresAt: now.Add(10 * time.Minute)}}
+	out, err := runLogin(t, f, "--name", "guest", "--session", "3f2a9c10", "--no-qr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.scopes) != 1 || f.scopes[0] != "3f2a9c10" {
+		t.Errorf("sent session %q, want 3f2a9c10", f.scopes)
+	}
+	if !strings.Contains(out, "with access to session 3f2a9c10-1111-4a4a only") {
+		t.Errorf("output does not name the session:\n%s", out)
+	}
+	f = &fakeLogin{sessions: []api.WebSession{{ID: "0123456789abcdef", Name: "guest", Machine: "tower", Session: "3f2a9c10-1111-4a4a", CreatedAt: now, LastUsedAt: now, ExpiresAt: now}}}
+	out, err = runLogin(t, f, "ls")
+	if err != nil || !strings.Contains(out, "3f2a9c10 ") {
+		t.Errorf("ls: %v\n%s", err, out)
 	}
 }

@@ -63,6 +63,9 @@ const (
 	// HeaderSessionName carries the browser session's name on GET
 	// /v1/sessions when the caller used the session cookie.
 	HeaderSessionName = "X-Hub-Session-Name"
+	// HeaderScope carries the one session ID a guest sign-in is limited
+	// to, on GET /v1/sessions. Absent for a full sign-in.
+	HeaderScope = "X-Hub-Scope"
 
 	// MaxControlDetailRunes caps ControlResultIn.Detail.
 	MaxControlDetailRunes = 200
@@ -343,12 +346,16 @@ type SessionSummary struct {
 // LoginIn is the body of POST /v1/logins.
 type LoginIn struct {
 	Name string `json:"name"`
+	// Session, if set, limits the browser to this one session (a full ID
+	// or a unique prefix): it sees and acts on nothing else.
+	Session string `json:"session,omitempty"`
 }
 
 // Login is a one-time sign-in link, from POST /v1/logins.
 type Login struct {
 	URL       string    `json:"url"`
 	Name      string    `json:"name"`
+	Session   string    `json:"session,omitempty"` // the full session ID a guest link is limited to
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
@@ -357,7 +364,8 @@ type Login struct {
 type WebSession struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name"`
-	Machine    string    `json:"machine"` // the machine whose link created it
+	Machine    string    `json:"machine"`           // the machine whose link created it
+	Session    string    `json:"session,omitempty"` // the one session a guest sign-in may see, else ""
 	CreatedAt  time.Time `json:"created_at"`
 	LastUsedAt time.Time `json:"last_used_at"`
 	ExpiresAt  time.Time `json:"expires_at"`

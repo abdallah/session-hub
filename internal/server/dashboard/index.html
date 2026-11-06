@@ -511,6 +511,7 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
   var whoName = document.getElementById("who-name");
   var signOutBtn = document.getElementById("signout");
   var signedOut = false;
+  var scope = "";  // the one session a guest sign-in sees (X-Hub-Scope), else ""
   var refreshTimer = null;
   var inboxRoot = document.getElementById("inbox");
   var tabInbox = document.getElementById("tab-inbox");
@@ -2298,6 +2299,7 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
     if (sl) c.appendChild(sl);
     c.appendChild(detailsFor(s));
 
+    if (scope) return art; // a guest only reads, replies, and approves
     var rr = resumeRow(s, "Copy");
     if (rr) c.appendChild(rr);
     var rc = rcRow(s, now);
@@ -2662,7 +2664,7 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
     allBtn.disabled = q !== "";
     allBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "knowledge" || signedOut || !allNames.length;
     selectBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "knowledge" || signedOut;
-    newBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "knowledge" || signedOut;
+    newBtn.hidden = tab === "inbox" || tab === "tasks" || tab === "knowledge" || signedOut || !!scope;
     if (newBtn.hidden && !startBar.hidden) { startBar.hidden = true; newBtn.setAttribute("aria-expanded", "false"); }
     filterEl.hidden = tab === "knowledge" || tab === "tasks";
   }
@@ -2680,7 +2682,8 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
     var open = openRows[s.id] === true;
     var st = rcState[s.id];
     var busy = !!st && (st.phase === "sending" || (!!st.req && (st.req.state === "pending" || st.req.state === "claimed")));
-    var p = inboxPrimary(s, busy);
+    // A guest cannot ask for Remote Control, so its rows only expand.
+    var p = scope ? { kind: "expand", label: "Show more", url: "" } : inboxPrimary(s, busy);
     var c = el("article", "notif " + it.group + (open ? " open" : ""));
     c.setAttribute("data-id", s.id);
     var main;
@@ -2723,7 +2726,7 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
     var pv = it.group === "blocked" ? permissionView(it.permission) : null;
     if (!pv) pv = decidedView(s.id, it.since);
     if (pv) c.appendChild(permissionBlock(pv, s));
-    c.appendChild(triageActions(it, s, p, open, tap));
+    if (!scope) c.appendChild(triageActions(it, s, p, open, tap));
     // Waiting rows ask you something, so their reply box shows unexpanded.
     if (canMessage(s) && !pv && (open || it.group === "waiting")) c.appendChild(replyRow(s));
     if (open) {
@@ -2887,6 +2890,7 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
   }
 
   function showTab(name) {
+    if (scope && (name === "tasks" || name === "knowledge")) name = "sessions";
     tab = name;
     inboxRoot.hidden = name !== "inbox";
     root.hidden = name !== "sessions";
@@ -3902,6 +3906,14 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
       });
   }
 
+  // setScope applies a guest sign-in: one session, no Tasks or Knowledge
+  // tab, and none of the actions the server refuses it.
+  function setScope(id) {
+    scope = id;
+    tabTasks.hidden = tabKnowledge.hidden = !!scope;
+    if (scope && (tab === "tasks" || tab === "knowledge")) showTab("sessions");
+  }
+
   // showSignedOut stops polling and replaces the list with the signed-out
   // message.
   function showSignedOut() {
@@ -3950,6 +3962,7 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
         if (!resp.ok) throw new Error("The server returned " + resp.status + ".");
         whoName.textContent = auth.name;
         whoEl.hidden = auth.name === "";
+        setScope(resp.headers.get("X-Hub-Scope") || "");
         return resp.json();
       })
       .then(function (data) {
@@ -3958,8 +3971,10 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
         render(data);
         renderInbox();
         renderSendBar();
-        if (tab === "knowledge") loadKnowledge(); else loadKnowledgeBadge();
-        if (tab === "tasks") loadTasks(); else loadReview();
+        if (!scope) {
+          if (tab === "knowledge") loadKnowledge(); else loadKnowledgeBadge();
+          if (tab === "tasks") loadTasks(); else loadReview();
+        }
         updated.textContent = "Updated " + new Date().toLocaleTimeString();
       })
       .catch(function (err) {

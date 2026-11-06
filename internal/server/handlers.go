@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 
 	"github.com/abdallah/session-hub/internal/api"
@@ -183,19 +184,39 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request, p principa
 	if p.web != nil {
 		w.Header().Set(api.HeaderSessionName, p.web.Name)
 	}
+	if sc := p.scope(); sc != "" {
+		w.Header().Set(api.HeaderScope, sc)
+		list = slices.DeleteFunc(list, func(x api.Session) bool { return x.ID != sc })
+		for i := range list {
+			guestView(&list[i])
+		}
+	}
 	writeJSON(w, http.StatusOK, list)
 }
 
-func (s *Server) getSession(w http.ResponseWriter, r *http.Request, _ principal) {
+// guestView drops what a guest sign-in must not get: the resume command
+// (an SSH host) and the Remote Control link.
+func guestView(x *api.Session) {
+	x.ResumeCommand, x.RemoteControlURL = "", ""
+}
+
+func (s *Server) getSession(w http.ResponseWriter, r *http.Request, p principal) {
 	id, err := s.store.ResolveID(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.storeError(w, err)
+		return
+	}
+	if !p.inScope(id) {
+		writeError(w, http.StatusNotFound, "no session "+r.PathValue("id"))
 		return
 	}
 	d, err := s.store.SessionDetail(r.Context(), id)
 	if err != nil {
 		s.storeError(w, err)
 		return
+	}
+	if p.scope() != "" {
+		guestView(&d.Session)
 	}
 	writeJSON(w, http.StatusOK, d)
 }

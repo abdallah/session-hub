@@ -63,7 +63,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 
 	_, ok, err := s.authenticate(w, r, true)
 	if err != nil {
-		s.internalError(w, err)
+		s.authFail(w, err)
 		return
 	}
 	if !ok {

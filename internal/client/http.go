@@ -241,11 +241,12 @@ func (c *Client) Health(ctx context.Context) error {
 	return c.do(ctx, http.MethodGet, "/healthz", nil, nil)
 }
 
-// CreateLogin asks for a one-time sign-in link for a browser named name.
-// Nothing is queued: an unreachable server is an error.
-func (c *Client) CreateLogin(ctx context.Context, name string) (api.Login, error) {
+// CreateLogin asks for a one-time sign-in link for a browser named name. A
+// non-empty session limits that browser to one session. Nothing is queued:
+// an unreachable server is an error.
+func (c *Client) CreateLogin(ctx context.Context, name, session string) (api.Login, error) {
 	var out api.Login
-	err := c.do(ctx, http.MethodPost, "/v1/logins", api.LoginIn{Name: name}, &out)
+	err := c.do(ctx, http.MethodPost, "/v1/logins", api.LoginIn{Name: name, Session: session}, &out)
 	return out, err
 }
 

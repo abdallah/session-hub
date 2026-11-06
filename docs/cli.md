@@ -12,8 +12,8 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub ls [--all] [--machine M] [--grep TEXT]` | Table of machine, short ID, title, status, age (since last seen), and the latest report's summary. Without `--all` it lists `live` and `blocked` sessions only. `--grep TEXT` keeps the sessions whose title, recap, last prompt, branch, directory, or machine contains `TEXT`. The match is plain text and ignores case, so `[build]` is not a pattern. To search ended sessions, combine `--grep` with `--all`. If no live session matches but ended or stale ones do, the command says how many and suggests `--all`. |
 | `sessionhub show <id-prefix>` | One session in full: fields (including `recap:`, `last prompt:`, and a one-line `summary:` of commits, latest merge request, and cost), the session digest, report history, and the last 50 events, newest first. The digest lists up to five commits made during the session, the links the session touched, token totals (input, output, cache read, cache write), the cost with its `as of` time, and when the digest was taken. |
 | `sessionhub status` | Server URL, machine name, server health, and this machine's non-ended sessions. The `sessionhub.status` plugin action runs it. Exits non-zero when the server is unreachable. |
-| `sessionhub login --name <name> [--no-qr] [--json]` | Create a one-time link that signs a browser in to the dashboard as `<name>`, and print the link, when it expires, and a QR code of it. `--no-qr` omits the QR code. `--json` prints only `{"url":...,"name":...,"expires_at":...}`. See below. |
-| `sessionhub login ls [--json]` | Signed-in browsers: name, ID, machine, created, last used, and expiry. |
+| `sessionhub login --name <name> [--session <id>] [--no-qr] [--json]` | Create a one-time link that signs a browser in to the dashboard as `<name>`, and print the link, when it expires, and a QR code of it. `--session` limits that browser to one session. `--no-qr` omits the QR code. `--json` prints only `{"url":...,"name":...,"session":...,"expires_at":...}`. See below. |
+| `sessionhub login ls [--json]` | Signed-in browsers: name, ID, machine, session scope (`all` or a session ID prefix), created, last used, and expiry. |
 | `sessionhub login rm <name\|id>` | Sign a browser out. It matches a name first, then an ID. No confirmation. |
 | `sessionhub inbox [--json]` | The sessions that need you, across machines, under the headings **Move failed**, **Blocked**, **Waiting on you**, and **Finished**, oldest first in each. One line per item: ID prefix, title, machine, how long ago it arrived, `stale` for a stale session, and what it waits on (for a blocked session with a permission request, `asks to use <tool>: <command or file>`) or its recap, cut to the terminal width. `--json` prints the server response. See below. |
 | `sessionhub inbox --watch` | The same list, full screen, refreshed every 5 seconds, with a cursor you move with the keyboard. See below. |
@@ -233,6 +233,22 @@ for 30 days after its last visit.
   link another way.
 - **Sign out** on the dashboard ends only that browser's session.
   `sessionhub login rm` signs out any browser.
+
+### Share one session
+
+`--session <id>` (a full session ID or a unique prefix) makes a guest link:
+
+```sh
+sessionhub login --name alice --session 3f2a9c10
+```
+
+A browser signed in with it sees that one session only. It can read the
+session, reply to it, and answer its permission prompts and questions from
+the Inbox. It gets no other session, no Tasks or Knowledge tab, no resume
+command or Remote Control link, and no move, rename, start, or triage. The
+link fails with "no session" when the ID matches nothing. Revoke the guest
+with `sessionhub login rm alice`; `sessionhub login ls` shows the scope in
+its SESSION column.
 
 ## `sessionhub inbox`
 

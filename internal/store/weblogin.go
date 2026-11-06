@@ -87,11 +87,17 @@ func nameTaken(ctx context.Context, tx *sql.Tx, name string) error {
 }
 
 // CreateLoginCode makes a one-time sign-in code for a browser session named
-// name, created by machineID. It returns the code, which only the caller
-// sees; the database keeps its hash.
-func (s *Store) CreateLoginCode(ctx context.Context, machineID int64, name string) (code string, expiresAt time.Time, err error) {
+// name, created by machineID. A non-empty sessionID (a full ID or a unique
+// prefix) limits the browser to that one session. It returns the code, which
+// only the caller sees; the database keeps its hash.
+func (s *Store) CreateLoginCode(ctx context.Context, machineID int64, name, sessionID string) (code string, expiresAt time.Time, err error) {
 	if !ValidMachineName(name) {
 		return "", time.Time{}, invalidf("name %q: use 1-64 letters, digits, '.', '_', or '-', starting with a letter or digit", name)
+	}
+	if sessionID != "" {
+		if sessionID, err = s.ResolveID(ctx, sessionID); err != nil {
+			return "", time.Time{}, err
+		}
 	}
 	code, err = NewLoginCode()
 	if err != nil {
@@ -118,8 +124,8 @@ func (s *Store) CreateLoginCode(ctx context.Context, machineID int64, name strin
 		return "", time.Time{}, fmt.Errorf("%d sign-in links are unused; use one or wait up to 10 minutes: %w", open, ErrTooMany)
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO login_codes (code_hash, name, machine_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`,
-		HashToken(code), name, machineID, formatTS(now), formatTS(expiresAt)); err != nil {
+		`INSERT INTO login_codes (code_hash, name, machine_id, session_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		HashToken(code), name, machineID, sessionID, formatTS(now), formatTS(expiresAt)); err != nil {
 		return "", time.Time{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -180,8 +186,8 @@ func (s *Store) RedeemLoginCode(ctx context.Context, code string) (token string,
 	}
 	var machineID int64
 	if err := tx.QueryRowContext(ctx,
-		`SELECT c.name, c.machine_id, m.name FROM login_codes c JOIN machines m ON m.id = c.machine_id WHERE c.code_hash = ?`,
-		codeHash).Scan(&ws.Name, &machineID, &ws.Machine); err != nil {
+		`SELECT c.name, c.machine_id, m.name, c.session_id FROM login_codes c JOIN machines m ON m.id = c.machine_id WHERE c.code_hash = ?`,
+		codeHash).Scan(&ws.Name, &machineID, &ws.Machine, &ws.Session); err != nil {
 		return "", ws, err
 	}
 	if err := nameTaken(ctx, tx, ws.Name); err != nil {
@@ -189,8 +195,8 @@ func (s *Store) RedeemLoginCode(ctx context.Context, code string) (token string,
 	}
 	ws.ID, ws.CreatedAt, ws.LastUsedAt, ws.ExpiresAt = id, now, now, now.Add(WebSessionTTL)
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO web_sessions (id, token_hash, name, machine_id, created_at, last_used_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		ws.ID, HashToken(token), ws.Name, machineID, nowS, nowS, formatTS(ws.ExpiresAt)); err != nil {
+		`INSERT INTO web_sessions (id, token_hash, name, machine_id, session_id, created_at, last_used_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		ws.ID, HashToken(token), ws.Name, machineID, ws.Session, nowS, nowS, formatTS(ws.ExpiresAt)); err != nil {
 		return "", ws, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -200,12 +206,12 @@ func (s *Store) RedeemLoginCode(ctx context.Context, code string) (token string,
 }
 
 // webSessionCols is what scanWebSession reads, joined with machines as m.
-const webSessionCols = `w.id, w.name, m.name, w.created_at, w.last_used_at, w.expires_at`
+const webSessionCols = `w.id, w.name, m.name, w.session_id, w.created_at, w.last_used_at, w.expires_at`
 
 func scanWebSession(sc interface{ Scan(...any) error }) (api.WebSession, error) {
 	var ws api.WebSession
 	var created, last, exp string
-	if err := sc.Scan(&ws.ID, &ws.Name, &ws.Machine, &created, &last, &exp); err != nil {
+	if err := sc.Scan(&ws.ID, &ws.Name, &ws.Machine, &ws.Session, &created, &last, &exp); err != nil {
 		return ws, err
 	}
 	var err error

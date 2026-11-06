@@ -188,7 +188,7 @@ func (e *env) machine(token string) store.Machine {
 // loginCode creates a sign-in code for name as tower's `sessionhub login` would.
 func (e *env) loginCode(name string) string {
 	e.t.Helper()
-	code, _, err := e.st.CreateLoginCode(context.Background(), e.machine(e.tokA).ID, name)
+	code, _, err := e.st.CreateLoginCode(context.Background(), e.machine(e.tokA).ID, name, "")
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -204,6 +204,21 @@ func (e *env) webSession(name string) (token, id string) {
 		e.t.Fatal(err)
 	}
 	return tok, ws.ID
+}
+
+// guestSession signs a browser in as name with access to session sid only,
+// and returns its cookie token.
+func (e *env) guestSession(name, sid string) string {
+	e.t.Helper()
+	code, _, err := e.st.CreateLoginCode(context.Background(), e.machine(e.tokA).ID, name, sid)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	tok, _, err := e.st.RedeemLoginCode(context.Background(), code)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return tok
 }
 
 // submitLogin presses Sign in: POST /login/{code} with Origin set to origin,

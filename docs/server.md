@@ -134,6 +134,14 @@ Machines send `Authorization: Bearer <token>`. Browsers send the
   reaches `/v1/logins` or `/v1/web-sessions`, and with any other write it gets
   `401`. A cookie write without the right header gets `403`. The header makes
   a cross-site request need a CORS preflight, which the server never grants.
+- A browser session made with `sessionhub login --session <id>` is a guest for
+  that one session (`web_sessions.session_id`). It may call `GET /`,
+  `POST /logout`, `GET /v1/sessions` (filtered to the session, with
+  `X-Hub-Scope: <id>`), `GET /v1/sessions/{id}`, `GET /v1/inbox` (filtered),
+  `POST /v1/messages` to that session, and `POST /v1/permissions/{id}/decide`
+  for that session's requests, with the same `X-Hub-Action` rules. Every
+  other route answers `403`; another session's ID or request answers `404`.
+  Its session JSON has no `resume_command` or `remote_control_url`.
 - An unknown, revoked, or expired session counts as no credentials: `401`.
 - A session lasts 30 days from its last use. When a request finds
   `last_used_at` more than one hour old, the server moves `last_used_at` to
@@ -209,7 +217,7 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `POST /v1/messages/{id}/result` | machine (the message's) | `200`, the `Message` | The mod's result for a message (`MessageResultIn`). |
 | `POST /v1/machines/{name}/start` | machine, or cookie with `X-Hub-Action: start` | `202`, the `StartRequest` | Ask the machine's watcher to start a new session (`StartIn`). `404` unknown machine, `409` watcher offline, `429` at 5 pending. See [Starting sessions](#starting-sessions). |
 | `GET /v1/starts/{id}` | read | `200`, the `StartRequest` | One start request and its state. |
-| `POST /v1/logins` | machine | `201`, `Login` | Create a one-time sign-in link (`LoginIn`). `400` bad name, `409` name taken, `429` at 5 unused links. |
+| `POST /v1/logins` | machine | `201`, `Login` | Create a one-time sign-in link (`LoginIn`). `session`, if set, limits the browser to that session; the answer carries its full ID. `400` bad name, `404` unknown session, `409` name taken, `429` at 5 unused links. |
 | `GET /v1/web-sessions` | machine | `200`, `WebSessionList` | Signed-in browsers, by name. Never a token or hash. |
 | `DELETE /v1/web-sessions/{id}` | machine | `204`; `404` unknown | Sign a browser out. |
 
@@ -1407,7 +1415,7 @@ keys on. The server uses one connection, and every transaction starts with
 same file, such as `sessionhub machine add`, waits instead of failing with
 `SQLITE_BUSY`. The schema version is in
 `PRAGMA user_version`; the server creates the schema on first open, upgrades an
-older one in place (version 2 adds `sessions.state_ts`; version 3 adds `control_requests`, `machines.last_poll`, and `sessions.rc_url` and `rc_at`; version 4 adds `session_digests` and `sessions.last_prompt` and `last_prompt_at`; version 5 adds `login_codes` and `web_sessions`; version 6 adds `sessions.turn_ended_at`, `sessions.blocked_at`, and `inbox_triage`; version 7 adds `inbox_alerts`; version 8 adds `instructions`, `messages`, and `permission_requests`; version 9 adds `moves` and `machines.move_key`; version 10 adds `start_requests`; version 11 adds `start_requests.trust`; version 12 adds the mod's `sessions` columns; version 17 adds `knowledge` and `knowledge_fts` and drops `instructions`), and refuses
+older one in place (version 2 adds `sessions.state_ts`; version 3 adds `control_requests`, `machines.last_poll`, and `sessions.rc_url` and `rc_at`; version 4 adds `session_digests` and `sessions.last_prompt` and `last_prompt_at`; version 5 adds `login_codes` and `web_sessions`; version 6 adds `sessions.turn_ended_at`, `sessions.blocked_at`, and `inbox_triage`; version 7 adds `inbox_alerts`; version 8 adds `instructions`, `messages`, and `permission_requests`; version 9 adds `moves` and `machines.move_key`; version 10 adds `start_requests`; version 11 adds `start_requests.trust`; version 12 adds the mod's `sessions` columns; version 17 adds `knowledge` and `knowledge_fts` and drops `instructions`; version 20 adds `login_codes.session_id` and `web_sessions.session_id`), and refuses
 a database from a newer version. Times are stored as UTC RFC 3339 with a
 fixed nine-digit fraction, so they also sort as text. The database directory
 is created with mode `0700`.

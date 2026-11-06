@@ -117,7 +117,7 @@ func (s *Store) Now() time.Time { return s.now().UTC() }
 // StaleAfter returns the configured staleness threshold.
 func (s *Store) StaleAfter() time.Duration { return s.staleAfter }
 
-const schemaVersion = 19
+const schemaVersion = 20
 
 const schemaV1 = `
 CREATE TABLE machines (
@@ -488,6 +488,13 @@ const schemaV19 = `
 ALTER TABLE permission_requests ADD COLUMN answers TEXT NOT NULL DEFAULT '';  -- an AskUserQuestion allow's answers as JSON, else ''
 `
 
+// schemaV20 scopes a browser sign-in to one session: a guest link. Empty
+// means the full dashboard.
+const schemaV20 = `
+ALTER TABLE login_codes ADD COLUMN session_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE web_sessions ADD COLUMN session_id TEXT NOT NULL DEFAULT '';
+`
+
 const schemaV18 = `
 ALTER TABLE moves ADD COLUMN seal_id TEXT NOT NULL DEFAULT '';  -- the snapshot's ID for a move from a snapshot, else ''
 ALTER TABLE moves ADD COLUMN snapshot_at TEXT;                  -- when that snapshot was taken
@@ -629,6 +636,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if v < 19 {
 		if _, err := tx.ExecContext(ctx, schemaV19); err != nil {
 			return fmt.Errorf("migrate schema to v19: %w", err)
+		}
+	}
+	if v < 20 {
+		if _, err := tx.ExecContext(ctx, schemaV20); err != nil {
+			return fmt.Errorf("migrate schema to v20: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {

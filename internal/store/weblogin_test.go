@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+
 	"errors"
+	"github.com/abdallah/session-hub/internal/api"
 	"regexp"
 	"strings"
 	"testing"
@@ -35,7 +37,7 @@ func TestMigrateV4ToV5(t *testing.T) {
 	if err != nil {
 		t.Fatalf("machine after upgrade: %v", err)
 	}
-	code, _, err := s2.CreateLoginCode(ctx, m.ID, "phone")
+	code, _, err := s2.CreateLoginCode(ctx, m.ID, "phone", "")
 	if err != nil {
 		t.Fatalf("create code after upgrade: %v", err)
 	}
@@ -64,11 +66,11 @@ func TestCreateLoginCode(t *testing.T) {
 	e := newControlEnv(t)
 	ctx := context.Background()
 	for _, bad := range []string{"", "has space", "-lead", strings.Repeat("a", 65), "a/b"} {
-		if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, bad); !errors.Is(err, ErrInvalid) {
+		if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, bad, ""); !errors.Is(err, ErrInvalid) {
 			t.Errorf("name %q: err %v, want ErrInvalid", bad, err)
 		}
 	}
-	code, exp, err := e.s.CreateLoginCode(ctx, e.tower.ID, "phone")
+	code, exp, err := e.s.CreateLoginCode(ctx, e.tower.ID, "phone", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +97,7 @@ func TestCreateLoginCode(t *testing.T) {
 func TestRedeemLoginCodeOnce(t *testing.T) {
 	e := newControlEnv(t)
 	ctx := context.Background()
-	code, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "phone")
+	code, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "phone", "")
 	now := e.clock.Now()
 	tok, ws, err := e.s.RedeemLoginCode(ctx, code)
 	if err != nil {
@@ -132,7 +134,7 @@ func TestRedeemLoginCodeOnce(t *testing.T) {
 func TestLoginCodeExpiry(t *testing.T) {
 	e := newControlEnv(t)
 	ctx := context.Background()
-	code, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "phone")
+	code, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "phone", "")
 	e.clock.Advance(10*time.Minute - time.Second)
 	if _, err := e.s.LoginCodeName(ctx, code); err != nil {
 		t.Errorf("at 9m59s: %v", err)
@@ -151,27 +153,27 @@ func TestLoginCodeLimit(t *testing.T) {
 	ctx := context.Background()
 	var codes []string
 	for i, m := range []int64{e.tower.ID, e.tower.ID, e.tower.ID, e.bluebox.ID, e.bluebox.ID} {
-		c, _, err := e.s.CreateLoginCode(ctx, m, "phone")
+		c, _, err := e.s.CreateLoginCode(ctx, m, "phone", "")
 		if err != nil {
 			t.Fatalf("code %d: %v", i, err)
 		}
 		codes = append(codes, c)
 	}
 	// The limit counts every machine's codes.
-	if _, _, err := e.s.CreateLoginCode(ctx, e.bluebox.ID, "phone"); !errors.Is(err, ErrTooMany) {
+	if _, _, err := e.s.CreateLoginCode(ctx, e.bluebox.ID, "phone", ""); !errors.Is(err, ErrTooMany) {
 		t.Fatalf("sixth code: %v, want ErrTooMany", err)
 	}
 	// A used code no longer counts.
 	if _, _, err := e.s.RedeemLoginCode(ctx, codes[0]); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "tablet"); err != nil {
+	if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "tablet", ""); err != nil {
 		t.Fatalf("after a redeem: %v", err)
 	}
 	// Expired codes are deleted and no longer count.
 	e.clock.Advance(10 * time.Minute)
 	for i := range 5 {
-		if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "tablet"); err != nil {
+		if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "tablet", ""); err != nil {
 			t.Fatalf("after expiry, code %d: %v", i, err)
 		}
 	}
@@ -184,13 +186,13 @@ func TestLoginCodeLimit(t *testing.T) {
 func TestWebSessionNameTaken(t *testing.T) {
 	e := newControlEnv(t)
 	ctx := context.Background()
-	first, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "tablet")
-	other, _, _ := e.s.CreateLoginCode(ctx, e.bluebox.ID, "tablet")
+	first, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "tablet", "")
+	other, _, _ := e.s.CreateLoginCode(ctx, e.bluebox.ID, "tablet", "")
 	if _, _, err := e.s.RedeemLoginCode(ctx, other); err != nil {
 		t.Fatal(err)
 	}
 	// A new code for a live name is refused.
-	if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "tablet"); !errors.Is(err, ErrNameTaken) {
+	if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "tablet", ""); !errors.Is(err, ErrNameTaken) {
 		t.Errorf("code for a live name: %v, want ErrNameTaken", err)
 	}
 	// A code made before the name was taken: refused, and not used up.
@@ -216,7 +218,7 @@ func TestWebSessionNameTaken(t *testing.T) {
 func TestWebSessionSlidingExpiry(t *testing.T) {
 	e := newControlEnv(t)
 	ctx := context.Background()
-	code, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "phone")
+	code, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "phone", "")
 	start := e.clock.Now()
 	tok, _, _ := e.s.RedeemLoginCode(ctx, code)
 
@@ -251,8 +253,8 @@ func TestWebSessionSlidingExpiry(t *testing.T) {
 func TestListAndRevokeWebSessions(t *testing.T) {
 	e := newControlEnv(t)
 	ctx := context.Background()
-	c1, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "windows")
-	c2, _, _ := e.s.CreateLoginCode(ctx, e.bluebox.ID, "phone")
+	c1, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "windows", "")
+	c2, _, _ := e.s.CreateLoginCode(ctx, e.bluebox.ID, "phone", "")
 	tok1, ws1, _ := e.s.RedeemLoginCode(ctx, c1)
 	_, ws2, _ := e.s.RedeemLoginCode(ctx, c2)
 	list, err := e.s.ListWebSessions(ctx)
@@ -277,13 +279,13 @@ func TestListAndRevokeWebSessions(t *testing.T) {
 func TestExpiredRowsDeleted(t *testing.T) {
 	e := newControlEnv(t)
 	ctx := context.Background()
-	code, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "phone")
+	code, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "phone", "")
 	if _, _, err := e.s.RedeemLoginCode(ctx, code); err != nil {
 		t.Fatal(err)
 	}
 	e.clock.Advance(30*24*time.Hour + time.Second)
 	// The expired "phone" row no longer holds the name.
-	code, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "phone")
+	code, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "phone", "")
 	if err != nil {
 		t.Fatalf("code for an expired name: %v", err)
 	}
@@ -295,7 +297,7 @@ func TestExpiredRowsDeleted(t *testing.T) {
 		t.Errorf("web_sessions rows %d %v, want 1 (the expired row deleted)", n, err)
 	}
 	// Listing deletes expired sessions and codes.
-	if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "tablet"); err != nil {
+	if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "tablet", ""); err != nil {
 		t.Fatal(err)
 	}
 	e.clock.Advance(30*24*time.Hour + time.Second)
@@ -312,12 +314,12 @@ func TestExpiredRowsDeleted(t *testing.T) {
 func TestRemoveMachineDeletesItsLogins(t *testing.T) {
 	e := newControlEnv(t)
 	ctx := context.Background()
-	c1, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "windows")
+	c1, _, _ := e.s.CreateLoginCode(ctx, e.tower.ID, "windows", "")
 	tok1, _, _ := e.s.RedeemLoginCode(ctx, c1)
-	if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "tablet"); err != nil {
+	if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "tablet", ""); err != nil {
 		t.Fatal(err)
 	}
-	c2, _, _ := e.s.CreateLoginCode(ctx, e.bluebox.ID, "phone")
+	c2, _, _ := e.s.CreateLoginCode(ctx, e.bluebox.ID, "phone", "")
 	tok2, _, _ := e.s.RedeemLoginCode(ctx, c2)
 
 	if err := e.s.RemoveMachine(ctx, "tower"); err != nil {
@@ -332,5 +334,36 @@ func TestRemoveMachineDeletesItsLogins(t *testing.T) {
 	var n int
 	if err := e.s.db.QueryRow(`SELECT COUNT(*) FROM login_codes WHERE machine_id = ?`, e.tower.ID).Scan(&n); err != nil || n != 0 {
 		t.Errorf("tower's codes %d %v, want 0", n, err)
+	}
+}
+
+func TestLoginCodeSessionScope(t *testing.T) {
+	e := newControlEnv(t)
+	ctx := context.Background()
+	if _, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "guest", "nosuchsession"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown session: err = %v, want ErrNotFound", err)
+	}
+	sid := "guest-session-0001"
+	if _, err := e.s.UpsertSession(ctx, e.tower.ID, api.SessionUpsert{ID: sid, Source: api.SourceHooks, HerdrSession: "s", HerdrPane: "p"}); err != nil {
+		t.Fatal(err)
+	}
+	code, _, err := e.s.CreateLoginCode(ctx, e.tower.ID, "guest", sid[:8])
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, ws, err := e.s.RedeemLoginCode(ctx, code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ws.Session != sid {
+		t.Errorf("redeemed Session = %q, want the full ID %q", ws.Session, sid)
+	}
+	got, _, err := e.s.WebSessionByToken(ctx, tok)
+	if err != nil || got.Session != sid {
+		t.Errorf("WebSessionByToken Session = %q %v, want %q", got.Session, err, sid)
+	}
+	list, err := e.s.ListWebSessions(ctx)
+	if err != nil || len(list) != 1 || list[0].Session != sid {
+		t.Errorf("ListWebSessions = %+v %v, want one session scoped to %q", list, err, sid)
 	}
 }

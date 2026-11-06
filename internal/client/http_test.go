@@ -341,7 +341,7 @@ func TestCreateControl(t *testing.T) {
 func TestLoginEndpoints(t *testing.T) {
 	ctx := context.Background()
 	c, log := server(t, 201, `{"url":"https://sessionhub.example.test/login/abc","name":"phone","expires_at":"2026-10-01T12:10:00Z"}`)
-	l, err := c.CreateLogin(ctx, "phone")
+	l, err := c.CreateLogin(ctx, "phone", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestLoginEndpoints(t *testing.T) {
 	}
 
 	c, _ = server(t, 409, `{"error":"a browser session named \"phone\" exists: name taken"}`)
-	_, err = c.CreateLogin(ctx, "phone")
+	_, err = c.CreateLogin(ctx, "phone", "")
 	var se *StatusError
 	if !errors.As(err, &se) || se.Status != 409 || !strings.Contains(se.Message, "phone") {
 		t.Errorf("409: %v", err)
