@@ -24,6 +24,9 @@ const (
 	MaxPendingPerMachine = 10
 	// MaxControlURLLen caps a result's URL, in bytes.
 	MaxControlURLLen = 200
+	// AttachTTL is how long a claimed attach stays open: the mirror runs
+	// until the guest leaves, far past ControlTTL.
+	AttachTTL = 24 * time.Hour
 )
 
 var (
@@ -122,6 +125,17 @@ func (s *Store) RecordPoll(ctx context.Context, machineID int64) error {
 // offline watcher, or an open move of the session (ErrNotControllable), an
 // open request (returned), and MaxPendingPerMachine (ErrTooMany).
 func (s *Store) CreateControl(ctx context.Context, id, requestedBy string) (api.ControlRequest, bool, error) {
+	return s.CreateControlAction(ctx, id, api.ActionRemoteControl, requestedBy)
+}
+
+// CreateControlAction is CreateControl for action api.ActionRemoteControl or
+// api.ActionAttach. An attach also takes a session with a Rex block and no
+// herdr pane, and returns only a pending attach of the session: a claimed
+// one is another guest's mirror.
+func (s *Store) CreateControlAction(ctx context.Context, id, action, requestedBy string) (api.ControlRequest, bool, error) {
+	if action != api.ActionRemoteControl && action != api.ActionAttach {
+		return api.ControlRequest{}, false, invalidf("action %q: want %s or %s", action, api.ActionRemoteControl, api.ActionAttach)
+	}
 	if !ValidSessionID(id) {
 		return api.ControlRequest{}, false, invalidf("session id %q: use 1-128 letters, digits, '_', or '-', starting with a letter or digit", id)
 	}
@@ -139,18 +153,18 @@ func (s *Store) CreateControl(ctx context.Context, id, requestedBy string) (api.
 		return api.ControlRequest{}, false, err
 	}
 	var machineID int64
-	var machine, pane string
+	var machine, pane, rexBlock string
 	var lastPoll sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT s.machine_id, m.name, s.herdr_pane, m.last_poll
+	err = tx.QueryRowContext(ctx, `SELECT s.machine_id, m.name, s.herdr_pane, s.rex_block, m.last_poll
 		FROM sessions s JOIN machines m ON m.id = s.machine_id WHERE s.id = ?`, id).
-		Scan(&machineID, &machine, &pane, &lastPoll)
+		Scan(&machineID, &machine, &pane, &rexBlock, &lastPoll)
 	if errors.Is(err, sql.ErrNoRows) {
 		return api.ControlRequest{}, false, fmt.Errorf("%w: session %s", ErrNotFound, id)
 	}
 	if err != nil {
 		return api.ControlRequest{}, false, err
 	}
-	if pane == "" {
+	if pane == "" && (action != api.ActionAttach || rexBlock == "") {
 		return api.ControlRequest{}, false, fmt.Errorf("%w: session %s is not in herdr", ErrNotControllable, id)
 	}
 	polled, err := parseNullTS(lastPoll)
@@ -168,8 +182,12 @@ func (s *Store) CreateControl(ctx context.Context, id, requestedBy string) (api.
 	} else if moving {
 		return api.ControlRequest{}, false, fmt.Errorf("%w: %s", ErrNotControllable, detailMoveOpen)
 	}
-	open, err := scanControl(tx.QueryRowContext(ctx, controlSelect+` WHERE c.session_id = ? AND c.state IN (?, ?)
-		ORDER BY c.created_at DESC, c.rowid DESC LIMIT 1`, id, api.ControlPending, api.ControlClaimed), now)
+	reuse := api.ControlClaimed
+	if action == api.ActionAttach {
+		reuse = api.ControlPending
+	}
+	open, err := scanControl(tx.QueryRowContext(ctx, controlSelect+` WHERE c.session_id = ? AND c.action = ? AND c.state IN (?, ?)
+		ORDER BY c.created_at DESC, c.rowid DESC LIMIT 1`, id, action, api.ControlPending, reuse), now)
 	if err == nil {
 		return open, false, tx.Commit()
 	}
@@ -188,14 +206,18 @@ func (s *Store) CreateControl(ctx context.Context, id, requestedBy string) (api.
 	if err != nil {
 		return api.ControlRequest{}, false, err
 	}
-	r := api.ControlRequest{ID: rid, SessionID: id, Machine: machine, Action: api.ActionRemoteControl,
+	r := api.ControlRequest{ID: rid, SessionID: id, Machine: machine, Action: action,
 		State: api.ControlPending, RequestedBy: requestedBy, CreatedAt: now, ExpiresAt: now.Add(ControlTTL)}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO control_requests (id, session_id, machine_id, action, state,
 		requested_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, id, machineID, r.Action, r.State, r.RequestedBy, formatTS(r.CreatedAt), formatTS(r.ExpiresAt)); err != nil {
 		return api.ControlRequest{}, false, err
 	}
-	payload, err := json.Marshal(map[string]string{"request_id": r.ID, "requested_by": requestedBy})
+	ev := map[string]string{"request_id": r.ID, "requested_by": requestedBy}
+	if action != api.ActionRemoteControl {
+		ev["action"] = action
+	}
+	payload, err := json.Marshal(ev)
 	if err != nil {
 		return api.ControlRequest{}, false, err
 	}
@@ -252,8 +274,11 @@ func (s *Store) ClaimControl(ctx context.Context, machineID int64) (api.ControlC
 			return api.ControlClaim{}, false, err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE control_requests SET state = ?, claimed_at = ? WHERE id = ?`,
-		api.ControlClaimed, formatTS(now), r.ID); err != nil {
+	if r.Action == api.ActionAttach {
+		r.ExpiresAt = now.Add(AttachTTL)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE control_requests SET state = ?, claimed_at = ?, expires_at = ? WHERE id = ?`,
+		api.ControlClaimed, formatTS(now), formatTS(r.ExpiresAt), r.ID); err != nil {
 		return api.ControlClaim{}, false, err
 	}
 	if err := tx.Commit(); err != nil {

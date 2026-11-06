@@ -667,3 +667,23 @@ func TestPaneClose(t *testing.T) {
 		t.Errorf("requests %+v", reqs)
 	}
 }
+
+func TestPaneReadANSIAndSendInputParams(t *testing.T) {
+	s := herdrtest.New(t, "pane-send-keys-esc.ndjson")
+	s.Handle("pane.read", func(json.RawMessage) (any, string) {
+		return map[string]any{"read": map[string]any{"text": "\x1b[1mhi\x1b[0m"}}, ""
+	})
+	s.Handle("pane.send_input", func(json.RawMessage) (any, string) { return map[string]string{"type": "ok"}, "" })
+	c := dial(t, s)
+	if got, err := c.PaneReadANSI("wA:p1", herdr.SourceVisible); err != nil || got != "\x1b[1mhi\x1b[0m" {
+		t.Errorf("PaneReadANSI: %q, %v", got, err)
+	}
+	if err := c.SendInput("wA:p1", "a\x03\r"); err != nil {
+		t.Fatal(err)
+	}
+	reqs := s.Requests()
+	if len(reqs) != 2 || string(reqs[0].Params) != `{"format":"ansi","pane_id":"wA:p1","source":"visible"}` ||
+		reqs[1].Method != "pane.send_input" || string(reqs[1].Params) != `{"pane_id":"wA:p1","text":"a\u0003\r"}` {
+		t.Errorf("requests: %+v", reqs)
+	}
+}

@@ -735,6 +735,7 @@ func runWatcher(ctx context.Context, stateDir, socketPath string, newClient func
 	ctl := newController(newClient, controlRunner(socketPath, 0, controlPollFor), logger)
 	ctl.deliver = messageRunner(socketPath)
 	ctl.start = startRunner(socketPath, 0, controlPollFor)
+	ctl.mirrorFor = func(s api.Session) (mirror, error) { return newMirror(socketPath, s) }
 	if key, err := move.LoadOrCreateKey(move.KeyPath()); err != nil {
 		logger.Printf("move: no move key, so this machine can't move sessions: %v", err)
 	} else {

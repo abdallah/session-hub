@@ -15,6 +15,7 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub login --name <name> [--session <id>] [--no-qr] [--json]` | Create a one-time link that signs a browser in to the dashboard as `<name>`, and print the link, when it expires, and a QR code of it. `--session` limits that browser to one session. `--no-qr` omits the QR code. `--json` prints only `{"url":...,"name":...,"session":...,"expires_at":...}`. See below. |
 | `sessionhub login ls [--json]` | Signed-in browsers: name, ID, machine, session scope (`all` or a session ID prefix), created, last used, and expiry. |
 | `sessionhub login rm <name\|id>` | Sign a browser out. It matches a name first, then an ID. No confirmation. |
+| `sessionhub attach [<login-url>\|<id-prefix>]` | Mirror one session's terminal here and type into it. See below. |
 | `sessionhub inbox [--json]` | The sessions that need you, across machines, under the headings **Move failed**, **Blocked**, **Waiting on you**, and **Finished**, oldest first in each. One line per item: ID prefix, title, machine, how long ago it arrived, `stale` for a stale session, and what it waits on (for a blocked session with a permission request, `asks to use <tool>: <command or file>`) or its recap, cut to the terminal width. `--json` prints the server response. See below. |
 | `sessionhub inbox --watch` | The same list, full screen, refreshed every 5 seconds, with a cursor you move with the keyboard. See below. |
 | `sessionhub inbox dismiss [--since <time>] <id\|prefix>` | Hide an inbox item until something new happens in that session. |
@@ -249,6 +250,31 @@ command or Remote Control link, and no move, rename, start, or triage. The
 link fails with "no session" when the ID matches nothing. Revoke the guest
 with `sessionhub login rm alice`; `sessionhub login ls` shows the scope in
 its SESSION column.
+
+## `sessionhub attach`
+
+`sessionhub attach` shows one session's terminal in yours and sends your keys
+to it.
+
+- As a guest, on a machine that has not joined, pass the guest link:
+  `sessionhub attach https://sessionhub.example.com/login/<code>`. It signs in,
+  prints `Signed in as a guest for session <id> on <host>.`, and saves the
+  sign-in to `guest.json` in the state directory (mode 0600). After that,
+  `sessionhub attach` with no argument reuses it until it expires.
+- On a joined machine, pass a session ID or a unique prefix:
+  `sessionhub attach 3f2a9c10`.
+
+Press `Ctrl-]` to detach; the session keeps running. When the stream ends
+on the server's side (the session ended, or the server stopped or timed the
+attach out), the command prints `Disconnected: the session ended or the
+server closed the mirror.`. Both exit 0. The link must be `https`, except
+to localhost. Attaching gives you Claude's keyboard, including `!` shell
+commands, so hand a link only to someone you would give a shell. If the server refuses the
+attach, for example because the session's machine is offline, it prints the server's
+message and exits 1.
+
+The mirror keeps the host pane's size. If your terminal is smaller than
+80x24, the command says so before it starts.
 
 ## `sessionhub inbox`
 

@@ -30,6 +30,7 @@ const (
 	accessTasks        = "tasks"         // machine token, or the session cookie with X-Hub-Action: tasks
 	accessKnowledge    = "knowledge"     // machine token, or the session cookie with X-Hub-Action: knowledge
 	accessKnowledgeWeb = "knowledge-web" // the session cookie with X-Hub-Action: knowledge only
+	accessAttach       = "attach"        // machine token, or the session cookie with X-Hub-Action: attach
 )
 
 // route is one method and path pattern of the API. guest marks the routes a
@@ -67,6 +68,11 @@ func (s *Server) routes() []route {
 		{"POST", "/v1/inbox/{id}/snooze", accessTriage, s.actor(api.HeaderActionTriage, s.snoozeInbox), false},
 		{"GET", "/v1/machines/self/control", accessWrite, s.writer(s.pollControl), false},
 		{"POST", "/v1/control/{id}/result", accessWrite, s.writer(s.postControlResult), false},
+		{"POST", "/v1/sessions/{id}/attach", accessAttach, s.actor(api.HeaderActionAttach, s.postAttach), true},
+		{"GET", "/v1/attach/{id}/output", accessAttach, s.actor(api.HeaderActionAttach, s.attachOutput), true},
+		{"POST", "/v1/attach/{id}/input", accessAttach, s.actor(api.HeaderActionAttach, s.attachInput), true},
+		{"GET", "/v1/machines/self/attach/{id}/input", accessWrite, s.writer(s.machineAttachInput), false},
+		{"POST", "/v1/machines/self/attach/{id}/output", accessWrite, s.writer(s.machineAttachOutput), false},
 		{"POST", "/v1/instructions", accessInstructions, s.actor(api.HeaderActionInstructions, s.addInstruction), false},
 		{"DELETE", "/v1/instructions/{id}", accessInstructions, s.actor(api.HeaderActionInstructions, s.deleteInstruction), false},
 		{"POST", "/v1/messages", accessSend, s.actor(api.HeaderActionSend, s.postMessages), true},

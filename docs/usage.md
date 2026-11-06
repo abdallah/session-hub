@@ -20,6 +20,10 @@
   signed-in browsers, and `sessionhub login rm <name>` signs one out. To let
   someone see and reply to one session only, add `--session <id>`; see
   [Share one session](cli.md#share-one-session).
+  A guest can also open that session's terminal with
+  `sessionhub attach <link>`; see [`sessionhub attach`](cli.md#sessionhub-attach).
+  That gives the guest Claude's keyboard, including `!` shell commands, so
+  it is shell access to the machine as you.
 - On the dashboard, **Remote Control** turns on Claude Code Remote Control for
   a session in herdr, and **Resume with Remote Control** restarts an ended one
   with it on, in a new herdr workspace on its machine. Tap **Open in Claude**

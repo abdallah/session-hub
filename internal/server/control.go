@@ -94,8 +94,9 @@ func (h *controlHub) notify(machine string) {
 }
 
 // StopPolls ends every open long poll with 204, and makes later polls answer
-// 204 at once. `sessionhub server` registers it with http.Server.RegisterOnShutdown,
-// so a restart doesn't wait out open polls.
+// 204 at once, and ends every open attach stream. `sessionhub server`
+// registers it with http.Server.RegisterOnShutdown, so a restart doesn't
+// wait out open polls.
 func (s *Server) StopPolls() { s.control.stop.Do(func() { close(s.control.done) }) }
 
 func (s *Server) postRemoteControl(w http.ResponseWriter, r *http.Request, p principal) {
@@ -225,6 +226,7 @@ func (s *Server) postControlResult(w http.ResponseWriter, r *http.Request, p pri
 		s.storeError(w, err)
 		return
 	}
+	s.attach.end(id)
 	writeJSON(w, http.StatusOK, req)
 }
 

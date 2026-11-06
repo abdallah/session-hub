@@ -362,6 +362,18 @@ func (c *Client) PaneRead(paneID, source string, lines int) (string, error) {
 	if lines > 0 {
 		params["lines"] = lines
 	}
+	return c.paneRead(params)
+}
+
+// PaneReadANSI calls pane.read with format "ansi": source's text with its
+// colours and attributes as escape sequences, lines ending in "\r\n". The
+// text is terminal output from another process: send it only to a terminal
+// that asked for it.
+func (c *Client) PaneReadANSI(paneID, source string) (string, error) {
+	return c.paneRead(map[string]any{"pane_id": paneID, "source": source, "format": "ansi"})
+}
+
+func (c *Client) paneRead(params map[string]any) (string, error) {
 	res, err := c.Call("pane.read", params)
 	if err != nil {
 		return "", err
@@ -383,6 +395,14 @@ func (c *Client) PaneRead(paneID, source string, lines int) (string, error) {
 // whatever runs in the pane, so callers must have checked the pane first.
 func (c *Client) SendKeys(paneID string, keys ...string) error {
 	_, err := c.Call("pane.send_keys", map[string]any{"pane_id": paneID, "keys": keys})
+	return err
+}
+
+// SendInput calls pane.send_input with text: herdr writes it to the pane's
+// terminal as is, control bytes included (checked on 0.9.3: \x03 interrupts,
+// \r enters). Like SendKeys, callers must have checked the pane first.
+func (c *Client) SendInput(paneID, text string) error {
+	_, err := c.Call("pane.send_input", map[string]string{"pane_id": paneID, "text": text})
 	return err
 }
 

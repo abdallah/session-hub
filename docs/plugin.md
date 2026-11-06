@@ -252,6 +252,27 @@ Beside the 2-second ticks, the watcher keeps one long poll open on
   and sends the prompt with `agent.prompt`; a `blocked` agent (a folder
   Claude asks to trust) or a timeout leaves it unsent and adds why to the
   detail. It never answers a prompt in the pane.
+- A claim whose action is `attach` opens a terminal mirror of the session
+  for a guest. It runs in its own goroutine, so the loop keeps polling; at
+  most 4 attaches are open at once, and a fifth is `failed`, "too many open
+  attaches". The watcher finds the pane that runs the session (the recorded
+  pane, else any pane in a fresh snapshot), then every 250 ms checks with
+  `pane.get` that the pane still runs it and reads the screen with
+  `pane.read` (`source` `visible`, `format` `ansi`). When the screen
+  changed, it sends clear-screen and the screen. Output goes to
+  `POST /v1/machines/self/attach/<id>/output` in chunks: every 30 ms, or
+  at once when 8 KiB wait. Guest keystrokes arrive on
+  `GET /v1/machines/self/attach/<id>/input`, and the watcher types them
+  with `pane.send_input` only while the pane runs the session, so a guest
+  never types into the shell that is left after Claude exits. The attach
+  ends with `done`, "guest left", when the input stream ends; `done`,
+  "session ended", when the pane is gone or no longer runs the session; or
+  `failed` with the error. A session in a Rex block (`rex_block` set) is
+  mirrored the same way through the `rex` command:
+  `com.superlogical.terminal.format` (vt) every 250 ms, input with
+  `com.superlogical.terminal.write`, and once a second
+  `com.superlogical.terminal.process` must list a `claude` process, or the
+  mirror ends with "session ended". The guest sees the pane at its own size.
 - The idle check and `agent.prompt` are two herdr calls, so the agent can
   change state in the milliseconds between them. If you type into the
   session, or it starts working, in that window, the message is typed in
