@@ -188,6 +188,7 @@ func rollbackV19(t *testing.T, s *Store) {
 // rollbackV20 removes what schema v20 added.
 func rollbackV20(t *testing.T, s *Store) {
 	t.Helper()
+	rollbackV21(t, s)
 	for _, q := range []string{"ALTER TABLE login_codes DROP COLUMN session_id", "ALTER TABLE web_sessions DROP COLUMN session_id"} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatalf("%s: %v", q, err)

@@ -31,7 +31,7 @@ func (e *controlEnv) moveReady(id string) (towerKey, blueboxKey string) {
 	ctx := context.Background()
 	if _, err := e.s.UpsertSession(ctx, e.tower.ID, api.SessionUpsert{ID: id, Agent: "claude", Source: api.SourcePlugin,
 		CWD: "/home/user/proj", GitRepo: "git@github.com:o/r.git", GitBranch: "main", HerdrSession: "default",
-		HerdrWorkspace: "w1", HerdrPane: "w1:p1", AgentState: "idle"}); err != nil {
+		HerdrWorkspace: "w1", HerdrPane: "w1:p1", RexSession: "session:1", RexBlock: "block:1", AgentState: "idle"}); err != nil {
 		e.t.Fatal(err)
 	}
 	towerKey, blueboxKey = moveKey(e.t), moveKey(e.t)
@@ -258,7 +258,7 @@ func TestClaimMoveFlow(t *testing.T) {
 		t.Fatalf("done: %+v %v", done, err)
 	}
 	s := e.get(moveSID)
-	if s.Machine != "bluebox" || s.HerdrPane != "" || s.HerdrSession != "" || s.HerdrWorkspace != "" || s.Move.State != api.MoveDone {
+	if s.Machine != "bluebox" || s.HerdrPane != "" || s.HerdrSession != "" || s.HerdrWorkspace != "" || s.RexSession != "" || s.RexBlock != "" || s.Move.State != api.MoveDone {
 		t.Errorf("session after the move: %+v", s)
 	}
 	ev := e.events(moveSID, api.KindMoved)
@@ -426,7 +426,7 @@ func TestCloudMoveDone(t *testing.T) {
 		t.Errorf("session after a cloud move: %+v", s)
 	}
 	// No pane is left for Remote Control to resume the local copy in.
-	if s.HerdrSession != "" || s.HerdrWorkspace != "" || s.HerdrPane != "" || s.Controllable {
+	if s.HerdrSession != "" || s.HerdrWorkspace != "" || s.HerdrPane != "" || s.RexSession != "" || s.RexBlock != "" || s.Controllable {
 		t.Errorf("herdr fields after a cloud move: %q %q %q controllable=%v", s.HerdrSession, s.HerdrWorkspace, s.HerdrPane, s.Controllable)
 	}
 	if _, _, err := e.s.CreateControl(ctx, moveSID, api.RequestedByDashboard); !errors.Is(err, ErrNotControllable) {

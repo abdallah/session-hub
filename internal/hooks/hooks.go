@@ -190,6 +190,7 @@ func (h *handler) run(ctx context.Context, args []string) error {
 			h.upsertItem(api.SessionUpsert{
 				ID: in.SessionID, Agent: "claude", Source: api.SourceHooks,
 				CWD: foldControl(in.CWD), HerdrPane: h.getenv("HERDR_PANE_ID"),
+				RexSession: h.getenv("REX_SESSION"), RexBlock: h.getenv("REX_BLOCK"),
 				AgentState: stateWorking, FirstPrompt: text,
 			}),
 			h.eventItem(in.SessionID, api.KindPrompt, map[string]string{"prompt": text}),
@@ -232,6 +233,8 @@ func (h *handler) fullUpsert(ctx context.Context, in stdinPayload) api.SessionUp
 		CWD:            foldControl(in.CWD),
 		HerdrPane:      h.getenv("HERDR_PANE_ID"),
 		HerdrWorkspace: h.getenv("HERDR_WORKSPACE_ID"),
+		RexSession:     h.getenv("REX_SESSION"),
+		RexBlock:       h.getenv("REX_BLOCK"),
 		TitleHint:      cleanText(in.SessionTitle, promptChars),
 	}
 	if in.CWD != "" {

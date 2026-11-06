@@ -117,7 +117,7 @@ func (s *Store) Now() time.Time { return s.now().UTC() }
 // StaleAfter returns the configured staleness threshold.
 func (s *Store) StaleAfter() time.Duration { return s.staleAfter }
 
-const schemaVersion = 20
+const schemaVersion = 21
 
 const schemaV1 = `
 CREATE TABLE machines (
@@ -488,6 +488,13 @@ const schemaV19 = `
 ALTER TABLE permission_requests ADD COLUMN answers TEXT NOT NULL DEFAULT '';  -- an AskUserQuestion allow's answers as JSON, else ''
 `
 
+// schemaV21 records the Rex session and block a session runs in (REX_SESSION
+// and REX_BLOCK), the Rex counterpart of herdr_pane.
+const schemaV21 = `
+ALTER TABLE sessions ADD COLUMN rex_session TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN rex_block TEXT NOT NULL DEFAULT '';
+`
+
 // schemaV20 scopes a browser sign-in to one session: a guest link. Empty
 // means the full dashboard.
 const schemaV20 = `
@@ -641,6 +648,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if v < 20 {
 		if _, err := tx.ExecContext(ctx, schemaV20); err != nil {
 			return fmt.Errorf("migrate schema to v20: %w", err)
+		}
+	}
+	if v < 21 {
+		if _, err := tx.ExecContext(ctx, schemaV21); err != nil {
+			return fmt.Errorf("migrate schema to v21: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {

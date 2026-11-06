@@ -924,12 +924,12 @@ the state, and `peer_key`: the target's public key on `move-out`, the
 source's on `move-in`. Each claim is handed out once.
 
 On `done` for a machine move, the session's machine becomes the target, its
-herdr fields and Remote Control link clear until the target's next
+herdr and Rex fields and Remote Control link clear until the target's next
 heartbeat, and a `moved` event records `move_id`, `from`, and `to`. Until
 then the target's own writes for the session get `409`. On a cloud `done`,
 the session ends with an `ended` event, reason `moved_to_cloud`, and a
 `moved` event that carries `cloud_url`. Its `herdr_session`,
-`herdr_workspace`, and `herdr_pane` clear too, so the dashboard offers no
+`herdr_workspace`, `herdr_pane`, `rex_session`, and `rex_block` clear too, so the dashboard offers no
 Remote Control that would resume the local copy while the cloud session
 works on it. The transcript stays on the source, so `sessionhub resume` can still
 start the local copy on purpose.
@@ -1391,7 +1391,7 @@ bad entry.
 |---|---|
 | Session ID | `^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$` |
 | `ssh_host`, `herdr_host` | `^[A-Za-z0-9][A-Za-z0-9@._:-]{0,254}$`: no leading `-`, no `/`, `[`, or `]`. `sessionhub machine add` applies the same rule. |
-| `agent`, `herdr_session`, `herdr_workspace`, `herdr_pane` | `^[A-Za-z0-9][A-Za-z0-9:._-]{0,63}$`. Empty is allowed and means unknown. |
+| `agent`, `herdr_session`, `herdr_workspace`, `herdr_pane`, `rex_session`, `rex_block` | `^[A-Za-z0-9][A-Za-z0-9:._-]{0,63}$`. Empty is allowed and means unknown. |
 | `title`, `title_hint`, `first_prompt` | At most 200 characters, no control characters. |
 | Report items | At most 200 characters each, no control characters. |
 | `note` | At most 2000 characters, no control characters. |

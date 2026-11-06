@@ -172,6 +172,8 @@ func TestSessionStartCaptured(t *testing.T) {
 	fx.env["HERDR_PANE_ID"] = "w1:p2"
 	fx.env["HERDR_WORKSPACE_ID"] = "w1"
 	fx.env["HERDR_SOCKET_PATH"] = "/home/u/.config/herdr/sessions/work/herdr.sock"
+	fx.env["REX_SESSION"] = "session:01a1b1e4-463e-770f-b6be-80a3d50f9542"
+	fx.env["REX_BLOCK"] = "block:01a1b1e4-463e-77da-98f0-5a350b451a4f"
 
 	stdin := fixtureFile(t, "SessionStart.json")
 	// The captured payload has no session_title; add the documented field.
@@ -194,6 +196,7 @@ func TestSessionStartCaptured(t *testing.T) {
 		ID: sessionID, Agent: "claude", Source: "hooks", CWD: "/tmp/sessionhub-hook-probe",
 		GitRepo: "git@example.com:o/r.git", GitBranch: "main",
 		HerdrSession: "work", HerdrWorkspace: "w1", HerdrPane: "w1:p2", TitleHint: "my title",
+		RexSession: "session:01a1b1e4-463e-770f-b6be-80a3d50f9542", RexBlock: "block:01a1b1e4-463e-77da-98f0-5a350b451a4f",
 	}
 	if up != want {
 		t.Errorf("upsert = %+v\nwant     %+v", up, want)
