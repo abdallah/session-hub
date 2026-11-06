@@ -88,14 +88,16 @@ func TestAttachRedeemsLoginURL(t *testing.T) {
 		t.Errorf("saved %+v, want %+v", g, want)
 	}
 
-	// No argument reuses the saved sign-in until it expires.
-	_, id, err = resolveAttach(context.Background(), "", path, now, io.Discard, noOwner)
+	// No argument reuses the saved sign-in; the server decides when it has
+	// expired, because it slides the expiry on every visit.
+	_, id, err = resolveAttach(context.Background(), "", path, now.Add(2*time.Hour), io.Discard, noOwner)
 	if err != nil || id != "abcdef0123456789" {
 		t.Errorf("reuse: id %q, err %v", id, err)
 	}
-	_, _, err = resolveAttach(context.Background(), "", path, now.Add(time.Hour), io.Discard, noOwner)
-	if err == nil || !strings.Contains(err.Error(), "run sessionhub attach <login-url> first") {
-		t.Errorf("expired: %v", err)
+	// A plain http link to a remote host is refused.
+	_, _, err = resolveAttach(context.Background(), "http://hub.example.com/login/abcdefghijklmnopqrstuvwxyz", path, now, io.Discard, noOwner)
+	if err == nil || !strings.Contains(err.Error(), "https") {
+		t.Errorf("http link: %v", err)
 	}
 }
 

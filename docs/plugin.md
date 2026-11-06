@@ -267,8 +267,12 @@ Beside the 2-second ticks, the watcher keeps one long poll open on
   never types into the shell that is left after Claude exits. The attach
   ends with `done`, "guest left", when the input stream ends; `done`,
   "session ended", when the pane is gone or no longer runs the session; or
-  `failed` with the error. A session in a Rex block is `failed`, "Rex
-  sessions can't be mirrored yet". The guest sees the pane at its own size.
+  `failed` with the error. A session in a Rex block (`rex_block` set) is
+  mirrored the same way through the `rex` command:
+  `com.superlogical.terminal.format` (vt) every 250 ms, input with
+  `com.superlogical.terminal.write`, and once a second
+  `com.superlogical.terminal.process` must list a `claude` process, or the
+  mirror ends with "session ended". The guest sees the pane at its own size.
 - The idle check and `agent.prompt` are two herdr calls, so the agent can
   change state in the milliseconds between them. If you type into the
   session, or it starts working, in that window, the message is typed in

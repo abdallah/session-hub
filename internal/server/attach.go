@@ -21,6 +21,10 @@ const (
 	attachIdle = 30 * time.Minute
 	// attachSweep is how often the hub checks those limits.
 	attachSweep = 2 * time.Second
+	// attachKeepalive is how long a stream stays silent before a NUL byte
+	// goes out, so a proxy's idle timeout never cuts a quiet mirror. Both
+	// readers drop NUL.
+	attachKeepalive = 20 * time.Second
 	// attachQueue is how many chunks each direction buffers; a full queue
 	// holds the sender's POST until the reader catches up.
 	attachQueue = 64
@@ -275,10 +279,17 @@ func (s *Server) streamAttach(w http.ResponseWriter, r *http.Request, a *attachR
 	if rc.Flush() != nil { // send the headers now
 		return
 	}
+	keep := time.NewTicker(attachKeepalive)
+	defer keep.Stop()
 	for {
 		select {
 		case b := <-ch:
 			if !write(b) {
+				return
+			}
+			keep.Reset(attachKeepalive)
+		case <-keep.C:
+			if !write([]byte{0}) {
 				return
 			}
 		case <-a.done:

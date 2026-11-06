@@ -34,7 +34,7 @@ Shared contract, already on the branch:
 Relay state is in-process (`attachHub`): per attach, an output channel, an input
 channel, which sides are connected, last activity. One output reader and one
 input reader at a time (second gets 409). The attach ends when the machine posts
-its control result, when the guest's output stream has been gone 60 s, or after
+its control result, when the guest's output stream has been gone 5 s, or after
 30 min without any traffic. Control request `attach` reuses the control request
 table and the `GET /v1/machines/self/control` long poll; `ClaimControl` returns it
 like the others. The routes table test requires an auth test case per route.
@@ -97,6 +97,6 @@ The attach does not block the control loop: it runs in its own goroutine.
 - [ ] Guest link → `sessionhub attach <url>` shows the live Claude pane and keys reach it.
 - [ ] The same guest gets 403 on every other route (existing `guest_test.go` pattern extended to the attach routes).
 - [ ] Owner `sessionhub attach <prefix>` works with the machine token.
-- [ ] Ctrl-] detaches; the watcher posts `done`; the dashboard shows the control result.
+- [ ] Ctrl-] detaches; the watcher posts `done`, visible in `control_requests` (the dashboard shows only `remote_control` requests).
 - [ ] Watcher offline → `409` and a clear CLI message.
 - [ ] `go test ./...` green; `docs/cli.md` and `docs/server.md` updated.

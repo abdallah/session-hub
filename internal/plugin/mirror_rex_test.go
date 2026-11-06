@@ -27,6 +27,7 @@ state="$FAKE_REX_STATE"
 [ -e "$state/gone" ] && { echo "Error: block target \"$6\" not found: session scope: session \"$4\" not found" >&2; exit 3; }
 case "$7" in
   format) printf '{"content":%s}' "$(cat "$state/frame")" ;;
+  process) if [ -e "$state/noclaude" ]; then echo '{"foreground":{"pid":2,"user_id":1000,"name":"zsh"}}'; else echo '{"foreground":{"pid":2,"user_id":1000,"name":"claude"},"ancestors":[{"pid":1,"user_id":1000,"name":"zsh"}]}'; fi ;;
   write) printf '%s\n' "$8" >> "$state/writes"; echo '{"bytes_written":1}' ;;
   *) echo "unknown method $7" >&2; exit 2 ;;
 esac
@@ -90,11 +91,13 @@ func TestRexMirror(t *testing.T) {
 		return strings.Contains(string(b), `{"data":"ls\n"}`)
 	})
 
-	writeFile(t, filepath.Join(state, "gone"), "", 0o644)
+	// Once Claude is gone from the block, Run ends as "session ended" and
+	// nothing more is typed.
+	writeFile(t, filepath.Join(state, "noclaude"), "", 0o644)
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Errorf("Run after block gone = %v, want nil", err)
+			t.Errorf("Run after Claude exited = %v, want nil", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return after the block was gone")

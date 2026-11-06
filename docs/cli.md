@@ -264,8 +264,12 @@ to it.
 - On a joined machine, pass a session ID or a unique prefix:
   `sessionhub attach 3f2a9c10`.
 
-Press `Ctrl-]` to detach; the session keeps running. When the session ends,
-the command prints `Session ended.`. Both exit 0. If the server refuses the
+Press `Ctrl-]` to detach; the session keeps running. When the stream ends
+on the server's side (the session ended, or the server stopped or timed the
+attach out), the command prints `Disconnected: the session ended or the
+server closed the mirror.`. Both exit 0. The link must be `https`, except
+to localhost. Attaching gives you Claude's keyboard, including `!` shell
+commands, so hand a link only to someone you would give a shell. If the server refuses the
 attach, for example because the session's machine is offline, it prints the server's
 message and exits 1.
 

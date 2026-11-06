@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -160,7 +161,7 @@ func (m herdrMirror) Run(ctx context.Context, s api.Session, out io.Writer, in i
 			// U+FFFD in the JSON text; buffer the tail if guests see it.
 			if n > 0 {
 				if ok, _ := alive(); ok {
-					m.h.SendInput(pane, string(buf[:n])) // a failure shows as pane gone on the next read
+					m.h.SendInput(pane, string(dropNUL(buf[:n]))) // a failure shows as pane gone on the next read
 				}
 			}
 			if err != nil {
@@ -254,3 +255,6 @@ func (b *batchWriter) flushLocked() {
 type readFunc func([]byte) (int, error)
 
 func (f readFunc) Read(p []byte) (int, error) { return f(p) }
+
+// dropNUL removes the server's keepalive bytes from guest input.
+func dropNUL(b []byte) []byte { return bytes.ReplaceAll(b, []byte{0}, nil) }

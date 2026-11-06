@@ -146,7 +146,7 @@ func TestAttachRelay(t *testing.T) {
 	}
 }
 
-// TestAttachSweep: an attach ends when its guest has been gone 60 s, when
+// TestAttachSweep: an attach ends when its guest has been gone 5 s, when
 // no machine connects within ControlTTL, and after 30 min without traffic.
 func TestAttachSweep(t *testing.T) {
 	h := newAttachHub()
@@ -168,7 +168,7 @@ func TestAttachSweep(t *testing.T) {
 	select {
 	case <-gone.done:
 	default:
-		t.Error("guest gone 60 s: attach still open")
+		t.Error("guest gone 5 s: attach still open")
 	}
 	h.sweep(t0.Add(2 * time.Minute))
 	if h.get("nomachine") != nil || h.get("idle") == nil {

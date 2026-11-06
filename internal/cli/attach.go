@@ -77,6 +77,7 @@ func RunAttach(ctx context.Context, args []string) error {
 	var detached bool
 	err = withRawTerminal(realStty, os.Stdout, func() error {
 		var err error
+		fmt.Fprint(os.Stdout, "\x1b[?25h") // the alternate screen hides the cursor; the mirror needs it
 		detached, err = mirrorAttach(ctx, c, a.ID, os.Stdin, os.Stdout)
 		return err
 	})
@@ -88,7 +89,7 @@ func RunAttach(ctx context.Context, args []string) error {
 	case detached:
 		fmt.Fprintln(os.Stdout, "\nDetached.")
 	default:
-		fmt.Fprintln(os.Stdout, "\nSession ended.")
+		fmt.Fprintln(os.Stdout, "\nDisconnected: the session ended or the server closed the mirror.")
 	}
 	return nil
 }
@@ -114,6 +115,9 @@ func resolveAttach(ctx context.Context, arg, guestPath string, now time.Time, ou
 	var g guestLogin
 	switch {
 	case strings.HasPrefix(arg, "https://") || strings.HasPrefix(arg, "http://"):
+		if u, err := url.Parse(arg); err == nil && u.Scheme == "http" && !localHost(u.Hostname()) {
+			return nil, "", errors.New("attach: the link must use https; the sign-in code and cookie would travel in the clear")
+		}
 		var err error
 		if g, err = redeemLogin(ctx, arg, now); err != nil {
 			return nil, "", err
@@ -133,9 +137,6 @@ func resolveAttach(ctx context.Context, arg, guestPath string, now time.Time, ou
 		}
 		if err := json.Unmarshal(b, &g); err != nil {
 			return nil, "", fmt.Errorf("attach: read %s: %w", guestPath, err)
-		}
-		if !g.ExpiresAt.IsZero() && !now.Before(g.ExpiresAt) {
-			return nil, "", errors.New("attach: the guest sign-in expired; run sessionhub attach <login-url> first")
 		}
 	default:
 		c, err := owner()
@@ -230,10 +231,19 @@ func saveGuest(path string, g guestLogin) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, b, 0o600); err != nil {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	return os.Chmod(path, 0o600) // WriteFile keeps the mode of a file that exists
+	if err := os.Chmod(tmp, 0o600); err != nil { // WriteFile keeps the mode of a file that exists
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// localHost reports whether host is this machine, where plain http is fine.
+func localHost(host string) bool {
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 // mirrorAttach copies attach id's output to out and sends what it reads
@@ -249,7 +259,7 @@ func mirrorAttach(ctx context.Context, c attachAPI, id string, in io.Reader, out
 	defer body.Close()
 	done := make(chan error, 1)
 	go func() {
-		_, err := io.Copy(out, body)
+		_, err := io.Copy(nulDropper{out}, body) // the server's keepalive bytes
 		done <- err
 	}()
 	// shortcut: the readKeys goroutine stays blocked on in after a return;
@@ -285,4 +295,15 @@ func mirrorAttach(ctx context.Context, c attachAPI, id string, in io.Reader, out
 			}
 		}
 	}
+}
+
+// nulDropper writes to w without NUL bytes, which the server sends as
+// stream keepalives.
+type nulDropper struct{ w io.Writer }
+
+func (d nulDropper) Write(p []byte) (int, error) {
+	if _, err := d.w.Write(bytes.ReplaceAll(p, []byte{0}, nil)); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
