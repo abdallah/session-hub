@@ -93,7 +93,8 @@ func expireStartsTx(ctx context.Context, tx *sql.Tx, n string) error {
 // CreateStart opens a request to start a new Claude session on machine, in
 // in.Dir, started by by (web:<name> or machine:<name>). An unknown machine is
 // ErrNotFound; a machine whose watcher hasn't polled in ControlPollWindow is
-// ErrNotControllable; more than MaxPendingStartsPerMachine pending is
+// ErrNotControllable, and so is one that reported neither herdr nor Rex; more
+// than MaxPendingStartsPerMachine pending is
 // ErrTooMany.
 func (s *Store) CreateStart(ctx context.Context, machine string, in api.StartIn, by string) (api.StartRequest, error) {
 	if !ValidMachineName(machine) {
@@ -114,7 +115,8 @@ func (s *Store) CreateStart(ctx context.Context, machine string, in api.StartIn,
 	}
 	var machineID int64
 	var lastPoll sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT id, last_poll FROM machines WHERE name = ?`, machine).Scan(&machineID, &lastPoll)
+	var backends string
+	err = tx.QueryRowContext(ctx, `SELECT id, last_poll, backends FROM machines WHERE name = ?`, machine).Scan(&machineID, &lastPoll, &backends)
 	if errors.Is(err, sql.ErrNoRows) {
 		return api.StartRequest{}, fmt.Errorf("%w: machine %q", ErrNotFound, machine)
 	}
@@ -128,6 +130,9 @@ func (s *Store) CreateStart(ctx context.Context, machine string, in api.StartIn,
 	if !ok {
 		return api.StartRequest{}, fmt.Errorf("%w: the sessionhub watcher on machine %q is offline (no poll in the last %s)",
 			ErrNotControllable, machine, ControlPollWindow)
+	}
+	if err := noBackend(machine, backends); err != nil {
+		return api.StartRequest{}, err
 	}
 	var pending int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM start_requests WHERE machine_id = ? AND state = ?`,

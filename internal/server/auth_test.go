@@ -286,6 +286,7 @@ func TestAuthMatrix(t *testing.T) {
 		"POST /v1/moves/{id}/result": {fresh: func() string { return "/v1/moves/" + unpacking() + "/result" },
 			body: api.MoveResultIn{State: api.MoveFailed, Detail: "matrix"}, ok: 200, okB: 409},
 		"PUT /v1/machines/self/move-key": {path: "/v1/machines/self/move-key", body: api.MoveKeyIn{PublicKey: towerKey}, ok: 204},
+		"PUT /v1/machines/self/backends": {path: "/v1/machines/self/backends", body: api.BackendsIn{Backends: []string{api.BackendHerdr, api.BackendRex}}, ok: 204},
 		"GET /healthz":                   {path: "/healthz", ok: 200},
 		"GET /favicon.ico":               {path: "/favicon.ico", ok: 200},
 		"GET /apple-touch-icon.png":      {path: "/apple-touch-icon.png", ok: 200},

@@ -41,6 +41,11 @@ func (c *Client) PutMoveKey(ctx context.Context, publicKey string) error {
 	return c.do(ctx, http.MethodPut, "/v1/machines/self/move-key", api.MoveKeyIn{PublicKey: publicKey}, nil)
 }
 
+// PutBackends reports the terminal backends this machine's watcher can use.
+func (c *Client) PutBackends(ctx context.Context, backends []string) error {
+	return c.do(ctx, http.MethodPut, "/v1/machines/self/backends", api.BackendsIn{Backends: backends}, nil)
+}
+
 // PostMoveResult reports this machine's step of a move: done or failed.
 func (c *Client) PostMoveResult(ctx context.Context, id string, in api.MoveResultIn) error {
 	return c.do(ctx, http.MethodPost, "/v1/moves/"+url.PathEscape(id)+"/result", in, nil)

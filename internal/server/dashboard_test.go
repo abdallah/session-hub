@@ -689,7 +689,7 @@ process.stdout.write(JSON.stringify({
 		{"cardLine", got.Lines, []string{"Q?", "Waiting on: a; b", "Done. Next: deploy.", "r", "You: (background task finished)", "",
 			"Move to togh failed: boom", "r"}},
 		{"machineReach", got.Reach, []map[string]string{{"kind": "work", "text": "online"}, {"kind": "stale", "text": "silent 4m"},
-			{"kind": "idle", "text": "not in herdr"}, nil}},
+			{"kind": "idle", "text": "not in herdr or Rex"}, nil}},
 		{"sessionOrder", got.Order, []string{"blocked", "wait", "fin-new", "fin-old", "work", "stale", "idle-new"}},
 		{"displayTitle", got.Titles, []string{"Fix login", "booking pilot", "Claude Code", "abcdefgh"}},
 		{"contextLabel", got.Contexts, []string{"context 42%", "context 0%", "context 100%", "context 100%", "", "", ""}},
@@ -1251,7 +1251,7 @@ process.stdout.write(JSON.stringify({
 	out := runBlocks(t, []string{"layout-state", "move-state"}, script, map[string]any{})
 	want := `{
   "github": [true, true, true, false, false, true, true, false, false, false, false],
-  "blocked": ["", "Wait until the agent is idle or done.", "", "Not in herdr, or its machine's watcher is offline.",
+  "blocked": ["", "Wait until the agent is idle or done.", "", "Not in herdr or Rex, or its machine's watcher is offline.",
     "The session has ended.", "A move is under way.", ""],
   "targets": [{"target": "tower", "label": "tower", "ok": true, "why": ""},
     {"target": "nas", "label": "nas", "ok": false, "why": "its watcher is offline"},

@@ -109,12 +109,13 @@ func (s *Store) scanSession(sc scanner, now time.Time) (api.Session, error) {
 	if err != nil {
 		return x, err
 	}
-	x.Controllable = x.HerdrPane != "" && polled != nil && now.Sub(*polled) <= ControlPollWindow
+	x.Controllable = x.Backend() != "" && polled != nil && now.Sub(*polled) <= ControlPollWindow
 	seen, err := parseNullTS(modSeen)
 	if err != nil {
 		return x, err
 	}
-	x.Messageable = x.Controllable || modFresh(seen, now)
+	// A message reaches a herdr pane or a mod, never a Rex block.
+	x.Messageable = x.Controllable && x.HerdrPane != "" || modFresh(seen, now)
 	if contextPercent.Valid {
 		n := int(contextPercent.Int64)
 		x.ContextPercent = &n

@@ -85,6 +85,7 @@ func (s *Server) routes() []route {
 		{"GET", "/v1/moves/{id}/bundle", accessWrite, s.writer(s.getMoveBundle), false},
 		{"POST", "/v1/moves/{id}/result", accessWrite, s.writer(s.postMoveResult), false},
 		{"PUT", "/v1/machines/self/move-key", accessWrite, s.writer(s.putMoveKey), false},
+		{"PUT", "/v1/machines/self/backends", accessWrite, s.writer(s.putBackends), false},
 		{"POST", "/v1/sessions/{id}/blocked-on", accessWrite, s.writer(s.postBlockedOn), false},
 		{"PUT", "/v1/sessions/{id}/usage", accessWrite, s.writer(s.putUsage), false},
 		{"GET", "/v1/sessions/{id}/messages/next", accessWrite, s.writer(s.pollModMessage), false},

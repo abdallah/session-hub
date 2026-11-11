@@ -21,8 +21,9 @@ var (
 	ErrWrongMachine = errors.New("conflict")
 	// ErrConflict: a task change the task's state does not allow. 409.
 	ErrConflict = errors.New("conflict")
-	// ErrNotControllable: the session has no herdr pane, or its machine's
-	// watcher is offline. The server answers 409.
+	// ErrNotControllable: the session has no herdr pane or Rex block, or its
+	// machine's watcher is offline or has neither backend. The server
+	// answers 409.
 	ErrNotControllable = errors.New("not controllable")
 	// ErrTooMany: a per-machine or global pending-request limit is reached. 429.
 	ErrTooMany = errors.New("too many requests")
@@ -117,7 +118,7 @@ func (s *Store) Now() time.Time { return s.now().UTC() }
 // StaleAfter returns the configured staleness threshold.
 func (s *Store) StaleAfter() time.Duration { return s.staleAfter }
 
-const schemaVersion = 21
+const schemaVersion = 22
 
 const schemaV1 = `
 CREATE TABLE machines (
@@ -488,6 +489,13 @@ const schemaV19 = `
 ALTER TABLE permission_requests ADD COLUMN answers TEXT NOT NULL DEFAULT '';  -- an AskUserQuestion allow's answers as JSON, else ''
 `
 
+// schemaV22 records the terminal backends a machine's watcher reported:
+// "herdr", "rex", "herdr,rex", or "none". Empty means it never reported, which
+// is a watcher from before this version: the herdr plugin.
+const schemaV22 = `
+ALTER TABLE machines ADD COLUMN backends TEXT NOT NULL DEFAULT '';
+`
+
 // schemaV21 records the Rex session and block a session runs in (REX_SESSION
 // and REX_BLOCK), the Rex counterpart of herdr_pane.
 const schemaV21 = `
@@ -653,6 +661,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if v < 21 {
 		if _, err := tx.ExecContext(ctx, schemaV21); err != nil {
 			return fmt.Errorf("migrate schema to v21: %w", err)
+		}
+	}
+	if v < 22 {
+		if _, err := tx.ExecContext(ctx, schemaV22); err != nil {
+			return fmt.Errorf("migrate schema to v22: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {

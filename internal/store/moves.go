@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -111,6 +112,34 @@ func (s *Store) SetMoveKey(ctx context.Context, machineID int64, key string) err
 		return fmt.Errorf("%w: machine %d", ErrNotFound, machineID)
 	}
 	return nil
+}
+
+// backendsNone is machines.backends for a watcher that has neither backend.
+const backendsNone = "none"
+
+// SetBackends stores the terminal backends the machine's watcher reported.
+func (s *Store) SetBackends(ctx context.Context, machineID int64, backends []string) error {
+	for _, b := range backends {
+		if b != api.BackendHerdr && b != api.BackendRex {
+			return invalidf("backend %q: want %s or %s", b, api.BackendHerdr, api.BackendRex)
+		}
+	}
+	v := backendsNone
+	if len(backends) > 0 {
+		slices.Sort(backends)
+		v = strings.Join(slices.Compact(backends), ",")
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE machines SET backends = ? WHERE id = ?`, v, machineID)
+	return err
+}
+
+// noBackend is why a start on machine, or a move to it, is refused when its
+// watcher reported neither backend, else nil.
+func noBackend(machine, backends string) error {
+	if backends != backendsNone {
+		return nil
+	}
+	return refusef("machine %q has no herdr or Rex", machine)
 }
 
 // moveSelect reads a move and its source machine's name.
@@ -284,7 +313,8 @@ func (s *Store) CreateMove(ctx context.Context, sessionID, target, by string) (a
 	var srcID int64
 	var srcName, srcKey, pane, agentState, gitRepo string
 	var ended, srcPoll sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT s.machine_id, m.name, m.move_key, s.herdr_pane, s.agent_state, s.git_repo,
+	// pane is the herdr pane or, without one, the Rex block.
+	err = tx.QueryRowContext(ctx, `SELECT s.machine_id, m.name, m.move_key, s.herdr_pane || s.rex_block, s.agent_state, s.git_repo,
 		s.ended_at, m.last_poll FROM sessions s JOIN machines m ON m.id = s.machine_id WHERE s.id = ?`, sessionID).
 		Scan(&srcID, &srcName, &srcKey, &pane, &agentState, &gitRepo, &ended, &srcPoll)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -306,7 +336,7 @@ func (s *Store) CreateMove(ctx context.Context, sessionID, target, by string) (a
 		return api.Move{}, refusef("the sessionhub watcher on %q is offline", srcName)
 	case !online:
 	case pane == "":
-		return api.Move{}, refusef("session %s is not in herdr", sessionID)
+		return api.Move{}, refusef("session %s is not in herdr or Rex", sessionID)
 	case agentState != "idle" && agentState != "done":
 		state := agentState
 		if state == "" {
@@ -329,9 +359,9 @@ func (s *Store) CreateMove(ctx context.Context, sessionID, target, by string) (a
 		}
 	} else {
 		var tid int64
-		var tkey string
+		var tkey, tbackends string
 		var tpoll sql.NullString
-		err := tx.QueryRowContext(ctx, `SELECT id, move_key, last_poll FROM machines WHERE name = ?`, target).Scan(&tid, &tkey, &tpoll)
+		err := tx.QueryRowContext(ctx, `SELECT id, move_key, last_poll, backends FROM machines WHERE name = ?`, target).Scan(&tid, &tkey, &tpoll, &tbackends)
 		if errors.Is(err, sql.ErrNoRows) {
 			return api.Move{}, refusef("no machine named %q", target)
 		}
@@ -345,6 +375,9 @@ func (s *Store) CreateMove(ctx context.Context, sessionID, target, by string) (a
 			return api.Move{}, err
 		} else if !ok {
 			return api.Move{}, refusef("the sessionhub watcher on %q is offline", target)
+		}
+		if err := noBackend(target, tbackends); err != nil {
+			return api.Move{}, err
 		}
 		if tkey == "" {
 			return api.Move{}, refusef("machine %q has no move key yet; run sessionhub install-plugin there", target)

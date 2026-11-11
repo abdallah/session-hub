@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -121,7 +122,8 @@ func (s *Store) RecordPoll(ctx context.Context, machineID int64) error {
 // CreateControl opens a Remote Control request for session id, or returns
 // the session's open one with created false. requestedBy is
 // api.RequestedByDashboard or api.RequestedByMachinePrefix + <name>. Checks
-// run in this order: unknown session (ErrNotFound), no herdr pane, an
+// run in this order: unknown session (ErrNotFound), no herdr pane or Rex
+// block, a Rex block on a machine whose watcher did not report Rex, an
 // offline watcher, or an open move of the session (ErrNotControllable), an
 // open request (returned), and MaxPendingPerMachine (ErrTooMany).
 func (s *Store) CreateControl(ctx context.Context, id, requestedBy string) (api.ControlRequest, bool, error) {
@@ -129,9 +131,8 @@ func (s *Store) CreateControl(ctx context.Context, id, requestedBy string) (api.
 }
 
 // CreateControlAction is CreateControl for action api.ActionRemoteControl or
-// api.ActionAttach. An attach also takes a session with a Rex block and no
-// herdr pane, and returns only a pending attach of the session: a claimed
-// one is another guest's mirror.
+// api.ActionAttach. An attach returns only a pending attach of the session:
+// a claimed one is another guest's mirror.
 func (s *Store) CreateControlAction(ctx context.Context, id, action, requestedBy string) (api.ControlRequest, bool, error) {
 	if action != api.ActionRemoteControl && action != api.ActionAttach {
 		return api.ControlRequest{}, false, invalidf("action %q: want %s or %s", action, api.ActionRemoteControl, api.ActionAttach)
@@ -153,19 +154,25 @@ func (s *Store) CreateControlAction(ctx context.Context, id, action, requestedBy
 		return api.ControlRequest{}, false, err
 	}
 	var machineID int64
-	var machine, pane, rexBlock string
+	var machine, pane, rexBlock, backends string
 	var lastPoll sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT s.machine_id, m.name, s.herdr_pane, s.rex_block, m.last_poll
+	err = tx.QueryRowContext(ctx, `SELECT s.machine_id, m.name, s.herdr_pane, s.rex_block, m.last_poll, m.backends
 		FROM sessions s JOIN machines m ON m.id = s.machine_id WHERE s.id = ?`, id).
-		Scan(&machineID, &machine, &pane, &rexBlock, &lastPoll)
+		Scan(&machineID, &machine, &pane, &rexBlock, &lastPoll, &backends)
 	if errors.Is(err, sql.ErrNoRows) {
 		return api.ControlRequest{}, false, fmt.Errorf("%w: session %s", ErrNotFound, id)
 	}
 	if err != nil {
 		return api.ControlRequest{}, false, err
 	}
-	if pane == "" && (action != api.ActionAttach || rexBlock == "") {
-		return api.ControlRequest{}, false, fmt.Errorf("%w: session %s is not in herdr", ErrNotControllable, id)
+	if pane == "" && rexBlock == "" {
+		return api.ControlRequest{}, false, fmt.Errorf("%w: session %s is not in herdr or Rex", ErrNotControllable, id)
+	}
+	// A watcher from before the Rex backend reports no backends and would
+	// resume a Rex session in herdr, beside the copy that runs.
+	if pane == "" && action == api.ActionRemoteControl && !slices.Contains(strings.Split(backends, ","), api.BackendRex) {
+		return api.ControlRequest{}, false, fmt.Errorf("%w: the sessionhub watcher on machine %q does not report Rex; upgrade sessionhub there",
+			ErrNotControllable, machine)
 	}
 	polled, err := parseNullTS(lastPoll)
 	if err != nil {

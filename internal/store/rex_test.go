@@ -7,10 +7,11 @@ import (
 	"github.com/abdallah/session-hub/internal/api"
 )
 
-// rollbackV21 removes what schema v21 added.
+// rollbackV21 removes what schema v21 and later added.
 func rollbackV21(t *testing.T, s *Store) {
 	t.Helper()
-	for _, q := range []string{"ALTER TABLE sessions DROP COLUMN rex_session", "ALTER TABLE sessions DROP COLUMN rex_block"} {
+	for _, q := range []string{"ALTER TABLE machines DROP COLUMN backends", // v22
+		"ALTER TABLE sessions DROP COLUMN rex_session", "ALTER TABLE sessions DROP COLUMN rex_block"} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
