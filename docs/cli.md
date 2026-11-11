@@ -41,13 +41,16 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub move <id-or-prefix> <machine\|cloud>` | Move a session to another machine, or hand it to a Claude Code cloud session, and print its progress for up to 3 minutes. See below. |
 | `sessionhub move --status <move-id>` | Print where a move is. |
 | `sessionhub move-key` | Print this machine's move key fingerprint (16 hex characters), creating the key if there is none. |
-| `sessionhub start <machine> [--dir D] [--trust] [-m "<prompt>"]` | Start a new Claude session on `<machine>`, with Remote Control on, in a new herdr workspace, and print its link. See below. |
+| `sessionhub start <machine> [--dir D] [--trust] [-m "<prompt>"]` | Start a new Claude session on `<machine>`, with Remote Control on, in a new herdr workspace or Rex session, and print its link. See below. |
 | `sessionhub resume [--force] [--remote-control] <id-prefix>` | Get back into a session. See below. `--force` starts a session the server reports `live` or `blocked` even though no pane runs it to focus. `--remote-control` starts Claude with Remote Control on. Flags go before the prefix. |
 | `sessionhub resume --pick [--force] [--remote-control]` | Numbered list of this machine's sessions (live first, then newest; at most 30). Type a number, then the same logic as `sessionhub resume`. Empty input cancels. |
 | `sessionhub remote-control <id-prefix>` | Turn on Claude Code Remote Control for a session. See below. `-h` or `--help` prints the usage. |
 | `sessionhub install-mod [--settings FILE] [--binary PATH]` | Install the sessionhub Claude Code mod. See below. |
 | `sessionhub uninstall-mod [--settings FILE]` | Remove the sessionhub Claude Code mod. |
 | `sessionhub mod <command>` | The calls the sessionhub Claude Code mod makes. Not meant to be run by hand. See below. |
+| `sessionhub watch` | Run the watcher as a plain process, for a machine without herdr (its sessions run in Rex). See [plugin.md](plugin.md), "Without herdr". |
+| `sessionhub install-watcher` | Write the systemd user unit `sessionhub-watcher.service`, which runs `sessionhub watch`, and enable and start it. |
+| `sessionhub uninstall-watcher` | Stop and disable that unit and remove its file. |
 | `sessionhub plugin open-picker` | Runs `herdr plugin pane open --plugin sessionhub --entrypoint resume-picker --placement overlay --focus`, which runs `sessionhub resume --pick`. It uses `HERDR_BIN_PATH` when set. |
 | `sessionhub plugin open-inbox` | Runs `herdr plugin pane open --plugin sessionhub --entrypoint inbox --placement split --direction right --focus`, which runs `sessionhub inbox --watch` in a pane to the right. It uses `HERDR_BIN_PATH` when set. The pane opens in the herdr of the machine the command runs on, so run it in the herdr you are looking at; outside a herdr pane (for example over SSH), it prints a note saying where the pane opened. |
 
@@ -94,6 +97,21 @@ in the client config.
 | Another machine | Has herdr info | Prints `ssh -t <ssh_host> '~/.local/bin/sessionhub resume <uuid>'` and `herdr --remote <herdr_host>`. |
 | Another machine | Has a pane, and a saved herdr machine matches | Also prints `herdr --machine <label> pane focus <pane_id>`. |
 | Another machine | No herdr info | Prints `ssh -t <ssh_host> "exec \$SHELL -lc 'cd <cwd> && claude --resume <uuid>'"`. |
+
+A session in a Rex block (`rex_block`, and no `herdr_pane`) uses Rex instead.
+So does a session with neither, on a machine that has the `rex` command and
+no herdr socket.
+
+| Session | Rex state | What happens |
+| --- | --- | --- |
+| This machine | `terminal.process` shows Claude in the session's block | `rex block focus` on it. |
+| This machine | The block is gone or runs no Claude | `rex run -c <cwd> -- claude --resume <uuid>`: a new, focused tab in the current Rex session (`REX_SESSION`, else Rex's default). |
+| This machine | `rex run` fails (outside Rex with no session open, as over SSH) | `rex new "sessionhub: <title>" -c <cwd> -- claude --resume <uuid>`: a new Rex session, which you open in Rex. |
+| This machine | Both fail | Exits 1 and prints `cd <cwd> && claude --resume <uuid>`. |
+| Another machine | Has a Rex block | Prints `ssh -t <ssh_host> '~/.local/bin/sessionhub resume <uuid>'`. |
+
+Rex reports process names, not Claude's session ID, so any Claude in the
+recorded block counts as the session's.
 
 The remote branch only prints. `sessionhub` never runs `ssh` or a remote `herdr`.
 
@@ -154,6 +172,13 @@ client config.
 | This machine | herdr answers `agent_blocked` (Claude waits on a permission or other prompt) | Exits 1 with "the session is waiting on a prompt in its pane; answer it, then run this again". herdr sends no input and `sessionhub` doesn't retry. |
 | This machine | Ended, no pane recorded, pane gone, pane runs no Claude or another session, the session belongs to another herdr server, or herdr is not running | Exits 1 with "session is not running; start it with: `sessionhub resume --remote-control <id>`". |
 | Another machine | Any | Posts a control request through the sessionhub (`POST /v1/sessions/{id}/remote-control`, with this machine's token), prints `Asked machine "<name>" to turn on Remote Control for session <short ID>. Waiting for it...`, then reads the session every 2 s for up to 2 minutes. That machine's watcher runs the request as in `docs/plugin.md`, "Control loop", so an ended session there is resumed in a new herdr workspace. Prints the link (exit 0), says that no link appeared (exit 0), or exits 1 with the machine's reason. If the sessionhub refuses the request (for example `409`: not in herdr, or the machine's watcher is offline), can't be reached, or the request expires, prints why, then `ssh -t <ssh_host> '~/.local/bin/sessionhub remote-control <uuid>'`, and `herdr --machine <label> agent prompt <pane_id> /remote-control` when the session has a pane and a saved herdr machine matches. Never runs either, and exits 0. |
+
+For a session in a Rex block on this machine, `sessionhub remote-control` types
+`/remote-control` into the block when `terminal.process` shows Claude there,
+and reads the link from the block's text. A block that is gone or runs no
+Claude is "session is not running". Rex types into whatever the block shows,
+so a session the server reports `blocked` gets nothing and the command exits
+1 with the same "waiting on a prompt" error.
 
 herdr decides whether the session runs, not the server's `status`, so a session
 the server still lists as `ended` works when its pane runs it. From another
@@ -584,12 +609,14 @@ only ever allows once; it never adds a permanent rule.
 
 `sessionhub move <id-or-prefix> tower` moves a session to the machine `tower`, with
 its conversation, its branch, and its uncommitted changes, and resumes it
-there in a new herdr workspace. `sessionhub move <id-or-prefix> cloud` hands it to
+there in a new herdr workspace, or in a new Rex session when the target has
+Rex and no herdr. `sessionhub move <id-or-prefix> cloud` hands it to
 a new Claude Code cloud session instead (GitHub remotes only). You can run it
 on any machine.
 
-The session must be in herdr on a machine whose watcher runs, and its agent
-must be idle or done. If that machine's watcher is offline, the move uses the
+The session must be in a herdr pane or a Rex block on a machine whose watcher
+runs, and its agent must be idle or done. For a Rex block the agent's state
+comes from the session's hooks, so a session without hooks cannot move. If that machine's watcher is offline, the move uses the
 snapshot it last uploaded for the target and says how old it is; work after
 that snapshot is not carried. The target machine needs a running watcher and a clone
 of the same repository under `~/Code` (or a `move_roots` entry in
@@ -626,7 +653,9 @@ sessionhub start <machine> [--dir DIR] [--trust] [-m "first prompt"]
 
 Asks `<machine>`'s watcher to start a new Claude session with Remote Control
 on, in a new herdr workspace in `DIR`, and follows the request for up to
-2 minutes 10 seconds:
+2 minutes 10 seconds. A machine with Rex and no herdr starts it in a new Rex
+session, and the last line ends "(started in a new Rex session)". A machine
+with neither answers `409`.
 
 ```
 st_roa-9PDiUM1O9kEUXQZxZQ  starting a session on tower in ~/Code/app

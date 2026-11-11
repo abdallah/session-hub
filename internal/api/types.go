@@ -199,8 +199,8 @@ type Session struct {
 	// a machine reported, cleared when the session ends.
 	RemoteControlURL string     `json:"remote_control_url,omitempty"`
 	RemoteControlAt  *time.Time `json:"remote_control_at,omitempty"`
-	// Controllable is true when the session has a herdr pane and its
-	// machine's watcher polled for requests in the last 2 minutes.
+	// Controllable is true when the session has a herdr pane or a Rex block
+	// and its machine's watcher polled for requests in the last 2 minutes.
 	Controllable bool `json:"controllable"`
 	// Recap and RecapAt are Claude's latest recap, from the digest.
 	Recap   string     `json:"recap,omitempty"`
@@ -217,8 +217,8 @@ type Session struct {
 	// sealed to, by machine name.
 	Snapshots []Snapshot `json:"snapshots,omitempty"`
 	// Messageable is true when sessionhub can deliver a message to the session:
-	// it is Controllable, or its Claude Code mod polled for messages in the
-	// last 2 minutes.
+	// it has a herdr pane and is Controllable, or its Claude Code mod polled
+	// for messages in the last 2 minutes.
 	Messageable bool `json:"messageable"`
 	// BlockedOn is the question a blocked session waits on, as its mod
 	// reported it: one cleaned line of at most 300 characters, or "".
@@ -232,6 +232,32 @@ type Session struct {
 	// LastNote is the session's latest worklog note and the task it went
 	// to; nil when the session has written none.
 	LastNote *SessionNote `json:"last_note,omitempty"`
+}
+
+// Terminal backends: where a session's Claude runs on its machine.
+const (
+	BackendHerdr = "herdr"
+	BackendRex   = "rex"
+)
+
+// Backend is the terminal backend that runs the session: BackendHerdr for a
+// session with a herdr pane, BackendRex for one with a Rex block, "" for
+// neither. The server keeps a row from having both.
+func (s Session) Backend() string {
+	switch {
+	case s.HerdrPane != "":
+		return BackendHerdr
+	case s.RexBlock != "":
+		return BackendRex
+	}
+	return ""
+}
+
+// BackendsIn is the body of PUT /v1/machines/self/backends: the terminal
+// backends the machine's watcher can use, BackendHerdr and BackendRex. An
+// empty list means it has neither.
+type BackendsIn struct {
+	Backends []string `json:"backends"`
 }
 
 // SessionNote is a session's latest note (sessionhub note) and its task.

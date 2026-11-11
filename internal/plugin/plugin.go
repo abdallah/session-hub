@@ -48,7 +48,7 @@ func Run(ctx context.Context, args []string) error {
 	case "watch":
 		ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 		defer stop()
-		return runWatcher(ctx, paths.StateDir(), herdr.SocketPath(), loadClient, gitinfo.Lookup,
+		return runWatcher(ctx, paths.StateDir(), herdr.SocketPath(), false, loadClient, gitinfo.Lookup,
 			log.New(os.Stderr, "", log.LstdFlags|log.LUTC))
 	}
 	return fmt.Errorf("sessionhub plugin: unknown subcommand %q (want startup, event, watch, open-picker, or open-inbox)", args[0])

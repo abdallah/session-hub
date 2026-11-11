@@ -493,15 +493,31 @@ func TestCreateAttach(t *testing.T) {
 	if _, err := e.s.FinishControl(ctx, e.tower.ID, a.ID, api.ControlResultIn{State: api.ControlDone, Detail: "guest left"}); err != nil {
 		t.Errorf("finish attach after ControlTTL: %v", err)
 	}
-	// A Rex-only session takes an attach but not Remote Control.
+	// A Rex-only session takes an attach and Remote Control; a session
+	// with neither backend takes none.
 	if _, err := e.s.UpsertSession(ctx, e.tower.ID, api.SessionUpsert{ID: "rex1", Agent: "claude", Source: api.SourcePlugin, RexSession: "r", RexBlock: "b1"}); err != nil {
 		t.Fatal(err)
 	}
+	e.session(e.tower, "bare1", "")
 	e.poll(e.tower)
-	if _, _, err := e.s.CreateControlAction(ctx, "rex1", api.ActionAttach, api.RequestedByDashboard); err != nil {
-		t.Errorf("attach to a Rex session: %v", err)
+	// A watcher from before the Rex backend reports nothing: it mirrors a
+	// Rex block, but would resume the session in herdr.
+	if _, _, err := e.s.CreateControl(ctx, "rex1", api.RequestedByDashboard); !errors.Is(err, ErrNotControllable) || !strings.Contains(err.Error(), "does not report Rex") {
+		t.Errorf("remote control of a Rex session through an old watcher: %v, want ErrNotControllable", err)
 	}
-	if _, _, err := e.s.CreateControl(ctx, "rex1", api.RequestedByDashboard); !errors.Is(err, ErrNotControllable) {
-		t.Errorf("remote control of a Rex session: %v, want ErrNotControllable", err)
+	if err := e.s.SetBackends(ctx, e.tower.ID, []string{api.BackendHerdr, api.BackendRex}); err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range []string{api.ActionAttach, api.ActionRemoteControl} {
+		if _, _, err := e.s.CreateControlAction(ctx, "rex1", action, api.RequestedByDashboard); err != nil {
+			t.Errorf("%s of a Rex session: %v", action, err)
+		}
+		_, _, err := e.s.CreateControlAction(ctx, "bare1", action, api.RequestedByDashboard)
+		if !errors.Is(err, ErrNotControllable) || !strings.Contains(err.Error(), "not in herdr or Rex") {
+			t.Errorf("%s of a session with no backend: %v, want ErrNotControllable", action, err)
+		}
+	}
+	if s := e.get("rex1"); !s.Controllable || s.Messageable || s.Backend() != api.BackendRex {
+		t.Errorf("Rex session: controllable %v, messageable %v, backend %q; want true, false, rex", s.Controllable, s.Messageable, s.Backend())
 	}
 }

@@ -126,7 +126,7 @@ func (m *mover) moveOut(ctx context.Context, cl *client.Client, claim api.Contro
 	s, mv := claim.Session, claim.Move
 	m.log.Printf("move: %s: moving session %s to %s", mv.ID, s.ID, termtext.Clean(mv.Target, 64))
 	fail := func(err error) { m.postResult(ctx, cl, mv.ID, failed(err)) }
-	if _, err := m.idlePane(s); err != nil {
+	if _, err := m.idle(ctx, cl, s); err != nil {
 		fail(&stepError{"check pane", err})
 		return
 	}
@@ -335,16 +335,21 @@ func (m *mover) cloudMark(id string) (string, bool) {
 	return "link unknown", true
 }
 
-// endIdle checks again that the session's pane is idle, since a push can
-// take minutes, and ends Claude with /exit. It reports whether the session
+// endIdle checks again that the session's pane or Rex block is idle, since a
+// push can take minutes, and ends Claude with /exit. It reports whether the session
 // ended; when it did not, it posted the failure.
 func (m *mover) endIdle(ctx context.Context, cl *client.Client, s api.Session, id string) bool {
-	pane, err := m.idlePane(s)
+	pane, err := m.idle(ctx, cl, s)
 	if err != nil {
 		m.postResult(ctx, cl, id, failed(&stepError{"check pane", err}))
 		return false
 	}
-	if err := m.endSession(ctx, pane, s.ID, true); err != nil {
+	if s.Backend() == api.BackendRex {
+		err = m.endRex(ctx, s.RexSession, s.RexBlock)
+	} else {
+		err = m.endSession(ctx, pane, s.ID, true)
+	}
+	if err != nil {
 		m.abort(ctx, cl, s, id, &stepError{"end session", err})
 		return false
 	}
@@ -382,6 +387,7 @@ func (m *mover) restart(ctx context.Context, cl *client.Client, s api.Session, i
 	switch r.Outcome {
 	case resume.OutcomeResumed, resume.OutcomeRunning:
 		m.log.Printf("move: %s: session %s %s here", id, s.ID, r.Outcome)
+		recordRex(ctx, cl, m.log, s.ID, r)
 		return
 	case resume.OutcomeNoDir:
 		why = "the directory is gone"
@@ -446,6 +452,9 @@ func (m *mover) finish(ctx context.Context, cl *client.Client, claim api.Control
 // move mv, from a snapshot, took it elsewhere: this machine was offline
 // during the move, so nothing ended it. An /exit that fails is added to the
 // move's detail.
+// shortcut: a Claude left in a Rex block keeps running, because the row no
+// longer names the block and Rex reports no session ID; match on the block's
+// directory if that happens.
 func (m *mover) endLeftover(ctx context.Context, cl *client.Client, s api.Session, mv *api.MoveClaim) {
 	h, err := herdr.Dial(m.socket)
 	if err != nil {
@@ -664,7 +673,7 @@ func (m *mover) moveIn(ctx context.Context, cl *client.Client, claim api.Control
 		fail(&stepError{"check clone", err})
 		return
 	}
-	if err := m.cloneFree(ctx, clone, man.Branch); err != nil {
+	if err := m.cloneFree(ctx, cl, mv.Target, clone, man.Branch); err != nil {
 		fail(&stepError{"check clone", err})
 		return
 	}
@@ -737,11 +746,11 @@ func (m *mover) moveIn(ctx context.Context, cl *client.Client, claim api.Control
 		// Claude may be in the pane. If /exit does not end it, the session
 		// may run here, so it stays here: done, with the files kept, and the
 		// source archives instead of restarting.
-		if r.Pane != "" && (r.Outcome == resume.OutcomeError || r.Outcome == resume.OutcomeRunning) {
+		if (r.Pane != "" || r.RexBlock != "") && (r.Outcome == resume.OutcomeError || r.Outcome == resume.OutcomeRunning) {
 			if err := m.stopClaude(ctx, mv.ID, r); err != nil {
-				in := api.MoveResultIn{State: api.MoveDone, Detail: fmt.Sprintf("start: %s; Claude may be running in pane %s on %s; check it there",
-					termtext.Clean(why, 120), termtext.Clean(r.Pane, 64), termtext.Clean(mv.Target, 64))}
-				m.keepDone(ctx, cl, mv.ID, in, until, r.Pane, mv.Source)
+				in := api.MoveResultIn{State: api.MoveDone, Detail: fmt.Sprintf("start: %s; Claude may be running in %s on %s; check it there",
+					termtext.Clean(why, 120), place(r), termtext.Clean(mv.Target, 64))}
+				m.keepDone(ctx, cl, mv.ID, in, until, place(r), mv.Source)
 				return
 			}
 		}
@@ -752,32 +761,37 @@ func (m *mover) moveIn(ctx context.Context, cl *client.Client, claim api.Control
 	if len(man.Skipped) > 0 {
 		in.Detail = "not carried: " + strings.Join(man.Skipped, ", ")
 	}
+	// Once done is recorded the session is this machine's, and its row
+	// takes the Rex block.
 	if m.postResult(ctx, cl, mv.ID, in) {
 		m.log.Printf("move: %s: session %s resumed in %s", mv.ID, man.SessionID, termtext.Clean(cwd, 200))
+		recordRex(ctx, cl, m.log, man.SessionID, r)
 		return
 	}
 	// The sessionhub did not record done. Unless the move reads back done, the
 	// source gets the session back, so Claude must not stay here.
 	if cur, err := cl.GetMove(context.WithoutCancel(ctx), mv.ID); err == nil && cur.State == api.MoveDone {
 		m.log.Printf("move: %s: session %s resumed in %s", mv.ID, man.SessionID, termtext.Clean(cwd, 200))
+		recordRex(ctx, cl, m.log, man.SessionID, r)
 		return
 	}
 	// When /exit fails, Claude still runs here: taking its files away would
 	// not stop it, so they stay, and done is posted again until the move
 	// would time out.
 	if err := m.stopClaude(ctx, mv.ID, r); err != nil {
-		m.log.Printf("move: %s: done was not recorded, and session %s still runs here in pane %s; end it before the move times out or it also restarts on %s",
-			mv.ID, man.SessionID, termtext.Clean(r.Pane, 64), termtext.Clean(mv.Source, 64))
-		m.keepDone(ctx, cl, mv.ID, in, until, r.Pane, mv.Source)
+		m.log.Printf("move: %s: done was not recorded, and session %s still runs here in %s; end it before the move times out or it also restarts on %s",
+			mv.ID, man.SessionID, place(r), termtext.Clean(mv.Source, 64))
+		m.keepDone(ctx, cl, mv.ID, in, until, place(r), mv.Source)
 		return
 	}
 	m.log.Printf("move: %s: done was not recorded, so session %s stopped here%s", mv.ID, man.SessionID, undo())
 }
 
 // cloneFree fails when the checkout would switch clone to branch while an
-// agent in a herdr pane here works in the clone: its next commit would land
-// on the moved branch. A pane whose directory no longer resolves is skipped.
-func (m *mover) cloneFree(ctx context.Context, clone, branch string) error {
+// agent in a herdr pane or a Rex block here works in the clone: its next
+// commit would land on the moved branch. A pane whose directory no longer
+// resolves is skipped. A machine with no herdr socket has no panes to check.
+func (m *mover) cloneFree(ctx context.Context, cl *client.Client, machine, clone, branch string) error {
 	cur, err := move.CurrentBranch(ctx, clone)
 	if err != nil {
 		return err
@@ -788,6 +802,16 @@ func (m *mover) cloneFree(ctx context.Context, clone, branch string) error {
 	realClone, err := filepath.EvalSymlinks(clone)
 	if err != nil {
 		return err
+	}
+	inClone := func(dir string) bool {
+		d, err := filepath.EvalSymlinks(dir)
+		return dir != "" && err == nil && (d == realClone || strings.HasPrefix(d, realClone+string(filepath.Separator)))
+	}
+	if err := rexCloneFree(ctx, cl, machine, clone, inClone); err != nil {
+		return err
+	}
+	if _, err := os.Stat(m.socket); err != nil {
+		return nil
 	}
 	h, err := herdr.Dial(m.socket)
 	if err != nil {
@@ -803,11 +827,7 @@ func (m *mover) cloneFree(ctx context.Context, clone, branch string) error {
 			continue
 		}
 		for _, dir := range []string{p.CWD, p.ForegroundCWD} {
-			if dir == "" {
-				continue
-			}
-			d, err := filepath.EvalSymlinks(dir)
-			if err == nil && (d == realClone || strings.HasPrefix(d, realClone+string(filepath.Separator))) {
+			if inClone(dir) {
 				return fmt.Errorf("%s is in use by a session in pane %s", clone, termtext.Clean(p.PaneID, 64))
 			}
 		}
@@ -815,7 +835,7 @@ func (m *mover) cloneFree(ctx context.Context, clone, branch string) error {
 	return nil
 }
 
-// keepDone posts done for a session that may run in pane here, with growing
+// keepDone posts done for a session that may run in pane (place's text) here, with growing
 // pauses, until the sessionhub records it, the move reads back done, the move ends
 // another way, or until passes. It never removes a file: Claude may use them.
 func (m *mover) keepDone(ctx context.Context, cl *client.Client, id string, in api.MoveResultIn, until time.Time, pane, source string) {
@@ -829,11 +849,11 @@ func (m *mover) keepDone(ctx context.Context, cl *client.Client, id string, in a
 		case err == nil && cur.State == api.MoveDone:
 			return
 		case err == nil && cur.State != api.MoveUnpacking:
-			m.log.Printf("move: %s: the move is %s, so the session restarts on %s; end Claude in pane %s here by hand",
+			m.log.Printf("move: %s: the move is %s, so the session restarts on %s; end Claude in %s here by hand",
 				id, termtext.Clean(cur.State, 40), source, pane)
 			return
 		case !m.now().Before(until):
-			m.log.Printf("move: %s: done still not recorded; end Claude in pane %s here by hand before the session restarts on %s",
+			m.log.Printf("move: %s: done still not recorded; end Claude in %s here by hand before the session restarts on %s",
 				id, pane, source)
 			return
 		}
@@ -843,14 +863,17 @@ func (m *mover) keepDone(ctx context.Context, cl *client.Client, id string, in a
 	}
 }
 
-// stopClaude ends Claude in the pane of r, which StartResumed returned. An
-// error means Claude may still run there. In a pane that StartResumed
+// stopClaude ends Claude in the pane of r, which StartResumed returned, or
+// in its Rex block (stopRex). An error means Claude may still run there. In a pane that StartResumed
 // created (a new workspace), /exit is only a courtesy: the pane closes, and
 // Claude counts as stopped only once herdr no longer has the pane, so a
 // Claude that herdr never detected stops too. In another pane, /exit must
 // end the Claude that herdr showed there.
 func (m *mover) stopClaude(ctx context.Context, id string, r resume.ControlResult) error {
 	ctx = context.WithoutCancel(ctx)
+	if r.RexBlock != "" {
+		return m.stopRex(ctx, id, r)
+	}
 	// OutcomeResumed and OutcomeRunning mean herdr showed Claude in the pane.
 	seen := r.Outcome == resume.OutcomeResumed || r.Outcome == resume.OutcomeRunning
 	var err error

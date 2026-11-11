@@ -848,7 +848,7 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
       var a = last ? shortAge(last, now) : "";
       return { kind: "stale", text: "silent" + (a ? " " + a : "") };
     }
-    return { kind: "idle", text: "not in herdr" };
+    return { kind: "idle", text: "not in herdr or Rex" };
   }
 
   // needsByMachine counts the inbox items per machine in inboxView's groups.
@@ -1607,7 +1607,7 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
   function moveBlocked(s) {
     if (!s || s.status === "ended") return "The session has ended.";
     if (fromSnapshot(s)) return moveOpen(s.move) ? "A move is under way." : "";
-    if (s.controllable !== true) return "Not in herdr, or its machine's watcher is offline.";
+    if (s.controllable !== true) return "Not in herdr or Rex, or its machine's watcher is offline.";
     if (s.agent_state !== "idle" && s.agent_state !== "done") return "Wait until the agent is idle or done.";
     if (moveOpen(s.move)) return "A move is under way.";
     return "";

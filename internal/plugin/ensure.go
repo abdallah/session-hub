@@ -108,9 +108,16 @@ func watcherEnv(env []string) []string {
 	return out
 }
 
+// isWatcher reports whether cmdline is a watcher's: `sessionhub plugin watch`,
+// which herdr's plugin starts, or `sessionhub watch`, which the systemd unit
+// runs and restarts.
+func isWatcher(cmdline string) bool {
+	return strings.HasSuffix(cmdline, " plugin watch") || strings.HasSuffix(cmdline, "sessionhub watch")
+}
+
 // stopWatcher sends SIGTERM to the watcher that holds the lock and waits up to
 // timeout for it to release the lock. It checks the process's command line
-// first (commandLine), so a reused PID is never signalled. It reports whether a watcher was stopped.
+// first (isWatcher), so a reused PID is never signalled. It reports whether a watcher was stopped.
 func stopWatcher(stateDir string, timeout time.Duration) (bool, error) {
 	path := filepath.Join(stateDir, watcherLockFile)
 	running, err := watcherRunning(stateDir)
@@ -126,7 +133,7 @@ func stopWatcher(stateDir string, timeout time.Duration) (bool, error) {
 		return false, fmt.Errorf("watcher lock %s has no PID", path)
 	}
 	cmdline, err := commandLine(pid)
-	if err != nil || !strings.Contains(cmdline, " plugin watch") {
+	if err != nil || !isWatcher(cmdline) {
 		return false, fmt.Errorf("process %d holding %s is not a sessionhub watcher", pid, path)
 	}
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {

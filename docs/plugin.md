@@ -4,6 +4,11 @@ The plugin registers the Claude Code sessions running in herdr with the sessionh
 server and keeps their state current. It targets herdr 0.9.3. Code:
 `internal/plugin`.
 
+Its watcher also runs without herdr, for a machine whose sessions run in Rex
+blocks: see [Without herdr](#without-herdr). Wherever this page says a
+request needs a herdr pane, a herdr pane or Rex block works, except for
+messages.
+
 ## Install
 
 ```
@@ -251,7 +256,22 @@ Beside the 2-second ticks, the watcher keeps one long poll open on
   first prompt, it then waits up to 15 seconds for the agent to be `idle`
   and sends the prompt with `agent.prompt`; a `blocked` agent (a folder
   Claude asks to trust) or a timeout leaves it unsent and adds why to the
-  detail. It never answers a prompt in the pane.
+  detail. It never answers a prompt in the pane. On a machine with Rex and
+  no herdr socket it runs `rex new "sessionhub: new in <directory name>" -c
+  <dir> --json -- claude --remote-control` instead, waits the same two times
+  with `terminal.process` and the block's text (the link may sit on the
+  line below the banner in a narrow block), and reports "started in a new
+  Rex session". Rex has no agent status, so it types the first prompt
+  only once the link shows.
+- A `remote_control` claim for a session in a Rex block types
+  `/remote-control` into the block when `terminal.process` shows Claude
+  there, and reads the link from the block's text (`terminal.format`). When
+  the block is gone, or shows no Claude and the session's hooks reported its
+  end, it resumes the session with `rex new
+  "sessionhub: <title>" -c <cwd> --json -- claude --resume <id>
+  --remote-control`, unless the server reports the session live or blocked,
+  and puts the new `rex_session` and `rex_block` on the session. A session
+  the server reports `blocked` gets nothing typed.
 - A claim whose action is `attach` opens a terminal mirror of the session
   for a guest. It runs in its own goroutine, so the loop keeps polling; at
   most 4 attaches are open at once, and a fifth is `failed`, "too many open
@@ -540,6 +560,54 @@ finish first ends any Claude still running the session in a herdr pane here
 with `/exit`, then archives the transcript. If `/exit` fails, the move's
 detail says which pane to end by hand.
 
+### Without herdr
+
+`sessionhub watch` runs the watcher as a plain process. `sessionhub
+install-watcher` writes the systemd user unit
+`~/.config/systemd/user/sessionhub-watcher.service` (`ExecStart=%h/.local/bin/sessionhub
+watch`, `Restart=always`, and `HERDR_SOCKET_PATH` when it is set at install
+time), enables it, and starts it; `sessionhub
+uninstall-watcher` removes it. To keep it running while you are logged out,
+run `loginctl enable-linger`. The unit logs to the journal: `journalctl
+--user -u sessionhub-watcher`.
+
+- With a herdr socket, `sessionhub watch` is `sessionhub plugin watch`. Without
+  one it makes no herdr call: no pane heartbeat, no sidebar count. It still
+  drains the queue, runs the control loop, registers the move key, takes
+  snapshots, and refreshes the rules and knowledge copies.
+- It exits when a herdr socket appears or goes away, and the unit starts it
+  again in the other mode. While another watcher holds `watcher.lock` (the
+  one herdr's plugin started), it waits for the lock.
+- Every heartbeat, with or without herdr, the watcher sends
+  `PUT /v1/machines/self/backends`: `herdr` when the socket answers, `rex`
+  when the `rex` command is on `PATH`.
+- Rex liveness, every heartbeat on a machine with `rex` and `machine` in the
+  client config: for each of this machine's sessions with a Rex block that
+  has not ended, `rex block call … process` says whether Claude runs there.
+  If it does, the watcher upserts the session, which keeps it `live`. If the
+  block is gone, it posts an `ended` event with
+  `{"reason":"rex_block_gone"}`. A block that is there and shows no Claude,
+  or that it can't read, changes nothing: Claude may run under tmux in it,
+  and the session goes `stale` unless its hooks report. The
+  session's own hooks register it, with `REX_SESSION` and `REX_BLOCK`, and
+  report its agent state; the watcher never reports a state for a Rex
+  session.
+- Rex keeps a session whose command exited, empty. Once the block of a
+  session that sessionhub created (label `sessionhub: …`) is gone, the watcher
+  ends that Rex session with `rex session kill`.
+- Every Rex call runs the `rex` command (`internal/rex`): `block call` for
+  `process`, `format`, and `write`, `new` and `run` to start Claude, `block
+  focus`, `block ls`, `ls`, and `session kill`.
+
+In a move, a source session in a Rex block is checked with `process` and the
+agent state the server holds (`idle` or `done`), and ended by typing `/exit`
+and waiting until Claude has left the block. A target with Rex and no herdr
+starts the session with `rex new … -- claude --resume <id>` and, once the
+move is `done`, puts the new block on the session. A start that the move
+takes back gets `/exit`, then always `rex session kill` on the session it
+created, and counts as stopped once Rex no longer has the block. The `check clone` step also fails when a live session of this
+machine in a Rex block has its directory in the clone.
+
 ## Files in the state dir
 
 `~/.local/state/sessionhub/` (env `SESSIONHUB_STATE_DIR`):
@@ -570,8 +638,8 @@ detail says which pane to end by hand.
 - If a resume fails with "claude didn't start", check the machine's interactive
   shell startup, for example a zsh `compaudit` prompt. The fix is
   `compaudit | xargs chmod g-w,o-w`.
-- If the dashboard shows no **Remote Control** button for a session in herdr,
-  the machine's watcher isn't polling. Look for `control:` lines in
+- If the dashboard shows no **Remote Control** button for a session in herdr
+  or Rex, the machine's watcher isn't polling. Look for `control:` lines in
   `watcher.log`; a `401` means the token is wrong.
 - If a card says "resumed in a new herdr workspace, link not seen", Claude
   started in the new `sessionhub: <title>` workspace, but no Remote Control banner
@@ -589,3 +657,16 @@ detail says which pane to end by hand.
   after 10 minutes, never misattributed.
 - `pane.exited` never fired in the capture run (`testdata/README.md`); it is
   handled like `pane.closed` per herdr's schema.
+- Rex reports process names, not Claude's session ID: any Claude in a
+  session's recorded block counts as that session.
+- Rex has no agent status. Idle, working, and blocked for a Rex session are
+  what its hooks reported, so a Rex session without hooks cannot move, and
+  nothing stops text typed into a block that shows a prompt the hooks did not
+  report.
+- The Remote Control link is read from `terminal.format`, which returns the
+  whole scrollback and fails past 960 KiB: such a block gets a `failed`
+  result and nothing typed.
+- A move from a snapshot does not end a Claude left in a Rex block on the
+  source: the session's row no longer names the block.
+- Messages reach a herdr pane or a mod, not a Rex block.
+- `sessionhub install-watcher` needs systemd.

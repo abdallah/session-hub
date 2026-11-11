@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,6 +20,8 @@ import (
 	"github.com/abdallah/session-hub/internal/digest"
 	"github.com/abdallah/session-hub/internal/herdr"
 	"github.com/abdallah/session-hub/internal/move"
+	"github.com/abdallah/session-hub/internal/resume"
+	"github.com/abdallah/session-hub/internal/rex"
 )
 
 // Watcher timing.
@@ -141,6 +144,12 @@ type watcher struct {
 	// snaps takes snapshots of the idle sessions after each accepted
 	// heartbeat; nil turns snapshots off.
 	snaps *snapper
+	// backends lists the terminal backends this machine has, for the
+	// heartbeat to report; nil reports none. runWatcher sets it.
+	backends func() []string
+	// machine is this machine's name, for the Rex liveness check; "" turns
+	// the check off. runWatcher sets it.
+	machine string
 }
 
 // moveKeyEvery is how often the watcher registers its move key again, so a
@@ -236,13 +245,17 @@ func (w *watcher) refresh(ctx context.Context, now time.Time) ([]api.SessionUpse
 }
 
 // heartbeat sends the full set of panes (PUT herdr-sessions). A failure is
-// logged and not queued: the next heartbeat carries a fresh set anyway.
+// logged and not queued: the next heartbeat carries a fresh set anyway. A
+// watcher without herdr sends no panes and does the rest.
 func (w *watcher) heartbeat(ctx context.Context, now time.Time) {
 	w.lastBeat = now
-	ups, err := w.refresh(ctx, now)
-	if err != nil {
-		w.logf(now, "heartbeat: herdr snapshot: %v", err)
-		return
+	var ups []api.SessionUpsert
+	if w.herdr != nil {
+		var err error
+		if ups, err = w.refresh(ctx, now); err != nil {
+			w.logf(now, "heartbeat: herdr snapshot: %v", err)
+			return
+		}
 	}
 	// Digests run after the heartbeat is sent, whether or not the send
 	// succeeds (a digest is queued when the server is down), so a slow first
@@ -253,15 +266,19 @@ func (w *watcher) heartbeat(ctx context.Context, now time.Time) {
 		w.logf(now, "heartbeat: %v", err)
 		return
 	}
-	res, err := c.PutHerdrSessionsResult(ctx, api.HerdrSessionsPut{HerdrSession: w.herdrSession, Sessions: ups, UnidentifiedPanes: w.unidentified})
-	if err != nil {
-		w.logf(now, "heartbeat: send failed: %v", err)
-		return
-	}
-	for _, in := range res.Invalid {
-		w.logf(now, "heartbeat: server skipped session %q: %s", in.ID, in.Reason)
+	if w.herdr != nil {
+		res, err := c.PutHerdrSessionsResult(ctx, api.HerdrSessionsPut{HerdrSession: w.herdrSession, Sessions: ups, UnidentifiedPanes: w.unidentified})
+		if err != nil {
+			w.logf(now, "heartbeat: send failed: %v", err)
+			return
+		}
+		for _, in := range res.Invalid {
+			w.logf(now, "heartbeat: server skipped session %q: %s", in.ID, in.Reason)
+		}
 	}
 	w.lastBeatOK = now
+	w.reportBackends(ctx, c, now)
+	w.rexBeat(ctx, c, now)
 	if w.snaps != nil {
 		w.snaps.offer(w.snapCands())
 	}
@@ -269,6 +286,72 @@ func (w *watcher) heartbeat(ctx context.Context, now time.Time) {
 	w.refreshInstructions(ctx, c, now)
 	w.refreshKnowledge(ctx, c, now)
 	w.registerMoveKey(ctx, c, now)
+}
+
+// reportBackends tells the server which terminal backends this machine has.
+// A failure is logged and retried at the next heartbeat.
+func (w *watcher) reportBackends(ctx context.Context, c *client.Client, now time.Time) {
+	if w.backends == nil {
+		return
+	}
+	if err := c.PutBackends(ctx, w.backends()); err != nil {
+		w.logf(now, "backends: not reported: %s", cleanErr(err))
+	}
+}
+
+// rexEnded is the payload of the ended event for a Rex session whose block
+// is gone.
+const rexEnded = `{"reason":"rex_block_gone"}`
+
+// rexBeat is the heartbeat for this machine's sessions in Rex blocks, which
+// no herdr snapshot lists: one whose block shows Claude is seen again, one
+// whose block is gone ends. A block that is there and shows no Claude, or
+// can't be read, changes nothing: Claude may run under a multiplexer in it,
+// and the session's hooks report its end. Sessions that run are the cache's
+// Rex entries, so digests and snapshots cover them. A Rex session sessionhub
+// created is ended once its block is gone (rex.Reap).
+func (w *watcher) rexBeat(ctx context.Context, c *client.Client, now time.Time) {
+	if w.machine == "" || !rex.Installed() {
+		return
+	}
+	// Not live only: a session the server calls stale may still run.
+	// shortcut: this reads every session the machine ever had, each
+	// heartbeat; add a not-ended filter to GET /v1/sessions if that grows.
+	list, err := c.ListSessions(ctx, false, w.machine)
+	if err != nil {
+		w.logf(now, "rex: list sessions: %s", cleanErr(err))
+		return
+	}
+	defer func() { // entries this beat did not renew are sessions that left Rex
+		for k, e := range w.cache {
+			if strings.HasPrefix(k, "rex:") && !e.seen.Equal(now) {
+				delete(w.cache, k)
+			}
+		}
+	}()
+	for _, s := range list {
+		if s.Backend() != api.BackendRex || s.Status == api.StatusEnded {
+			continue
+		}
+		running, err := rex.ClaudeRuns(ctx, s.RexSession, s.RexBlock)
+		switch {
+		case errors.Is(err, rex.ErrGone):
+			if err := c.PostEvent(ctx, s.ID, api.EventIn{Kind: api.KindEnded, Source: api.SourcePlugin, TS: now, Payload: json.RawMessage(rexEnded)}); err != nil {
+				w.logf(now, "rex: end session %s: %s", s.ID, cleanErr(err))
+			}
+			rex.Reap(ctx, s.RexSession)
+		case err != nil:
+			w.logf(now, "rex: session %s: %s", s.ID, cleanErr(err))
+		case running:
+			// The state stays the hooks' to report: an upsert with it
+			// could put back an older one.
+			if err := c.UpsertSession(ctx, api.SessionUpsert{ID: s.ID, Agent: "claude", Source: api.SourcePlugin}); err != nil {
+				w.logf(now, "rex: session %s: %s", s.ID, cleanErr(err))
+			}
+			w.cache["rex:"+s.RexBlock] = cacheEntry{seen: now, u: api.SessionUpsert{ID: s.ID, Agent: "claude", Source: api.SourcePlugin,
+				CWD: s.CWD, RexSession: s.RexSession, RexBlock: s.RexBlock, AgentState: s.AgentState}}
+		}
+	}
 }
 
 // registerMoveKey sends the move public key when the server has not taken it
@@ -476,7 +559,7 @@ func (w *watcher) pass(ctx context.Context, now time.Time) {
 	if len(items) == 0 {
 		return
 	}
-	if w.needsRefresh(items, now) {
+	if w.herdr != nil && w.needsRefresh(items, now) {
 		if _, err := w.refresh(ctx, now); err != nil {
 			w.logf(now, "herdr snapshot: %v", err)
 		}
@@ -654,6 +737,10 @@ func statSocket(path string) (socketID, error) {
 // concludes another watcher holds it.
 const lockRetryFor = 200 * time.Millisecond
 
+// lockWaitEvery is how often `sessionhub watch` tries the lock while
+// another watcher holds it.
+var lockWaitEvery = 5 * time.Second
+
 // lockWithRetry is tryLock retried every 10 ms for up to wait. Every
 // `sessionhub plugin event` probes watcher.lock (watcherRunning takes the flock and
 // releases it at once), so a single try can fail against a probe instead of
@@ -671,11 +758,28 @@ func lockWithRetry(path string, wait time.Duration) (*os.File, bool, error) {
 }
 
 // runWatcher holds <state>/watcher.lock for its lifetime and ticks every 2 s
-// until ctx ends or the herdr socket changes or disappears.
-func runWatcher(ctx context.Context, stateDir, socketPath string, newClient func() (*client.Client, error), git gitFunc, logger *log.Logger) error {
+// until ctx ends or the herdr socket changes or disappears. Without a herdr
+// socket it exits at once, unless plain (`sessionhub watch`): then it runs
+// with no herdr calls, for a machine whose sessions run in Rex, and exits
+// when a socket appears, so the next start uses it.
+func runWatcher(ctx context.Context, stateDir, socketPath string, plain bool, newClient func() (*client.Client, error), git gitFunc, logger *log.Logger) error {
 	lock, held, err := lockWithRetry(filepath.Join(stateDir, watcherLockFile), lockRetryFor)
 	if err != nil {
 		return err
+	}
+	if held && plain {
+		// The unit's watcher stands by: herdr's plugin starts its own, which
+		// exits with herdr.
+		logger.Printf("another watcher holds %s; waiting for it to exit", filepath.Join(stateDir, watcherLockFile))
+		for held && err == nil {
+			if !sleepCtx(ctx, lockWaitEvery) {
+				return nil
+			}
+			lock, held, err = tryLock(filepath.Join(stateDir, watcherLockFile))
+		}
+		if err != nil {
+			return err
+		}
 	}
 	if held {
 		logger.Printf("another watcher holds %s; exiting", filepath.Join(stateDir, watcherLockFile))
@@ -686,18 +790,26 @@ func runWatcher(ctx context.Context, stateDir, socketPath string, newClient func
 	lock.WriteAt([]byte(fmt.Sprintf("%d\n", os.Getpid())), 0)
 
 	sock, err := statSocket(socketPath)
-	if err != nil {
+	// A socket file whose server died is no herdr to a plain watcher.
+	noHerdr := err != nil || plain && !resume.HerdrUp(socketPath)
+	if noHerdr && !plain {
 		logger.Printf("herdr socket %s: %v; exiting", socketPath, err)
 		return nil
 	}
-	hc, err := herdr.Dial(socketPath)
-	if err != nil {
-		logger.Printf("herdr socket %s: %v; exiting", socketPath, err)
-		return nil
+	w := newWatcher(client.NewQueue(stateDir), nil, herdr.SessionName(socketPath), newClient, git, logger)
+	if !noHerdr {
+		hc, err := herdr.Dial(socketPath)
+		if err != nil {
+			logger.Printf("herdr socket %s: %v; exiting", socketPath, err)
+			return nil
+		}
+		w.herdr, w.sidebar = hc, hc
 	}
-	w := newWatcher(client.NewQueue(stateDir), hc, herdr.SessionName(socketPath), newClient, git, logger)
 	w.logPath = filepath.Join(stateDir, watcherLogFile)
-	w.sidebar = hc
+	w.backends = func() []string { return resume.Backends(socketPath) }
+	if cfg, err := client.LoadConfig(); err == nil {
+		w.machine = cfg.Machine
+	}
 	w.instructionsPath = client.InstructionsPath(stateDir)
 	w.knowledgePath = client.KnowledgePath(stateDir)
 	w.transcriptStat = func(id string) (int64, time.Time, bool) {
@@ -727,7 +839,11 @@ func runWatcher(ctx context.Context, stateDir, socketPath string, newClient func
 		_, err = digest.Send(ctx, c, w.q, id, d)
 		return err
 	}
-	logger.Printf("watcher started: pid %d, herdr session %q, socket %s", os.Getpid(), w.herdrSession, socketPath)
+	if noHerdr {
+		logger.Printf("watcher started: pid %d, no herdr socket at %s", os.Getpid(), socketPath)
+	} else {
+		logger.Printf("watcher started: pid %d, herdr session %q, socket %s", os.Getpid(), w.herdrSession, socketPath)
+	}
 
 	// The control loop runs beside the 2 s ticks and stops with them. Wait
 	// for it on the way out, so a request it is running ends with the
@@ -779,11 +895,15 @@ func runWatcher(ctx context.Context, stateDir, socketPath string, newClient func
 		case <-t.C:
 		}
 		cur, err := statSocket(socketPath)
-		if err != nil {
+		switch {
+		case noHerdr && err == nil && resume.HerdrUp(socketPath):
+			logger.Printf("herdr socket appeared; exiting so the next start uses it")
+			return nil
+		case noHerdr:
+		case err != nil:
 			logger.Printf("herdr socket gone (%v); exiting", err)
 			return nil
-		}
-		if cur != sock {
+		case cur != sock:
 			logger.Printf("herdr socket replaced (new server); exiting")
 			return nil
 		}

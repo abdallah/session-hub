@@ -1,25 +1,20 @@
 package plugin
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
-	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/abdallah/session-hub/internal/api"
+	"github.com/abdallah/session-hub/internal/rex"
 )
 
-// rexCallTimeout bounds one rex command.
-const rexCallTimeout = 5 * time.Second
-
 // errRexGone is a rex command's answer once the session or block is gone.
-var errRexGone = errors.New("rex block not found")
+var errRexGone = rex.ErrGone
 
 // rexMirror is a snapshot mirror of a Rex terminal block: clear-screen and
 // the screen as escape sequences (terminal.format vt) each time it changes,
@@ -31,12 +26,11 @@ var errRexGone = errors.New("rex block not found")
 // `rex block stream` is not implemented in Rex 0.0.1793981048; switch to the
 // stream when either lands.
 type rexMirror struct {
-	bin   string
 	every time.Duration
 }
 
 // newRexMirror returns the mirror for a session that runs in a Rex block.
-func newRexMirror() mirror { return rexMirror{bin: "rex", every: attachPollEvery} }
+func newRexMirror() mirror { return rexMirror{every: attachPollEvery} }
 
 // Run returns nil when ctx ends or the block is gone.
 func (m rexMirror) Run(ctx context.Context, s api.Session, out io.Writer, in io.Reader) error {
@@ -112,55 +106,10 @@ const rexProcessEvery = time.Second
 
 // claudeRuns reports whether a process named claude runs in the block.
 func (m rexMirror) claudeRuns(ctx context.Context, s api.Session) (bool, error) {
-	res, err := m.call(ctx, s, "process", map[string]any{})
-	if err != nil {
-		return false, err
-	}
-	type proc struct{ Name, Argv0, Script string }
-	var out struct {
-		Foreground *proc
-		Child      *proc
-		Ancestors  []proc
-	}
-	if err := json.Unmarshal(res, &out); err != nil {
-		return false, errors.New("bad JSON from rex process")
-	}
-	procs := out.Ancestors
-	for _, p := range []*proc{out.Foreground, out.Child} {
-		if p != nil {
-			procs = append(procs, *p)
-		}
-	}
-	for _, p := range procs {
-		if p.Name == "claude" || strings.Contains(p.Argv0, "claude") || strings.Contains(p.Script, "claude") {
-			return true, nil
-		}
-	}
-	return false, nil
+	return rex.ClaudeRuns(ctx, s.RexSession, s.RexBlock)
 }
 
-// call runs `rex block call -s SESSION -b BLOCK METHOD ARGS` and returns its
-// JSON result. A session or block that is gone is errRexGone.
+// call runs one method of the session's block; see rex.Call.
 func (m rexMirror) call(ctx context.Context, s api.Session, method string, args any) ([]byte, error) {
-	body, err := json.Marshal(args)
-	if err != nil {
-		return nil, err
-	}
-	cctx, cancel := context.WithTimeout(ctx, rexCallTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(cctx, m.bin, "block", "call", "-s", s.RexSession, "-b", s.RexBlock, method, string(body))
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	res, err := cmd.Output()
-	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if strings.Contains(msg, "not found") {
-			return nil, errRexGone
-		}
-		if msg == "" {
-			msg = err.Error()
-		}
-		return nil, errors.New(msg)
-	}
-	return res, nil
+	return rex.Call(ctx, s.RexSession, s.RexBlock, method, args)
 }

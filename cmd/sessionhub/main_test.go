@@ -12,7 +12,7 @@ import (
 	"github.com/abdallah/session-hub/internal/cli"
 )
 
-var commands = []string{"server", "machine", "plugin", "install-plugin", "uninstall-plugin", "hook", "install-hooks",
+var commands = []string{"server", "machine", "plugin", "install-plugin", "uninstall-plugin", "watch", "install-watcher", "uninstall-watcher", "hook", "install-hooks",
 	"uninstall-hooks", "install-mod", "uninstall-mod", "mod", "mcp", "install-mcp", "uninstall-mcp", "ls", "show", "status", "login", "attach", "inbox", "rules", "send",
 	"approve", "deny", "move", "move-key", "resume", "remote-control", "join"}
 

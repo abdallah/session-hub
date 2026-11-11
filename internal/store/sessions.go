@@ -231,6 +231,22 @@ func (s *Store) UpsertSession(ctx context.Context, machineID int64, u api.Sessio
 }
 
 func (s *Store) upsertTx(ctx context.Context, tx *sql.Tx, machineID int64, u api.SessionUpsert, now time.Time) (bool, error) {
+	// A row names one backend, the one Claude runs in now. A herdr pane
+	// wins: herdr can run inside a Rex terminal, and its panes inherit the
+	// Rex IDs.
+	if u.HerdrPane != "" {
+		u.RexSession, u.RexBlock = "", ""
+	}
+	// A Rex block runs one Claude: the session that reports it now. Another
+	// row of this machine that still names the block (its Claude died there
+	// without a SessionEnd) gives it up, so nothing is typed into this
+	// session on that one's behalf.
+	if u.RexBlock != "" {
+		if _, err := tx.ExecContext(ctx, `UPDATE sessions SET rex_session = '', rex_block = ''
+			WHERE machine_id = ? AND rex_block = ? AND id <> ?`, machineID, u.RexBlock, u.ID); err != nil {
+			return false, err
+		}
+	}
 	var titleSource, firstPrompt, prevState string
 	err := tx.QueryRowContext(ctx, `SELECT title_source, first_prompt, agent_state FROM sessions WHERE id = ?`, u.ID).
 		Scan(&titleSource, &firstPrompt, &prevState)
@@ -271,6 +287,12 @@ func (s *Store) upsertTx(ctx context.Context, tx *sql.Tx, machineID int64, u api
 	set("herdr_pane", u.HerdrPane)
 	set("rex_session", u.RexSession)
 	set("rex_block", u.RexBlock)
+	switch { // the row's other backend is where Claude ran before
+	case u.HerdrPane != "":
+		sets = append(sets, "rex_session = ''", "rex_block = ''")
+	case u.RexBlock != "":
+		sets = append(sets, "herdr_session = ''", "herdr_workspace = ''", "herdr_pane = ''")
+	}
 	// state_ts is the event clock (client timestamps, clamped to server now).
 	// An upsert carries no event time, so it sets the state and leaves
 	// state_ts alone: stamping it with server time here would make a

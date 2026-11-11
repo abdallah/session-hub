@@ -190,8 +190,8 @@ func (e *env) reportControl(s api.Session, o ControlOptions, r ControlResult) er
 		}
 	case OutcomeNoLink:
 		_, total := pollBounds(o)
-		fmt.Fprintf(e.out, "Sent %s to pane %s, but no Remote Control URL appeared within %s. Check the pane or the Claude app.\n",
-			rcCommand, clean(r.Pane), total)
+		fmt.Fprintf(e.out, "Sent %s to %s, but no Remote Control URL appeared within %s. Check the pane or the Claude app.\n",
+			rcCommand, where(r), total)
 	case OutcomeBlocked:
 		return errors.New("the session is waiting on a prompt in its pane; answer it, then run this again")
 	case OutcomeDialogOpen:

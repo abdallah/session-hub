@@ -184,6 +184,19 @@ func (s *Server) putMoveKey(w http.ResponseWriter, r *http.Request, p principal)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// putBackends is PUT /v1/machines/self/backends.
+func (s *Server) putBackends(w http.ResponseWriter, r *http.Request, p principal) {
+	var in api.BackendsIn
+	if !decode(w, r, &in) {
+		return
+	}
+	if err := s.store.SetBackends(r.Context(), p.machine.ID, in.Backends); err != nil {
+		s.storeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // putMoveBundle is PUT /v1/moves/{id}/bundle: the source streams the sealed
 // bundle to a temp file, which is renamed into place before the move turns
 // uploaded. It wakes the target's poll.
