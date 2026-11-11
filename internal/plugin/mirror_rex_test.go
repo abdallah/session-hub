@@ -68,7 +68,7 @@ func waitUntil(t *testing.T, what string, ok func() bool) {
 func TestRexMirror(t *testing.T) {
 	state := fakeRex(t)
 	s := api.Session{ID: "s1", RexSession: "session:1", RexBlock: "block:1"}
-	m := rexMirror{bin: "rex", every: 10 * time.Millisecond}
+	m := rexMirror{every: 10 * time.Millisecond}
 	out := &safeBuffer{}
 	in, guest := io.Pipe()
 	done := make(chan error, 1)
@@ -108,7 +108,7 @@ func TestRexMirror(t *testing.T) {
 func TestRexMirrorCancel(t *testing.T) {
 	fakeRex(t)
 	s := api.Session{ID: "s1", RexSession: "session:1", RexBlock: "block:1"}
-	m := rexMirror{bin: "rex", every: 10 * time.Millisecond}
+	m := rexMirror{every: 10 * time.Millisecond}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	in, guest := io.Pipe()
@@ -127,7 +127,7 @@ func TestRexMirrorCancel(t *testing.T) {
 }
 
 func TestRexMirrorNoBlock(t *testing.T) {
-	err := rexMirror{bin: "rex", every: time.Millisecond}.Run(context.Background(), api.Session{ID: "s1"}, io.Discard, strings.NewReader(""))
+	err := rexMirror{every: time.Millisecond}.Run(context.Background(), api.Session{ID: "s1"}, io.Discard, strings.NewReader(""))
 	if err == nil {
 		t.Error("Run without a Rex block returned nil")
 	}
