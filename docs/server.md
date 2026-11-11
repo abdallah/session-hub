@@ -219,6 +219,7 @@ The server compares machine tokens in constant time. It looks up a session by it
 | `GET /v1/moves/{id}/bundle` | machine (the move's target, while `unpacking`) | `200`, the bundle | Download the sealed bundle. `410` when its file is gone. |
 | `POST /v1/moves/{id}/result` | machine (the source while `packing`, the target while `unpacking`; the source again once the move ended and its part closed) | `200`, the `Move` | Report `done` or `failed` (`MoveResultIn`). After the move ended, the source's result with the final state adds its `detail` as a note. |
 | `PUT /v1/machines/self/move-key` | machine | `204` | Register this machine's move public key (`MoveKeyIn`). |
+| `PUT /v1/machines/self/backends` | machine | `204` | Report the terminal backends this machine's watcher can use (`BackendsIn`): `{"backends": ["herdr", "rex"]}`, or an empty list for neither. `400` for any other name. See [Terminal backends](#terminal-backends). |
 | `POST /v1/sessions/{id}/blocked-on` | machine (the owning one) | `200`, the `Session` | Set or clear what the session waits on (`BlockedOnIn`). See [The Claude Code mod](#the-claude-code-mod). |
 | `PUT /v1/sessions/{id}/usage` | machine (the owning one) | `200`, the `Session` | Store the context window fill and cost (`UsageIn`). |
 | `GET /v1/sessions/{id}/messages/next?wait=25` | machine (the owning one) | `200` a `ModMessage`; `204` none | The mod's long poll for the session's next message. |
@@ -375,8 +376,8 @@ until the request ends: **Open in Claude** with the new session's link, a
 note when the link wasn't seen, or the machine's reason. A refused request
 shows the server's error. See [Starting sessions](#starting-sessions).
 
-A session in herdr whose machine's watcher polled in the last 2 minutes
-(`controllable`) gets a button: **Remote Control** when it is live,
+A session in a herdr pane or a Rex block whose machine's watcher polled in
+the last 2 minutes (`controllable`) gets a button: **Remote Control** when it is live,
 **Resume with Remote Control** when it is ended or stale, and a disabled
 button with "waiting on a prompt in the pane" when it is blocked. A session
 with an open move gets no button. A tap is
@@ -389,7 +390,7 @@ link and a **Copy** button, the machine's reason, or "The machine didn't
 respond in time." A refused request shows the server's error as text.
 
 An expanded card also gets **Move to…**. When the session can't move now
-(it ended, it is not in herdr or its watcher is offline, its agent is not
+(it ended, it is not in herdr or Rex or its watcher is offline, its agent is not
 idle or done, or a move is under way) the button is disabled and the reason
 shows beside it. Opening the menu reads `GET /v1/machines` and lists every
 other machine (one that can't take a session now is disabled, with "its
@@ -645,12 +646,13 @@ The `detail` a watcher sends, which the dashboard and the CLI show as is:
 
 | State | `detail` |
 |---|---|
-| `done` | Empty (a new link), "Remote Control was already on", "Remote Control was already on; press Esc in the pane to close its dialog", "sent, link not seen", "resumed in a new herdr workspace", or "resumed in a new herdr workspace, link not seen". |
+| `done` | Empty (a new link), "Remote Control was already on", "Remote Control was already on; press Esc in the pane to close its dialog", "sent, link not seen", "resumed in a new herdr workspace", or "resumed in a new herdr workspace, link not seen". A watcher that resumed it in Rex says "Rex session" in place of "herdr workspace". |
 | `failed` | "waiting on a prompt in the pane", "a Remote Control dialog is open in the pane; press Esc there", "looks live but pane not found", "the session's directory no longer exists", "just resumed; try again in a moment", or a herdr error. |
 
 - `POST /v1/sessions/{id}/remote-control` takes no body and needs the full
   ID. It answers `404` for an unknown session, `409` when the session has no
-  herdr pane, its machine's watcher hasn't polled in 2 minutes, or it has an
+  herdr pane or Rex block ("session … is not in herdr or Rex"), its
+  machine's watcher hasn't polled in 2 minutes, or it has an
   open move ("a move is open for this session"; see [Moves](#moves)), `200` with
   the session's open request if it has one, `429` when the machine already
   has 10 pending requests, and `202` with a new request, in that order.
@@ -907,10 +909,10 @@ Each watcher registers its X25519 public key with
 
 `POST /v1/sessions/{id}/move` `{"target": "tower"}` or `{"target": "cloud"}`
 answers `202` with the move, or `409` with the reason when a rule fails: the
-session has ended, is not in herdr, its agent is not `idle` or `done`, its
-machine's watcher is offline or has no key, it already has an open move, the
-target machine is unknown, the same machine, offline, or has no key, or a
-cloud move's remote is not on GitHub.
+session has ended, has no herdr pane or Rex block, its agent is not `idle` or
+`done`, its machine's watcher is offline or has no key, it already has an
+open move, the target machine is unknown, the same machine, offline, has no
+key, or has neither backend, or a cloud move's remote is not on GitHub.
 
 States and who moves them:
 
@@ -993,12 +995,35 @@ to another machine, when it is older than 14 days, and, oldest first, while
 all snapshots pass 1 GiB. It also deletes files without a row and partial
 uploads after 11 minutes.
 
+### Terminal backends
+
+A session's Claude runs in a herdr pane or a Rex block, and its row names
+one of them: `herdr_pane`, or `rex_session` and `rex_block`. An upsert with a
+herdr pane clears the Rex IDs (herdr can run inside a Rex terminal, whose
+panes inherit them), and an upsert with a Rex block and no pane clears the
+herdr IDs. A Rex block names one session: an upsert with a Rex block takes
+it from any other session of the machine that still names it. A session
+with neither takes no Remote Control request, attach, or move.
+
+Each watcher reports what its machine has with
+`PUT /v1/machines/self/backends` on every heartbeat: herdr when its socket
+answers, Rex when the `rex` command is installed. A machine that reported
+neither takes no start and no move. A machine that never reported, which is
+a watcher from before this route, counts as herdr: it takes no Remote
+Control request for a session in a Rex block (`409`, "… does not report
+Rex; upgrade sessionhub there").
+
+`messageable` is unchanged: a message reaches a herdr pane or a mod, not a
+Rex block.
+
 ### Starting sessions
 
 `POST /v1/machines/{name}/start` with `{"dir": "~/Code/app", "prompt": "..."}`
 asks that machine's watcher to start a new Claude session with Remote Control
-on, in a new herdr workspace. The dashboard's **New session** panel and
-`sessionhub start` send it.
+on, in a new herdr workspace, or in a new Rex session on a machine with Rex
+and no herdr. The dashboard's **New session** panel and `sessionhub start`
+send it. A machine whose watcher reported neither backend answers `409`
+("machine … has no herdr or Rex").
 
 - `dir` is required: an absolute path, or one starting with `~/` (or `~`
   alone), at most 1,024 bytes, with no control characters. The server checks
@@ -1043,9 +1068,9 @@ is the attach ID.
 
 - `POST /v1/sessions/{id}/attach` takes no body and needs the full ID. A
   guest may attach only to its own session (`403` otherwise). The checks and
-  answers are those of `POST /v1/sessions/{id}/remote-control`, except that a
-  session with a Rex block and no herdr pane qualifies, and only a `pending`
-  attach is returned with `200`: a `claimed` one belongs to another guest.
+  answers are those of `POST /v1/sessions/{id}/remote-control`, except that
+  only a `pending` attach is returned with `200`: a `claimed` one belongs to
+  another guest.
   A new attach wakes the machine's long poll.
 - The watcher claims it from `GET /v1/machines/self/control` like any
   request. A claimed attach expires 24 hours after the claim, not 2 minutes
