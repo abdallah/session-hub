@@ -17,6 +17,7 @@ import (
 	"github.com/abdallah/session-hub/internal/client"
 	"github.com/abdallah/session-hub/internal/herdr"
 	"github.com/abdallah/session-hub/internal/herdr/herdrtest"
+	"github.com/abdallah/session-hub/internal/rex/rextest"
 )
 
 // TestMain doubles as the "sessionhub" binary that ensureWatcher starts, selected by
@@ -26,6 +27,11 @@ import (
 //   - "watch": take watcher.lock like runWatcher, record the PID in
 //     <state>/holders when it won, and hold the lock until <state>/stop exists.
 func TestMain(m *testing.M) {
+	// A test that needs rex puts a fake on PATH; the live test wants the
+	// machine's own.
+	if os.Getenv("SESSIONHUB_LIVE_REX") != "1" {
+		rextest.HideReal()
+	}
 	switch os.Getenv("SESSIONHUB_PLUGIN_TEST_HELPER") {
 	case "exit":
 		// The marker tells a test the watcher was spawned: watcher.log is no

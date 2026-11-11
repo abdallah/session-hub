@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -145,7 +146,7 @@ func deliverMessage(h paneAgent, s api.Session, text string) api.ControlResultIn
 }
 
 // startRunner is the watcher's start function: resume.StartNew on the herdr
-// socket, in the home directory, unless this machine turned remote starts
+// socket, or in Rex on a machine without herdr, in the home directory, unless this machine turned remote starts
 // off. It reads the client config for each request, so the opt-out takes
 // effect without a restart.
 func startRunner(socket string, every, wait time.Duration) func(ctx context.Context, req api.StartRequest) api.ControlResultIn {
@@ -164,6 +165,29 @@ func startRunner(socket string, every, wait time.Duration) func(ctx context.Cont
 	}
 }
 
+// inRex rewords a detail about a new herdr workspace for a result in Rex.
+func inRex(detail string, r resume.ControlResult) string {
+	if r.RexBlock == "" {
+		return detail
+	}
+	return strings.Replace(detail, "herdr workspace", "Rex session", 1)
+}
+
+// recordRex puts the Rex session and block that r started Claude in on
+// session id's row, so the next request finds the block. The session's own
+// hook reports them too; this covers a session without hooks.
+func recordRex(ctx context.Context, cl *client.Client, logger *log.Logger, id string, r resume.ControlResult) {
+	if r.RexBlock == "" || r.Outcome == resume.OutcomeRunning {
+		return
+	}
+	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), controlPostFor)
+	defer cancel()
+	u := api.SessionUpsert{ID: id, Agent: "claude", Source: api.SourcePlugin, RexSession: r.RexSession, RexBlock: r.RexBlock}
+	if err := cl.UpsertSession(pctx, u); err != nil {
+		logger.Printf("rex: session %s: block %s not recorded: %s", id, termtext.Clean(r.RexBlock, 64), cleanErr(err))
+	}
+}
+
 // startResultFor turns what resume.StartNew did on machine into the result
 // the server stores.
 func startResultFor(machine string, r resume.NewSessionResult) api.ControlResultIn {
@@ -173,6 +197,7 @@ func startResultFor(machine string, r resume.NewSessionResult) api.ControlResult
 		if r.URL == "" {
 			detail = detailStartedNoLink
 		}
+		detail = inRex(detail, r.ControlResult)
 		if r.PromptNote != "" {
 			detail += "; " + r.PromptNote
 		}
@@ -193,7 +218,7 @@ func startResultFor(machine string, r resume.NewSessionResult) api.ControlResult
 }
 
 // controlRunner is the watcher's controlFunc: resume.Control on the herdr
-// socket, resuming a session that no pane runs unless the watcher just
+// socket, or in Rex for a session in a Rex block, resuming a session that no pane runs unless the watcher just
 // resumed it in knownPane. Zero every or wait means resume's defaults.
 func controlRunner(socket string, every, wait time.Duration) controlFunc {
 	return func(ctx context.Context, s api.Session, knownPane string) resume.ControlResult {
@@ -234,10 +259,12 @@ type controller struct {
 	now     func() time.Time // tests replace it
 }
 
-// resumedPane is where and when the watcher resumed a session.
+// resumedPane is where and when the watcher resumed a session: a herdr
+// pane, or a Rex session and block.
 type resumedPane struct {
-	pane string
-	at   time.Time
+	pane                 string
+	rexSession, rexBlock string
+	at                   time.Time
 }
 
 func newController(newClient func() (*client.Client, error), run controlFunc, logger *log.Logger) *controller {
@@ -324,7 +351,11 @@ func (c *controller) handle(ctx context.Context, cl *client.Client, claim api.Co
 	in := api.ControlResultIn{State: api.ControlFailed, Detail: "unknown action " + termtext.Clean(req.Action, 40)}
 	switch req.Action {
 	case api.ActionRemoteControl:
-		in = resultFor(c.control(ctx, claim.Session))
+		r := c.control(ctx, claim.Session)
+		if r.RexBlock != claim.Session.RexBlock {
+			recordRex(ctx, cl, c.log, claim.Session.ID, r)
+		}
+		in = resultFor(r)
 	case api.ActionMessage:
 		in = api.ControlResultIn{State: api.MessageRefused, Detail: detailNoDelivery}
 		if c.deliver != nil {
@@ -378,8 +409,9 @@ func (c *controller) handleMove(ctx context.Context, cl *client.Client, claim ap
 	}
 }
 
-// control runs c.run for session s, with the pane the watcher resumed s in
-// during the last controlResumedFor, and remembers the pane of a new resume.
+// control runs c.run for session s, with the pane or Rex block the watcher
+// resumed s in during the last controlResumedFor, and remembers where a new
+// resume went.
 func (c *controller) control(ctx context.Context, s api.Session) resume.ControlResult {
 	now := c.now()
 	for id, r := range c.resumed {
@@ -387,11 +419,16 @@ func (c *controller) control(ctx context.Context, s api.Session) resume.ControlR
 			delete(c.resumed, id)
 		}
 	}
-	r := c.run(ctx, s, c.resumed[s.ID].pane)
-	// A workspace means Claude may be running there, also when agent.start
-	// then failed.
-	if r.Workspace != "" && r.Pane != "" {
-		c.resumed[s.ID] = resumedPane{pane: r.Pane, at: now}
+	known := c.resumed[s.ID]
+	if known.rexBlock != "" && s.HerdrPane == "" {
+		// The row may not name the block of that resume yet.
+		s.RexSession, s.RexBlock = known.rexSession, known.rexBlock
+	}
+	r := c.run(ctx, s, known.pane)
+	// A workspace, or a new Rex block, means Claude may be running there,
+	// also when the start then failed.
+	if r.Workspace != "" && r.Pane != "" || r.RexBlock != "" && r.RexBlock != s.RexBlock {
+		c.resumed[s.ID] = resumedPane{pane: r.Pane, rexSession: r.RexSession, rexBlock: r.RexBlock, at: now}
 	}
 	return r
 }
@@ -418,9 +455,9 @@ func resultFor(r resume.ControlResult) api.ControlResultIn {
 		return done("", detailNoLink)
 	case resume.OutcomeResumed:
 		if r.URL == "" {
-			return done("", detailResumedNoLink)
+			return done("", inRex(detailResumedNoLink, r))
 		}
-		return done(r.URL, detailResumed)
+		return done(r.URL, inRex(detailResumed, r))
 	case resume.OutcomeBlocked:
 		return failed(detailBlocked)
 	case resume.OutcomeDialogOpen:

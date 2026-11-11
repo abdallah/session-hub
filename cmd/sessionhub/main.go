@@ -33,6 +33,9 @@ commands:
   plugin open-inbox             open the inbox pane
   install-plugin                install the herdr plugin
   uninstall-plugin              remove the herdr plugin
+  watch                         run the watcher without herdr (a Rex machine)
+  install-watcher               install the watcher as a systemd user unit
+  uninstall-watcher             remove the watcher unit
   hook <event>                  Claude Code hook handler (always exits 0)
   install-hooks                 add sessionhub hooks to Claude Code settings
   uninstall-hooks               remove sessionhub hooks
@@ -83,6 +86,9 @@ var routes = map[string]handler{
 	"plugin open-inbox":  resume.RunOpenInbox,
 	"install-plugin":     plugin.RunInstall,
 	"uninstall-plugin":   plugin.RunUninstall,
+	"watch":              plugin.RunWatch,
+	"install-watcher":    plugin.RunInstallWatcher,
+	"uninstall-watcher":  plugin.RunUninstallWatcher,
 	"hook":               hooks.Run,
 	"install-hooks":      hooks.RunInstall,
 	"uninstall-hooks":    hooks.RunUninstall,

@@ -423,7 +423,7 @@ func TestRunWatcherLifecycle(t *testing.T) {
 	logger := log.New(writerFunc(func(p []byte) (int, error) { mu.Lock(); defer mu.Unlock(); return logs.Write(p) }), "", 0)
 	done := make(chan error, 1)
 	go func() {
-		done <- runWatcher(context.Background(), dir, h.Path, sessionhub.clientFor(sessionhub.URL), nil, logger)
+		done <- runWatcher(context.Background(), dir, h.Path, false, sessionhub.clientFor(sessionhub.URL), nil, logger)
 	}()
 	deadline := time.Now().Add(3 * time.Second)
 	for sessionhub.count(http.MethodPut, "/v1/machines/self/herdr-sessions") == 0 {
@@ -443,7 +443,7 @@ func TestRunWatcherLifecycle(t *testing.T) {
 		t.Error("lock file has no PID")
 	}
 	// A second watcher exits at once.
-	if err := runWatcher(context.Background(), dir, h.Path, sessionhub.clientFor(sessionhub.URL), nil, logger); err != nil {
+	if err := runWatcher(context.Background(), dir, h.Path, false, sessionhub.clientFor(sessionhub.URL), nil, logger); err != nil {
 		t.Fatal(err)
 	}
 	os.Remove(h.Path)
@@ -487,7 +487,7 @@ func TestRunWatcherOutlastsLockProbe(t *testing.T) {
 		t.Fatalf("test lock: held=%v err=%v", held, err)
 	}
 	start := time.Now()
-	if err := runWatcher(context.Background(), dir, h.Path, sessionhub.clientFor(sessionhub.URL), nil, logger); err != nil {
+	if err := runWatcher(context.Background(), dir, h.Path, false, sessionhub.clientFor(sessionhub.URL), nil, logger); err != nil {
 		t.Fatal(err)
 	}
 	if took := time.Since(start); took < lockRetryFor {
@@ -500,7 +500,7 @@ func TestRunWatcherOutlastsLockProbe(t *testing.T) {
 	// Held by a probe for 60 ms: the watcher waits, then takes it and runs.
 	done := make(chan error, 1)
 	go func() {
-		done <- runWatcher(context.Background(), dir, h.Path, sessionhub.clientFor(sessionhub.URL), nil, logger)
+		done <- runWatcher(context.Background(), dir, h.Path, false, sessionhub.clientFor(sessionhub.URL), nil, logger)
 	}()
 	time.Sleep(60 * time.Millisecond)
 	probe.Close()
