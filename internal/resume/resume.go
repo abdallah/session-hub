@@ -1,6 +1,6 @@
 // Package resume gets you back into a session: it focuses or restarts the
-// session in the local herdr, or prints the commands to reach a session on
-// another machine. It never runs anything remote.
+// session in the local herdr or Rex, or prints the commands to reach a
+// session on another machine. It never runs anything remote.
 package resume
 
 import (
@@ -228,6 +228,9 @@ func (e *env) local(s api.Session) (bool, error) {
 		fmt.Fprintf(e.out, "%s. Run this in a shell:\n%s\n", why, e.resumeCmd(s))
 		return false, nil
 	}
+	if backendFor(s, e.socket) == api.BackendRex {
+		return e.localRex(s)
+	}
 	if s.HerdrSession == "" && s.HerdrPane == "" {
 		return fallback("The session has no herdr pane recorded")
 	}
@@ -384,6 +387,10 @@ func (e *env) remote(ctx context.Context, s api.Session) error {
 		return fmt.Errorf("refusing to print commands for machine %q: its SSH host %q or herdr host %q is empty or starts with a hyphen", s.Machine, sshHost, herdrHost)
 	}
 	fmt.Fprintf(e.out, "Session %s runs on machine %s, not on this machine. To reach it:\n\n", shortID(s.ID), strconv.Quote(s.Machine))
+	if s.Backend() == api.BackendRex {
+		fmt.Fprintf(e.out, "ssh -t %s %s     # opens or focuses it in the machine's Rex\n", shellQuote(sshHost), shellQuote(remoteHub+" resume "+e.remoteFlag()+s.ID))
+		return nil
+	}
 	if s.HerdrSession == "" && s.HerdrPane == "" {
 		fmt.Fprintf(e.out, "ssh -t %s %s\n", shellQuote(sshHost), localQuote(remoteLoginCmd(e.resumeCmd(s))))
 		return nil

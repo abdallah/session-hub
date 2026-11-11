@@ -60,8 +60,11 @@ type ControlResult struct {
 	Outcome Outcome
 	// URL is the Remote Control link, or "" when none was seen.
 	URL string
-	// Pane got /remote-control, or is the new workspace's pane.
+	// Pane got /remote-control, or is the new workspace's pane. "" in Rex.
 	Pane string
+	// RexSession and RexBlock name the Rex block that got /remote-control or
+	// that Control started Claude in. "" in herdr.
+	RexSession, RexBlock string
 	// Workspace is the workspace Control created, if it created one.
 	Workspace string
 	// DialogLeftOpen is "" when Control closed the already-on dialog (or it
@@ -74,7 +77,8 @@ type ControlResult struct {
 // maxLabelTitle caps the title in a new workspace's label.
 const maxLabelTitle = 40
 
-// Control turns on Remote Control for session s in this machine's herdr.
+// Control turns on Remote Control for session s in this machine's herdr, or
+// in Rex for a session that backendFor places there (controlRex).
 //
 // When herdr detects Claude running the session in a pane (the recorded one,
 // or with o.Resume any pane in a fresh snapshot), Control sends
@@ -86,6 +90,9 @@ const maxLabelTitle = 40
 func Control(ctx context.Context, s api.Session, o ControlOptions) ControlResult {
 	if !validID(s.ID) {
 		return failure(fmt.Errorf("refusing session ID %q: expected letters, digits, and hyphens, not starting with a hyphen", s.ID))
+	}
+	if backendFor(s, o.Socket) == api.BackendRex {
+		return controlRex(ctx, s, o)
 	}
 	if s.HerdrPane != "" && !validPaneID.MatchString(s.HerdrPane) {
 		return failure(fmt.Errorf("refusing pane ID %q: not a herdr pane ID", clean(s.HerdrPane)))
@@ -338,10 +345,14 @@ func resumeInWorkspace(ctx context.Context, h *herdr.Client, s api.Session, o Co
 // pane is on this herdr server and sits at a shell, else in a new workspace
 // at s.CWD (a missing or relative directory is OutcomeNoDir). It ignores the
 // server's status: the watcher calls it for a session it just ended or just
-// wrote, which the server may still show as live.
+// wrote, which the server may still show as live. A session that backendFor
+// places in Rex starts there (startResumedRex).
 func StartResumed(ctx context.Context, socket string, s api.Session, o ControlOptions) ControlResult {
 	if !validID(s.ID) {
 		return failure(fmt.Errorf("refusing session ID %q: expected letters, digits, and hyphens, not starting with a hyphen", s.ID))
+	}
+	if backendFor(s, socket) == api.BackendRex {
+		return startResumedRex(ctx, s, o)
 	}
 	if s.HerdrPane != "" && !validPaneID.MatchString(s.HerdrPane) {
 		return failure(fmt.Errorf("refusing pane ID %q: not a herdr pane ID", clean(s.HerdrPane)))
@@ -559,19 +570,27 @@ func waitForLink(ctx context.Context, h *herdr.Client, pane string, o ControlOpt
 // "/remote-control is active · Continue here, on your phone, or at <URL>".
 const rcBanner = "/remote-control is active"
 
-// bannerLines returns the lines of text that hold the Remote Control banner.
-func bannerLines(text string) []string {
-	var out []string
-	for _, l := range strings.Split(text, "\n") {
+// bannerLines returns the lines of text that hold the Remote Control banner,
+// each with the line after it: in a narrow terminal Claude puts the link
+// there.
+func bannerLines(text string) [][2]string {
+	var out [][2]string
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
 		if strings.Contains(l, rcBanner) {
-			out = append(out, l)
+			next := ""
+			if i+1 < len(lines) {
+				next = lines[i+1]
+			}
+			out = append(out, [2]string{l, next})
 		}
 	}
 	return out
 }
 
-// newBannerURL returns the link on the last banner line of after, but only
-// when after holds more banner lines than before, else "". A window that
+// newBannerURL returns the link on the last banner line of after, or at the
+// start of the line below it, but only when after holds more banner lines
+// than before, else "". A window that
 // slid (old lines scrolled out) can hide a new banner: that misses the link,
 // never reports a stale one.
 func newBannerURL(before, after string) string {
@@ -579,11 +598,14 @@ func newBannerURL(before, after string) string {
 	if len(lines) <= len(bannerLines(before)) {
 		return ""
 	}
-	urls := remoteControlURLs(lines[len(lines)-1])
-	if len(urls) == 0 {
-		return ""
+	last := lines[len(lines)-1]
+	if urls := remoteControlURLs(last[0]); len(urls) > 0 {
+		return urls[len(urls)-1]
 	}
-	return urls[len(urls)-1]
+	if urls := remoteControlURLs(last[1]); len(urls) > 0 {
+		return urls[0]
+	}
+	return ""
 }
 
 // workspaceLabel is "sessionhub: <title>", with the title cleaned and cut to

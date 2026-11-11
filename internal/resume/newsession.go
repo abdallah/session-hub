@@ -17,7 +17,8 @@ import (
 
 // Outcomes of StartNew besides OutcomeNoDir and OutcomeError.
 const (
-	// OutcomeStarted: Claude runs in a new workspace with Remote Control on.
+	// OutcomeStarted: Claude runs in a new workspace, or a new Rex session,
+	// with Remote Control on.
 	OutcomeStarted Outcome = "started"
 	// OutcomeOutsideHome: the directory is not inside the home directory;
 	// nothing was created.
@@ -76,7 +77,8 @@ func ResolveStartDir(dir, home string) (string, Outcome) {
 }
 
 // StartNew starts a new Claude session with Remote Control on, for start
-// request req, in a new herdr workspace in req.Dir, without focus. It waits
+// request req, in a new herdr workspace in req.Dir, without focus, or in a
+// new Rex session on a machine with Rex and no herdr (startNewRex). It waits
 // for the Remote Control link, then submits req.Prompt, if any, once Claude
 // is idle. home is the directory req.Dir must be inside.
 //
@@ -91,6 +93,9 @@ func StartNew(ctx context.Context, socket, home, claudeConfig string, req api.St
 	}
 	if r, ok := ensureTrusted(claudeConfig, dir, home, req.Trust); !ok {
 		return r
+	}
+	if backendFor(api.Session{}, socket) == api.BackendRex {
+		return startNewRex(ctx, dir, req, o)
 	}
 	h, err := herdr.Dial(socket)
 	if err != nil {
