@@ -156,8 +156,8 @@ func (h *handler) printContext() error {
 }
 
 // selectKnowledge is the additionalContext for one session, or "". n is 0 at
-// SessionStart (every entry due), the prompt number on UserPromptSubmit, and
-// negative when there is no counter (only entries with no every are due).
+// SessionStart (every entry due), the prompt number on UserPromptSubmit
+// (only periodic entries due), and negative when there is no counter (none due).
 // Global conventions are always sent; the other entries share
 // knowledgeBudget runes of text and are cut from the end.
 func selectKnowledge(local api.KnowledgeLocal, sessionID, repo, machine string, branchRefs []string, n int) string {
@@ -172,7 +172,7 @@ func selectKnowledge(local api.KnowledgeLocal, sessionID, repo, machine string, 
 	type line struct{ kind, text string }
 	var buckets [5][]line
 	for _, e := range local.Entries {
-		if e.State != api.KnowledgeActive || !(n == 0 || e.Every <= 0 || (n > 0 && n%e.Every == 0)) {
+		if e.State != api.KnowledgeActive || !(n == 0 || (n > 0 && e.Every > 0 && n%e.Every == 0)) {
 			continue
 		}
 		b := -1
@@ -260,13 +260,13 @@ const promptCountDir = "prompt-counts"
 // promptCountTTL is how long an untouched counter is kept.
 const promptCountTTL = 7 * 24 * time.Hour
 
-// dueRules keeps the rules sent with prompt n of a session: every rule
-// with no every, and each periodic rule on every Nth prompt. n < 1 (no
-// counter) keeps only the rules with no every.
+// dueRules keeps the rules sent with prompt n of a session: each periodic
+// rule on every Nth prompt. A rule with no every goes out only at session
+// start, which also fires after compaction. n < 1 (no counter) keeps none.
 func dueRules(rules []api.Instruction, n int) []api.Instruction {
 	var out []api.Instruction
 	for _, r := range rules {
-		if r.Every <= 0 || (n > 0 && n%r.Every == 0) {
+		if r.Every > 0 && n > 0 && n%r.Every == 0 {
 			out = append(out, r)
 		}
 	}

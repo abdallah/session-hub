@@ -92,7 +92,7 @@ func TestKnowledgeAdd(t *testing.T) {
 	if len(f.kProposed) != 1 {
 		t.Errorf("proposed on bad args: %d", len(f.kProposed))
 	}
-	// --every 0 means every prompt; the server accepts 0 to 100.
+	// --every 0 means session start only; the server accepts 0 to 100.
 	for _, v := range []string{"0", "100"} {
 		if err := e.knowledge(ctx, []string{"add", "--kind", "fact", "--scope", "global", "--every", v, "x"}); err != nil {
 			t.Fatalf("--every %s: %v", v, err)

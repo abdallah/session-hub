@@ -443,7 +443,7 @@ CREATE INDEX task_spans_task ON task_spans(task_id);
 // expires early; see PermissionAbandonAfter.
 const schemaV15 = `ALTER TABLE permission_requests ADD COLUMN polled_at TEXT;`
 
-// schemaV16 adds instructions.every: 0 sends the rule with every prompt, N
+// schemaV16 adds instructions.every: 0 sends the rule only at session start, N
 // with every Nth prompt of a session.
 const schemaV16 = `ALTER TABLE instructions ADD COLUMN every INTEGER NOT NULL DEFAULT 0;`
 

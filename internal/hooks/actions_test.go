@@ -41,6 +41,13 @@ func TestContextPrintsBlock(t *testing.T) {
 	for _, event := range []string{"SessionStart", "UserPromptSubmit"} {
 		fx := newFixture(t, "http://127.0.0.1:1")
 		saveRules(t, fx.state, "Never push to main.", "Write in British English.")
+		if event == "UserPromptSubmit" {
+			// Rules with no every go out only at session start.
+			if err := fx.call(t, "context", contextStdin(event)); err != nil || fx.out.Len() != 0 {
+				t.Errorf("%s: %v %q, want no output", event, err, fx.out.String())
+			}
+			continue
+		}
 		if err := fx.call(t, "context", contextStdin(event)); err != nil {
 			t.Fatalf("%s: %v", event, err)
 		}
@@ -75,6 +82,9 @@ func TestContextSendsPeriodicRules(t *testing.T) {
 		if err := fx.call(t, "context", contextStdin(event)); err != nil {
 			t.Fatal(err)
 		}
+		if fx.out.Len() == 0 {
+			return ""
+		}
 		var out struct {
 			HookSpecificOutput struct {
 				AdditionalContext string `json:"additionalContext"`
@@ -85,13 +95,13 @@ func TestContextSendsPeriodicRules(t *testing.T) {
 		}
 		return out.HookSpecificOutput.AdditionalContext
 	}
-	if got := send("SessionStart"); !strings.Contains(got, "Every third.") {
-		t.Errorf("SessionStart leaves out the periodic rule: %q", got)
+	if got := send("SessionStart"); !strings.Contains(got, "Every third.") || !strings.Contains(got, "Always.") {
+		t.Errorf("SessionStart leaves out a rule: %q", got)
 	}
 	for n := 1; n <= 6; n++ {
 		got := send("UserPromptSubmit")
-		if !strings.Contains(got, "Always.") {
-			t.Errorf("prompt %d leaves out the plain rule: %q", n, got)
+		if strings.Contains(got, "Always.") {
+			t.Errorf("prompt %d repeats the session-start rule: %q", n, got)
 		}
 		if want := n%3 == 0; strings.Contains(got, "Every third.") != want {
 			t.Errorf("prompt %d: periodic rule sent = %v, want %v", n, !want, want)
@@ -101,8 +111,11 @@ func TestContextSendsPeriodicRules(t *testing.T) {
 
 func TestDueRulesWithoutCounter(t *testing.T) {
 	rules := []api.Instruction{{ID: 1, Text: "a"}, {ID: 2, Text: "b", Every: 2}}
-	if got := dueRules(rules, 0); len(got) != 1 || got[0].ID != 1 {
-		t.Errorf("dueRules(n=0) = %+v, want only the plain rule", got)
+	if got := dueRules(rules, 0); len(got) != 0 {
+		t.Errorf("dueRules(n=0) = %+v, want none", got)
+	}
+	if got := dueRules(rules, 4); len(got) != 1 || got[0].ID != 2 {
+		t.Errorf("dueRules(n=4) = %+v, want only the periodic rule", got)
 	}
 }
 
@@ -580,8 +593,8 @@ func TestSelectKnowledgeEvery(t *testing.T) {
 		if strings.Contains(got, "Periodic.") != want {
 			t.Errorf("n=%d: periodic sent = %v, want %v", n, !want, want)
 		}
-		if !strings.Contains(got, "Always.") {
-			t.Errorf("n=%d: plain entry missing", n)
+		if strings.Contains(got, "Always.") != (n == 0) {
+			t.Errorf("n=%d: plain entry sent = %v, want only at session start", n, n != 0)
 		}
 	}
 }
@@ -629,8 +642,8 @@ func TestContextRepoCached(t *testing.T) {
 	fx.h.git = gitinfo.Lookup
 	saveRules(t, fx.state, "Old rule.")
 	saveKnowledgeFile(t, fx.state, api.KnowledgeLocal{Entries: []api.Knowledge{
-		kn("convention", "repo:gitlab.com/g/r", "Repo rule.", 0),
-		kn("convention", "ticket:systemsdev-7", "Branch ticket rule.", 0),
+		kn("convention", "repo:gitlab.com/g/r", "Repo rule.", 1),
+		kn("convention", "ticket:systemsdev-7", "Branch ticket rule.", 1),
 	}})
 	repo := gitRepo(t, "git@gitlab.com:G/R.git")
 	if got := contextCall(t, fx, "SessionStart", repo); !strings.Contains(got, "Repo rule.") || !strings.Contains(got, "Branch ticket rule.") {
