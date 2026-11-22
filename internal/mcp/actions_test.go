@@ -86,7 +86,7 @@ func TestRememberAndForget(t *testing.T) {
 	h := newActionHub(t)
 	s, _, _ := newTestServer(t, h.URL, 1)
 	msg, isErr := callTool(t, s, "remember", `{"text":"  Write in\nBritish English.  "}`)
-	if isErr || !strings.Contains(msg, "rule 7 saved") || !strings.Contains(msg, "next prompt") {
+	if isErr || !strings.Contains(msg, "rule 7 saved") || !strings.Contains(msg, "next start") {
 		t.Errorf("remember: %q %v", msg, isErr)
 	}
 	if b := h.seen(); len(b) != 1 || b[0] != `POST /v1/instructions {"text":"Write in British English."}` {

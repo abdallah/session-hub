@@ -222,8 +222,8 @@ var toolDefs = []map[string]any{
 	},
 	{
 		"name": "remember",
-		"description": "Add a standing rule that every Claude session on every machine sees at its start and with " +
-			"every prompt, through sessionhub. Use it only when the user asks for something to apply to all sessions, for " +
+		"description": "Add a standing rule that every Claude session on every machine sees at its start " +
+			"(and after compaction), through sessionhub. Use it only when the user asks for something to apply to all sessions, for " +
 			"example \"from now on, in every session, ...\". Do not use it for this session's own preferences, for " +
 			"notes, or on your own initiative. Keep the rule to one short line, at most 300 characters.",
 		"inputSchema": map[string]any{

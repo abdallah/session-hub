@@ -3544,7 +3544,7 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
     var every = keyed(el("select", null), "kn-every");
     every.setAttribute("aria-label", "How often to send the entry");
     [0, 5, 10, 20].forEach(function (n) {
-      var opt = el("option", null, n ? "Every " + n + " prompts" : "Every prompt");
+      var opt = el("option", null, n ? "Every " + n + " prompts" : "At session start");
       opt.value = String(n);
       opt.selected = n === knEvery();
       every.appendChild(opt);

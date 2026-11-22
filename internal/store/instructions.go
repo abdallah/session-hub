@@ -76,7 +76,7 @@ func instructionsVersion(list []api.Instruction) string {
 
 // AddInstruction stores a rule as an active global convention: the
 // remember path. text is trimmed and must be 1 to MaxInstructionRunes
-// characters with no control characters. every is 0 (every prompt) to
+// characters with no control characters. every is 0 (session start only) to
 // MaxInstructionEvery. A rule that would take the list past
 // MaxInstructionsRunes returns ErrFull.
 func (s *Store) AddInstruction(ctx context.Context, text, createdBy string, every int) (api.Instruction, error) {

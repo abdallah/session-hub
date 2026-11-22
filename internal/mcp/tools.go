@@ -350,7 +350,7 @@ func (s *Server) remember(ctx context.Context, args json.RawMessage) toolResult 
 	case err != nil:
 		return text("sessionhub: the rule could not be saved: "+serverMessage(err), true)
 	}
-	return text(fmt.Sprintf("sessionhub: rule %d saved: %q. Every session on every machine sees it from its next prompt.", r.ID, r.Text), false)
+	return text(fmt.Sprintf("sessionhub: rule %d saved: %q. Every session on every machine sees it from its next start.", r.ID, r.Text), false)
 }
 
 // forget removes a standing rule by ID.

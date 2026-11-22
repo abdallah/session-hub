@@ -102,7 +102,7 @@ func (e *env) knowledgeAdd(ctx context.Context, args []string) error {
 	if v, ok := flags["every"]; ok {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 || n > 100 {
-			return fmt.Errorf("knowledge add: --every needs 0 (every prompt) to 100, not %q\n%s", clean(v, 0), knowledgeUsage)
+			return fmt.Errorf("knowledge add: --every needs 0 (session start only) to 100, not %q\n%s", clean(v, 0), knowledgeUsage)
 		}
 		in.Every = &n
 	}

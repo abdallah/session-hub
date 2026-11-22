@@ -714,8 +714,8 @@ characters, an optional `why` of up to 200, and no control characters.
 - Approving an entry whose `replaces` names another entry retires the other
   one. A target that is already retired or rejected stays as it is. Approve
   may change `text` and `scope`.
-- `every` is `0` to `100`. `0` sends the entry with every prompt, and `N`
-  with every Nth prompt of a session; every entry is sent at session start.
+- `every` is `0` to `100`. Every entry is sent at session start, which also fires after
+  compaction. `0` sends it only then, and `N` also with every Nth prompt.
   The default is `0` for a `convention` and `20` for a `fact` or `decision`.
   The hook counts prompts per session in `<state>/prompt-counts/` and removes
   counters untouched for 7 days.

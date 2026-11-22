@@ -21,10 +21,10 @@ HTTP timeout from `docs/client.md`.
 | `sessionhub inbox dismiss [--since <time>] <id\|prefix>` | Hide an inbox item until something new happens in that session. |
 | `sessionhub inbox snooze <id\|prefix> <1h\|4h\|tomorrow\|duration>` | Hide an inbox item for a while. `tomorrow` means 9:00 local time the next day. A Go duration such as `90m` also works, up to just under 7 days (167h59m). |
 | `sessionhub knowledge [ls] [--state proposed\|active\|all] [--scope S]` | Knowledge entries, one per line: number, kind, scope, text, state, and who added it. Default `--state active`. See below. |
-| `sessionhub knowledge add --kind K --scope S [--why W] [--every N] "<text>"` | Propose an entry. It reaches sessions after you approve it on the dashboard. `--every N` takes 0 (every prompt) to 100; without it, a fact or decision defaults to 20 and a convention to 0. |
+| `sessionhub knowledge add --kind K --scope S [--why W] [--every N] "<text>"` | Propose an entry. It reaches sessions after you approve it on the dashboard. `--every N` takes 0 (session start only) to 100; without it, a fact or decision defaults to 20 and a convention to 0. |
 | `sessionhub knowledge search "<query>" [--scope S]` | Search the active entries, at most 20. |
 | `sessionhub rules [ls]` | The global conventions every session sees, one per line: number, text, and who added it. See below. |
-| `sessionhub rules add [--every N] "<text>"` | Add an active global convention, 1 to 300 characters on one line. The conventions hold at most 2,000 characters. `--every N` sends it with every Nth prompt of a session instead of every prompt. |
+| `sessionhub rules add [--every N] "<text>"` | Add an active global convention, 1 to 300 characters on one line. The conventions hold at most 2,000 characters. `--every N` also sends it with every Nth prompt of a session, not only at session start. |
 | `sessionhub rules rm <id>` | Retire convention `<id>`. |
 | `sessionhub task add "<title>" [--ref X] [--url U] [--source S] [--now]` | Add a task. It starts as `todo`, or `in_progress` with `--now`. `--source` is `ticket`, `email`, `chat`, or `other` (default `other`). See below. |
 | `sessionhub task ls [--date YYYY-MM-DD] [--json]` | A day (default today) in the local time zone, in sections: **Now**, **Waiting on**, **Done**, **Touched, not finished**, **Todo**, **Ideas**, and **Carried over**, each with its working time. Empty sections are left out. `--json` prints the day view as is, with `active_seconds`, `last_active_at`, `now`, and `waiting_on`. |
@@ -401,7 +401,7 @@ because it runs with the machine token and a session could approve its own
 proposal. `add` prints the proposal's number and up to 3 similar entries. The
 text is one line of at most 300 characters, `--why` at most 200. `--every N`
 (1 to 100) sends the entry with every Nth prompt of a session; the default is
-every prompt for a `convention` and every 20th for a `fact` or `decision`.
+session start only for a `convention` and every 20th for a `fact` or `decision`.
 Each machine's herdr watcher copies the approved entries within a minute.
 See [Knowledge](server.md#knowledge) for scopes, limits, and what a session receives.
 
