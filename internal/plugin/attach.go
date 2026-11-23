@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,8 +33,37 @@ const (
 	detailStopped      = "the watcher stopped"
 )
 
-// clearScreen goes before each frame of a snapshot mirror.
-const clearScreen = "\x1b[H\x1b[2J"
+// drawFrame turns a snapshot into an in-place redraw: cursor home, each line
+// erased to its end, the rest of the screen erased, all inside a synchronized
+// update. A clear-screen first made the whole screen blink on every frame.
+func drawFrame(frame string) string {
+	f := strings.ReplaceAll(strings.ReplaceAll(frame, "\r\n", "\n"), "\n", "\x1b[K\r\n")
+	return "\x1b[?2026h\x1b[H" + f + "\x1b[K\x1b[J\x1b[?2026l"
+}
+
+// enterGap is the pause before an Enter that follows text in one read.
+// Claude Code reads text and Enter that arrive together as a paste and adds
+// a newline instead of submitting; phone keyboards send a word and Enter at once.
+const enterGap = 50 * time.Millisecond
+
+// typeGuest sends guest bytes with send, each Enter (\r) on its own and,
+// after text, enterGap later.
+func typeGuest(b []byte, send func(string)) {
+	b = dropNUL(b)
+	for len(b) > 0 {
+		i := bytes.IndexByte(b, '\r')
+		switch {
+		case i < 0:
+			send(string(b))
+			return
+		case i > 0:
+			send(string(b[:i]))
+			time.Sleep(enterGap)
+		}
+		send("\r")
+		b = b[i+1:]
+	}
+}
 
 // mirror streams one session's terminal to out and feeds in to it until
 // ctx ends or the terminal ends.
@@ -161,7 +191,7 @@ func (m herdrMirror) Run(ctx context.Context, s api.Session, out io.Writer, in i
 			// U+FFFD in the JSON text; buffer the tail if guests see it.
 			if n > 0 {
 				if ok, _ := alive(); ok {
-					m.h.SendInput(pane, string(dropNUL(buf[:n]))) // a failure shows as pane gone on the next read
+					typeGuest(buf[:n], func(t string) { m.h.SendInput(pane, t) }) // a failure shows as pane gone on the next read
 				}
 			}
 			if err != nil {
@@ -189,7 +219,7 @@ func (m herdrMirror) Run(ctx context.Context, s api.Session, out io.Writer, in i
 			return fmt.Errorf("read pane %s: %w", pane, err)
 		case frame != last:
 			last = frame
-			if _, err := io.WriteString(out, clearScreen+frame); err != nil {
+			if _, err := io.WriteString(out, drawFrame(frame)); err != nil {
 				return err
 			}
 		}
