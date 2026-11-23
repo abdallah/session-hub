@@ -33,12 +33,30 @@ const (
 	detailStopped      = "the watcher stopped"
 )
 
-// drawFrame turns a snapshot into an in-place redraw: cursor home, each line
-// erased to its end, the rest of the screen erased, all inside a synchronized
-// update. A clear-screen first made the whole screen blink on every frame.
-func drawFrame(frame string) string {
-	f := strings.ReplaceAll(strings.ReplaceAll(frame, "\r\n", "\n"), "\n", "\x1b[K\r\n")
-	return "\x1b[?2026h\x1b[H" + f + "\x1b[K\x1b[J\x1b[?2026l"
+// drawFrame redraws the lines of frame that differ from prev, in place: each
+// changed line is written at its row and erased to its end, then the screen
+// below the last line is erased, all inside a synchronized update. The last
+// line is always written, so the cursor ends there. prev "" draws every line.
+// A clear-screen per frame made the whole screen blink.
+func drawFrame(prev, frame string) string {
+	old, lines := frameLines(prev), frameLines(frame)
+	if prev == "" {
+		old = nil
+	}
+	var b strings.Builder
+	b.WriteString("\x1b[?2026h")
+	for i, l := range lines {
+		if i < len(old) && old[i] == l && i < len(lines)-1 {
+			continue
+		}
+		fmt.Fprintf(&b, "\x1b[%d;1H%s\x1b[K", i+1, l)
+	}
+	b.WriteString("\x1b[J\x1b[?2026l")
+	return b.String()
+}
+
+func frameLines(f string) []string {
+	return strings.Split(strings.ReplaceAll(f, "\r\n", "\n"), "\n")
 }
 
 // enterGap is the pause before an Enter that follows text in one read.
@@ -218,8 +236,9 @@ func (m herdrMirror) Run(ctx context.Context, s api.Session, out io.Writer, in i
 		case err != nil:
 			return fmt.Errorf("read pane %s: %w", pane, err)
 		case frame != last:
+			draw := drawFrame(last, frame)
 			last = frame
-			if _, err := io.WriteString(out, drawFrame(frame)); err != nil {
+			if _, err := io.WriteString(out, draw); err != nil {
 				return err
 			}
 		}

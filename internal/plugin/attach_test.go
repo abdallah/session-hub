@@ -102,15 +102,17 @@ func TestHerdrMirror(t *testing.T) {
 		done <- h.mirror(t).Run(context.Background(), api.Session{ID: attachSession, HerdrPane: "wS:p1"}, &out, inR)
 	}()
 
-	waitFor(t, "first frame", func() bool { return out.String() == drawFrame("\x1b[1mone\x1b[0m") })
+	waitFor(t, "first frame", func() bool { return out.String() == drawFrame("", "\x1b[1mone\x1b[0m") })
 	reads := len(h.RequestsFor("pane.read"))
 	waitFor(t, "more reads", func() bool { return len(h.RequestsFor("pane.read")) >= reads+3 })
-	if got := out.String(); got != drawFrame("\x1b[1mone\x1b[0m") {
+	if got := out.String(); got != drawFrame("", "\x1b[1mone\x1b[0m") {
 		t.Fatalf("unchanged pane wrote again: %q", got)
 	}
 
 	h.set("two", false)
-	waitFor(t, "second frame", func() bool { return strings.HasSuffix(out.String(), drawFrame("\x1b[1mone\x1b[0m")+drawFrame("two")) })
+	waitFor(t, "second frame", func() bool {
+		return strings.HasSuffix(out.String(), drawFrame("", "\x1b[1mone\x1b[0m")+drawFrame("\x1b[1mone\x1b[0m", "two"))
+	})
 
 	if _, err := inW.Write([]byte("ls\r\x03")); err != nil {
 		t.Fatal(err)
@@ -222,7 +224,7 @@ func TestControllerAttach(t *testing.T) {
 				t.Errorf("result %+v, want %+v; log:\n%s", got, tc.want, logs.String())
 			}
 			ctl.attaches.Wait()
-			if got := hub.out.String(); got != drawFrame("frame") {
+			if got := hub.out.String(); got != drawFrame("", "frame") {
 				t.Errorf("output %q", got)
 			}
 			if r := h.RequestsFor("pane.send_input"); len(r) != 1 || string(r[0].Params) != `{"pane_id":"wS:p1","text":"q"}` {
@@ -280,7 +282,13 @@ func TestTypeGuest(t *testing.T) {
 }
 
 func TestDrawFrame(t *testing.T) {
-	if got, want := drawFrame("a\r\nb\nc"), "\x1b[?2026h\x1b[Ha\x1b[K\r\nb\x1b[K\r\nc\x1b[K\x1b[J\x1b[?2026l"; got != want {
-		t.Errorf("drawFrame = %q, want %q", got, want)
+	for _, c := range []struct{ prev, frame, want string }{
+		{"", "a\r\nb", "\x1b[?2026h\x1b[1;1Ha\x1b[K\x1b[2;1Hb\x1b[K\x1b[J\x1b[?2026l"},
+		{"a\r\nb\r\nc", "a\r\nX\r\nc", "\x1b[?2026h\x1b[2;1HX\x1b[K\x1b[3;1Hc\x1b[K\x1b[J\x1b[?2026l"},
+		{"a\r\nb\r\nc", "a\r\nb", "\x1b[?2026h\x1b[2;1Hb\x1b[K\x1b[J\x1b[?2026l"},
+	} {
+		if got := drawFrame(c.prev, c.frame); got != c.want {
+			t.Errorf("drawFrame(%q, %q) = %q, want %q", c.prev, c.frame, got, c.want)
+		}
 	}
 }
