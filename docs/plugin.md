@@ -283,7 +283,7 @@ Beside the 2-second ticks, the watcher keeps one long poll open on
   `POST /v1/machines/self/attach/<id>/output` in chunks: every 30 ms, or
   at once when 8 KiB wait. Guest keystrokes arrive on
   `GET /v1/machines/self/attach/<id>/input`, and the watcher types them
-  with `pane.send_input` only while the pane runs the session, so a guest
+  with `pane.send_text` only while the pane runs the session, so a guest
   never types into the shell that is left after Claude exits. The attach
   ends with `done`, "guest left", when the input stream ends; `done`,
   "session ended", when the pane is gone or no longer runs the session; or

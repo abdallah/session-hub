@@ -59,30 +59,6 @@ func frameLines(f string) []string {
 	return strings.Split(strings.ReplaceAll(f, "\r\n", "\n"), "\n")
 }
 
-// enterGap is the pause before an Enter that follows text in one read.
-// Claude Code reads text and Enter that arrive together as a paste and adds
-// a newline instead of submitting; phone keyboards send a word and Enter at once.
-const enterGap = 50 * time.Millisecond
-
-// typeGuest sends guest bytes with send, each Enter (\r) on its own and,
-// after text, enterGap later.
-func typeGuest(b []byte, send func(string)) {
-	b = dropNUL(b)
-	for len(b) > 0 {
-		i := bytes.IndexByte(b, '\r')
-		switch {
-		case i < 0:
-			send(string(b))
-			return
-		case i > 0:
-			send(string(b[:i]))
-			time.Sleep(enterGap)
-		}
-		send("\r")
-		b = b[i+1:]
-	}
-}
-
 // mirror streams one session's terminal to out and feeds in to it until
 // ctx ends or the terminal ends.
 type mirror interface {
@@ -170,7 +146,7 @@ func (c *controller) attach(ctx context.Context, cl *client.Client, claim api.Co
 
 // herdrMirror is a snapshot mirror of a herdr pane: clear-screen and the
 // visible screen with ANSI each time it changes, guest bytes typed into the
-// pane with pane.send_input.
+// pane with pane.send_text.
 //
 // shortcut: it polls every 250 ms, because internal/herdr has no
 // events.subscribe stream (a Client answers one request per connection);
@@ -209,7 +185,7 @@ func (m herdrMirror) Run(ctx context.Context, s api.Session, out io.Writer, in i
 			// U+FFFD in the JSON text; buffer the tail if guests see it.
 			if n > 0 {
 				if ok, _ := alive(); ok {
-					typeGuest(buf[:n], func(t string) { m.h.SendInput(pane, t) }) // a failure shows as pane gone on the next read
+					m.h.SendText(pane, string(dropNUL(buf[:n]))) // a failure shows as pane gone on the next read
 				}
 			}
 			if err != nil {
