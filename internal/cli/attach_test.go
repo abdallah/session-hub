@@ -164,7 +164,7 @@ func TestMirrorDetach(t *testing.T) {
 	var detached bool
 	go func() {
 		var err error
-		detached, err = mirrorAttach(context.Background(), f, "a1", inR, &screen)
+		detached, err = mirrorAttach(context.Background(), f, "a1", inR, &screen, nil)
 		res <- err
 	}()
 	outW.Write([]byte("frame"))
@@ -187,7 +187,7 @@ func TestMirrorSessionEnd(t *testing.T) {
 	inR, _ := io.Pipe()
 	var screen bytes.Buffer
 	go func() { outW.Write([]byte("bye")); outW.Close() }()
-	detached, err := mirrorAttach(context.Background(), f, "a1", inR, &screen)
+	detached, err := mirrorAttach(context.Background(), f, "a1", inR, &screen, nil)
 	if err != nil || detached || screen.String() != "bye" {
 		t.Errorf("detached %v, err %v, screen %q", detached, err, screen.String())
 	}

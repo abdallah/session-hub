@@ -45,6 +45,7 @@ func (m rexMirror) Run(ctx context.Context, s api.Session, out io.Writer, in io.
 	// exposes it.
 	var alive atomic.Bool
 	alive.Store(true)
+	var scr screen
 	// The input goroutine ends when in does: the caller closes it after Run.
 	go func() {
 		buf := make([]byte, 4096)
@@ -52,7 +53,7 @@ func (m rexMirror) Run(ctx context.Context, s api.Session, out io.Writer, in io.
 			n, err := in.Read(buf)
 			// shortcut: a UTF-8 rune split across two reads turns into
 			// U+FFFD in the JSON text; buffer the tail if guests see it.
-			if b := dropNUL(buf[:n]); len(b) > 0 && alive.Load() {
+			if b := scr.input(dropNUL(buf[:n])); len(b) > 0 && alive.Load() {
 				m.call(ctx, s, "write", map[string]string{"data": string(b)}) // a failure shows as block gone on the next read
 			}
 			if err != nil {
@@ -62,7 +63,6 @@ func (m rexMirror) Run(ctx context.Context, s api.Session, out io.Writer, in io.
 	}()
 	t := time.NewTicker(m.every)
 	defer t.Stop()
-	var last string
 	checked := time.Time{}
 	for {
 		if time.Since(checked) >= rexProcessEvery {
@@ -87,9 +87,8 @@ func (m rexMirror) Run(ctx context.Context, s api.Session, out io.Writer, in io.
 			return fmt.Errorf("read block %s: %w", s.RexBlock, err)
 		case json.Unmarshal(res, &frame) != nil:
 			return fmt.Errorf("read block %s: bad JSON from rex", s.RexBlock)
-		case frame.Content != last:
-			draw := drawFrame(last, frame.Content)
-			last = frame.Content
+		}
+		if draw, changed := scr.draw(frame.Content); changed {
 			if _, err := io.WriteString(out, draw); err != nil {
 				return err
 			}

@@ -69,16 +69,32 @@ func RunAttach(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("attach: %w", err)
 	}
-	if w, h := termSize(); w < 80 || h < 24 {
-		fmt.Fprintf(os.Stdout, "Your terminal is %dx%d; the mirror keeps the host pane's size.\n", w, h)
-	}
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
+	// sizes reports the terminal's height to the host, which crops the
+	// mirror to it: now and on each resize.
+	sizes := make(chan []byte, 1)
+	report := func() {
+		w, h := termSize()
+		select {
+		case sizes <- []byte(fmt.Sprintf("\x1b[8;%d;%dt", h, w)):
+		default: // a report is waiting; the host keeps the last one anyway
+		}
+	}
+	report()
+	winch := make(chan os.Signal, 1)
+	signal.Notify(winch, syscall.SIGWINCH)
+	defer signal.Stop(winch)
+	go func() {
+		for range winch {
+			report()
+		}
+	}()
 	var detached bool
 	err = withRawTerminal(realStty, os.Stdout, func() error {
 		var err error
 		fmt.Fprint(os.Stdout, "\x1b[?25h") // the alternate screen hides the cursor; the mirror needs it
-		detached, err = mirrorAttach(ctx, c, a.ID, os.Stdin, os.Stdout)
+		detached, err = mirrorAttach(ctx, c, a.ID, os.Stdin, os.Stdout, sizes)
 		return err
 	})
 	switch {
@@ -249,7 +265,8 @@ func localHost(host string) bool {
 // mirrorAttach copies attach id's output to out and sends what it reads
 // from in as input, until the output ends (detached false) or in sends
 // Ctrl-] (detached true). Bytes before Ctrl-] in the same read are sent.
-func mirrorAttach(ctx context.Context, c attachAPI, id string, in io.Reader, out io.Writer) (detached bool, err error) {
+// sizes carries terminal size reports to send to the host as input.
+func mirrorAttach(ctx context.Context, c attachAPI, id string, in io.Reader, out io.Writer, sizes <-chan []byte) (detached bool, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	body, err := c.AttachOutput(ctx, id)
@@ -273,6 +290,10 @@ func mirrorAttach(ctx context.Context, c attachAPI, id string, in io.Reader, out
 				return false, ctx.Err()
 			}
 			return false, err
+		case r := <-sizes:
+			if err := c.SendAttachInput(ctx, id, r); err != nil {
+				return false, err
+			}
 		case k, ok := <-keys:
 			if !ok {
 				keys = nil // end of input: keep showing output

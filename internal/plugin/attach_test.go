@@ -265,9 +265,9 @@ func TestBatchWriter(t *testing.T) {
 
 func TestDrawFrame(t *testing.T) {
 	for _, c := range []struct{ prev, frame, want string }{
-		{"", "a\r\nb", "\x1b[?2026h\x1b[1;1Ha\x1b[K\x1b[2;1Hb\x1b[K\x1b[J\x1b[?2026l"},
-		{"a\r\nb\r\nc", "a\r\nX\r\nc", "\x1b[?2026h\x1b[2;1HX\x1b[K\x1b[3;1Hc\x1b[K\x1b[J\x1b[?2026l"},
-		{"a\r\nb\r\nc", "a\r\nb", "\x1b[?2026h\x1b[2;1Hb\x1b[K\x1b[J\x1b[?2026l"},
+		{"", "a\r\nb", "\x1b[?2026h\x1b[?7l\x1b[1;1Ha\x1b[K\x1b[2;1Hb\x1b[K\x1b[J\x1b[?7h\x1b[?2026l"},
+		{"a\r\nb\r\nc", "a\r\nX\r\nc", "\x1b[?2026h\x1b[?7l\x1b[2;1HX\x1b[K\x1b[3;1Hc\x1b[K\x1b[J\x1b[?7h\x1b[?2026l"},
+		{"a\r\nb\r\nc", "a\r\nb", "\x1b[?2026h\x1b[?7l\x1b[2;1Hb\x1b[K\x1b[J\x1b[?7h\x1b[?2026l"},
 	} {
 		if got := drawFrame(c.prev, c.frame); got != c.want {
 			t.Errorf("drawFrame(%q, %q) = %q, want %q", c.prev, c.frame, got, c.want)
