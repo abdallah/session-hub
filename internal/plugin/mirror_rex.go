@@ -88,8 +88,9 @@ func (m rexMirror) Run(ctx context.Context, s api.Session, out io.Writer, in io.
 		case json.Unmarshal(res, &frame) != nil:
 			return fmt.Errorf("read block %s: bad JSON from rex", s.RexBlock)
 		case frame.Content != last:
+			draw := drawFrame(last, frame.Content)
 			last = frame.Content
-			if _, err := io.WriteString(out, drawFrame(frame.Content)); err != nil {
+			if _, err := io.WriteString(out, draw); err != nil {
 				return err
 			}
 		}
