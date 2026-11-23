@@ -398,11 +398,12 @@ func (c *Client) SendKeys(paneID string, keys ...string) error {
 	return err
 }
 
-// SendInput calls pane.send_input with text: herdr writes it to the pane's
-// terminal as is, control bytes included (checked on 0.9.3: \x03 interrupts,
-// \r enters). Like SendKeys, callers must have checked the pane first.
-func (c *Client) SendInput(paneID, text string) error {
-	_, err := c.Call("pane.send_input", map[string]string{"pane_id": paneID, "text": text})
+// SendText calls pane.send_text: herdr writes text to the pane's terminal as
+// is, control bytes included. Checked on 0.9.3 against Claude Code: \r
+// submits and \x7f deletes. pane.send_input with the same text does neither.
+// Like SendKeys, callers must have checked the pane first.
+func (c *Client) SendText(paneID, text string) error {
+	_, err := c.Call("pane.send_text", map[string]string{"pane_id": paneID, "text": text})
 	return err
 }
 

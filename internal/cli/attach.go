@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -278,10 +277,6 @@ func mirrorAttach(ctx context.Context, c attachAPI, id string, in io.Reader, out
 			if !ok {
 				keys = nil // end of input: keep showing output
 				continue
-			}
-			if runtime.GOOS == "android" {
-				// Android keyboards in Termux send Enter as \n, which Claude Code reads as Ctrl+J (newline).
-				k = bytes.ReplaceAll(k, []byte("\n"), []byte("\r"))
 			}
 			i := bytes.IndexByte(k, detachKey)
 			if i >= 0 {

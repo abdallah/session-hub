@@ -46,7 +46,7 @@ func newPaneHerdr(t *testing.T, frame string) *paneHerdr {
 		defer h.mu.Unlock()
 		return map[string]any{"read": map[string]any{"text": h.frame}}, ""
 	})
-	h.Handle("pane.send_input", func(json.RawMessage) (any, string) { return map[string]string{"type": "ok"}, "" })
+	h.Handle("pane.send_text", func(json.RawMessage) (any, string) { return map[string]string{"type": "ok"}, "" })
 	return h
 }
 
@@ -117,11 +117,9 @@ func TestHerdrMirror(t *testing.T) {
 	if _, err := inW.Write([]byte("ls\r\x03")); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "input", func() bool { return len(h.RequestsFor("pane.send_input")) == 3 })
-	for i, want := range []string{`"ls"`, `"\r"`, `"\u0003"`} {
-		if p := string(h.RequestsFor("pane.send_input")[i].Params); p != `{"pane_id":"wS:p1","text":`+want+`}` {
-			t.Errorf("send_input %d params: %s", i, p)
-		}
+	waitFor(t, "input", func() bool { return len(h.RequestsFor("pane.send_text")) == 1 })
+	if p := string(h.RequestsFor("pane.send_text")[0].Params); p != `{"pane_id":"wS:p1","text":"ls\r\u0003"}` {
+		t.Errorf("send_text params: %s", p)
 	}
 
 	h.set("two", true)
@@ -227,8 +225,8 @@ func TestControllerAttach(t *testing.T) {
 			if got := hub.out.String(); got != drawFrame("", "frame") {
 				t.Errorf("output %q", got)
 			}
-			if r := h.RequestsFor("pane.send_input"); len(r) != 1 || string(r[0].Params) != `{"pane_id":"wS:p1","text":"q"}` {
-				t.Errorf("send_input: %+v", r)
+			if r := h.RequestsFor("pane.send_text"); len(r) != 1 || string(r[0].Params) != `{"pane_id":"wS:p1","text":"q"}` {
+				t.Errorf("send_text: %+v", r)
 			}
 		})
 	}
@@ -262,22 +260,6 @@ func TestBatchWriter(t *testing.T) {
 	waitFor(t, "timed flush", func() bool { mu.Lock(); defer mu.Unlock(); return len(posts) == 2 })
 	if posts[0] != "abcdefghij" || posts[1] != "k" {
 		t.Errorf("posts %q", posts)
-	}
-}
-
-func TestTypeGuest(t *testing.T) {
-	for in, want := range map[string][]string{
-		"hello\r":    {"hello", "\r"},
-		"\r":         {"\r"},
-		"a\x00b":     {"ab"},
-		"x\r\ry\x03": {"x", "\r", "\r", "y\x03"},
-		"":           nil,
-	} {
-		var got []string
-		typeGuest([]byte(in), func(s string) { got = append(got, s) })
-		if strings.Join(got, "|") != strings.Join(want, "|") || len(got) != len(want) {
-			t.Errorf("typeGuest(%q) = %q, want %q", in, got, want)
-		}
 	}
 }
 
