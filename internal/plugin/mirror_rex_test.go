@@ -74,14 +74,14 @@ func TestRexMirror(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- m.Run(context.Background(), s, out, in) }()
 
-	waitUntil(t, "first frame", func() bool { return strings.Contains(out.String(), clearScreen+"A") })
+	waitUntil(t, "first frame", func() bool { return strings.Contains(out.String(), drawFrame("A")) })
 	time.Sleep(60 * time.Millisecond) // several unchanged polls
-	if n := strings.Count(out.String(), clearScreen); n != 1 {
+	if n := strings.Count(out.String(), "\x1b[?2026h"); n != 1 {
 		t.Errorf("unchanged frame emitted %d times, want 1", n)
 	}
 
 	writeFile(t, filepath.Join(state, "frame"), `"B"`, 0o644)
-	waitUntil(t, "second frame", func() bool { return strings.HasSuffix(out.String(), clearScreen+"B") })
+	waitUntil(t, "second frame", func() bool { return strings.HasSuffix(out.String(), drawFrame("B")) })
 
 	if _, err := io.WriteString(guest, "ls\n"); err != nil {
 		t.Fatal(err)

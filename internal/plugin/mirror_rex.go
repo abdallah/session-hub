@@ -52,8 +52,8 @@ func (m rexMirror) Run(ctx context.Context, s api.Session, out io.Writer, in io.
 			n, err := in.Read(buf)
 			// shortcut: a UTF-8 rune split across two reads turns into
 			// U+FFFD in the JSON text; buffer the tail if guests see it.
-			if b := dropNUL(buf[:n]); len(b) > 0 && alive.Load() {
-				m.call(ctx, s, "write", map[string]string{"data": string(b)}) // a failure shows as block gone on the next read
+			if n > 0 && alive.Load() {
+				typeGuest(buf[:n], func(t string) { m.call(ctx, s, "write", map[string]string{"data": t}) }) // a failure shows as block gone on the next read
 			}
 			if err != nil {
 				return
@@ -89,7 +89,7 @@ func (m rexMirror) Run(ctx context.Context, s api.Session, out io.Writer, in io.
 			return fmt.Errorf("read block %s: bad JSON from rex", s.RexBlock)
 		case frame.Content != last:
 			last = frame.Content
-			if _, err := io.WriteString(out, clearScreen+frame.Content); err != nil {
+			if _, err := io.WriteString(out, drawFrame(frame.Content)); err != nil {
 				return err
 			}
 		}

@@ -102,22 +102,24 @@ func TestHerdrMirror(t *testing.T) {
 		done <- h.mirror(t).Run(context.Background(), api.Session{ID: attachSession, HerdrPane: "wS:p1"}, &out, inR)
 	}()
 
-	waitFor(t, "first frame", func() bool { return out.String() == clearScreen+"\x1b[1mone\x1b[0m" })
+	waitFor(t, "first frame", func() bool { return out.String() == drawFrame("\x1b[1mone\x1b[0m") })
 	reads := len(h.RequestsFor("pane.read"))
 	waitFor(t, "more reads", func() bool { return len(h.RequestsFor("pane.read")) >= reads+3 })
-	if got := out.String(); got != clearScreen+"\x1b[1mone\x1b[0m" {
+	if got := out.String(); got != drawFrame("\x1b[1mone\x1b[0m") {
 		t.Fatalf("unchanged pane wrote again: %q", got)
 	}
 
 	h.set("two", false)
-	waitFor(t, "second frame", func() bool { return strings.HasSuffix(out.String(), "\x1b[0m"+clearScreen+"two") })
+	waitFor(t, "second frame", func() bool { return strings.HasSuffix(out.String(), drawFrame("\x1b[1mone\x1b[0m")+drawFrame("two")) })
 
 	if _, err := inW.Write([]byte("ls\r\x03")); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "input", func() bool { return len(h.RequestsFor("pane.send_input")) == 1 })
-	if p := string(h.RequestsFor("pane.send_input")[0].Params); p != `{"pane_id":"wS:p1","text":"ls\r\u0003"}` {
-		t.Errorf("send_input params: %s", p)
+	waitFor(t, "input", func() bool { return len(h.RequestsFor("pane.send_input")) == 3 })
+	for i, want := range []string{`"ls"`, `"\r"`, `"\u0003"`} {
+		if p := string(h.RequestsFor("pane.send_input")[i].Params); p != `{"pane_id":"wS:p1","text":`+want+`}` {
+			t.Errorf("send_input %d params: %s", i, p)
+		}
 	}
 
 	h.set("two", true)
@@ -220,7 +222,7 @@ func TestControllerAttach(t *testing.T) {
 				t.Errorf("result %+v, want %+v; log:\n%s", got, tc.want, logs.String())
 			}
 			ctl.attaches.Wait()
-			if got := hub.out.String(); got != clearScreen+"frame" {
+			if got := hub.out.String(); got != drawFrame("frame") {
 				t.Errorf("output %q", got)
 			}
 			if r := h.RequestsFor("pane.send_input"); len(r) != 1 || string(r[0].Params) != `{"pane_id":"wS:p1","text":"q"}` {
@@ -258,5 +260,27 @@ func TestBatchWriter(t *testing.T) {
 	waitFor(t, "timed flush", func() bool { mu.Lock(); defer mu.Unlock(); return len(posts) == 2 })
 	if posts[0] != "abcdefghij" || posts[1] != "k" {
 		t.Errorf("posts %q", posts)
+	}
+}
+
+func TestTypeGuest(t *testing.T) {
+	for in, want := range map[string][]string{
+		"hello\r":    {"hello", "\r"},
+		"\r":         {"\r"},
+		"a\x00b":     {"ab"},
+		"x\r\ry\x03": {"x", "\r", "\r", "y\x03"},
+		"":           nil,
+	} {
+		var got []string
+		typeGuest([]byte(in), func(s string) { got = append(got, s) })
+		if strings.Join(got, "|") != strings.Join(want, "|") || len(got) != len(want) {
+			t.Errorf("typeGuest(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestDrawFrame(t *testing.T) {
+	if got, want := drawFrame("a\r\nb\nc"), "\x1b[?2026h\x1b[Ha\x1b[K\r\nb\x1b[K\r\nc\x1b[K\x1b[J\x1b[?2026l"; got != want {
+		t.Errorf("drawFrame = %q, want %q", got, want)
 	}
 }
