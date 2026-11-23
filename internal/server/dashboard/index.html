@@ -1907,6 +1907,75 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
     return box.childNodes.length ? box : null;
   }
 
+  // shareState is the last Share tap per session: {phase, error, url, expires}.
+  var shareState = {};
+
+  // shareRow is the card's Share button: a one-time guest link to this one
+  // session, shown as the sessionhub attach command and the link itself.
+  function shareRow(s) {
+    if (s.status !== "live" && s.status !== "blocked") return null;
+    var st = shareState[s.id];
+    var box = el("div", "rc");
+    var btn = el("button", null, "Share");
+    btn.type = "button";
+    btn.disabled = !!(st && st.phase === "sending");
+    btn.setAttribute("aria-label", "Share " + (s.title || s.id) + " with a one-time link");
+    btn.addEventListener("click", function () { requestShare(s.id); });
+    box.appendChild(btn);
+    if (st && st.phase === "sending") box.appendChild(el("span", "note", "Creating link…"));
+    if (st && st.phase === "error") box.appendChild(el("span", "rc-error", st.error));
+    if (st && st.phase === "link" && Date.now() < st.expires) {
+      var at = new Date(st.expires).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      [["sessionhub attach " + st.url, "Copy attach command"], [st.url, "Copy link"]].forEach(function (p) {
+        var row = el("div", "cmd");
+        var code = el("code", null, p[0]);
+        var cb = el("button", null, "Copy");
+        cb.type = "button";
+        cb.setAttribute("aria-label", p[1]);
+        cb.addEventListener("click", function () { copy(p[0], cb, code); });
+        row.appendChild(code);
+        row.appendChild(cb);
+        var wrap = el("div", "rc-link");
+        wrap.appendChild(row);
+        box.appendChild(wrap);
+      });
+      box.appendChild(el("span", "note", "Works once, for this session only, until " + at + "."));
+    }
+    return box;
+  }
+
+  // requestShare creates the guest link with POST /v1/logins.
+  function requestShare(id) {
+    shareState[id] = { phase: "sending" };
+    refreshCard(id);
+    var d = new Date();
+    var name = "share-" + d.toISOString().replace(/[-:]/g, "").slice(4, 15).replace("T", "-") +
+      "-" + Math.random().toString(36).slice(2, 5);
+    fetch("/v1/logins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Hub-Action": "share" },
+      body: JSON.stringify({ name: name, session: id }),
+      cache: "no-store"
+    })
+      .then(function (resp) {
+        return resp.json().then(
+          function (body) { return { resp: resp, body: body }; },
+          function () { return { resp: resp, body: null }; });
+      })
+      .then(function (r) {
+        if (!r.resp.ok || !r.body || typeof r.body.url !== "string") {
+          shareState[id] = { phase: "error", error: rcRefusal(r.resp.status, r.body) };
+        } else {
+          shareState[id] = { phase: "link", url: r.body.url, expires: Date.parse(r.body.expires_at) };
+        }
+        refreshCard(id);
+      })
+      .catch(function () {
+        shareState[id] = { phase: "error", error: "Could not reach the sessionhub." };
+        refreshCard(id);
+      });
+  }
+
   // refreshCard rebuilds the session's card and its inbox row, so a Remote
   // Control tap from either one shows on both.
   function refreshCard(id) {
@@ -2304,6 +2373,8 @@ button.primary { background: var(--accent); color: var(--card); font-weight: 600
     if (rr) c.appendChild(rr);
     var rc = rcRow(s, now);
     if (rc) c.appendChild(rc);
+    var sh = shareRow(s);
+    if (sh) c.appendChild(sh);
     var mr = moveRow(s);
     if (mr) c.appendChild(mr);
     c.appendChild(renameRow(s));

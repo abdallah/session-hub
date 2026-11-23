@@ -282,3 +282,22 @@ func TestLoginCodeNotLogged(t *testing.T) {
 		t.Errorf("log lacks the redacted login lines:\n%s", out)
 	}
 }
+
+func TestCreateLoginFromDashboard(t *testing.T) {
+	e := newEnv(t)
+	e.register(e.tokA, api.SessionUpsert{ID: sid1, HerdrSession: "default", HerdrPane: "p1", CWD: "/home/user/proj"})
+	cookie, _ := e.webSession("laptop")
+	share := map[string]string{api.HeaderAction: api.HeaderActionShare}
+	code, b, _ := e.doHdr("POST", "/v1/logins", "", cookie, share, api.LoginIn{Name: "share-1", Session: sid1[:8]})
+	var l api.Login
+	if code != http.StatusCreated || json.Unmarshal(b, &l) != nil || l.Session != sid1 {
+		t.Fatalf("one-session link: %d %s", code, b)
+	}
+	if code, b, _ := e.doHdr("POST", "/v1/logins", "", cookie, share, api.LoginIn{Name: "share-2"}); code != http.StatusForbidden {
+		t.Errorf("full sign-in from the dashboard: %d %s, want 403", code, b)
+	}
+	guest := e.guestSession("guest", sid1)
+	if code, b, _ := e.doHdr("POST", "/v1/logins", "", guest, share, api.LoginIn{Name: "share-3", Session: sid1}); code != http.StatusForbidden {
+		t.Errorf("link from a guest: %d %s, want 403", code, b)
+	}
+}

@@ -235,8 +235,8 @@ func TestDashboardWrites(t *testing.T) {
 		s    string
 		want int
 	}{
-		{"method:", 10}, // knowledgeRequest sets the method of all four knowledge writes
-		{`method: "POST"`, 9},
+		{"method:", 11}, // the Share link; knowledgeRequest sets the method of all four knowledge writes
+		{`method: "POST"`, 10},
 		{`"X-Hub-Action": "start"`, 1},
 		{"// start-state:begin", 1},
 		{"// start-state:end", 1},
@@ -256,7 +256,9 @@ func TestDashboardWrites(t *testing.T) {
 		{`"X-Hub-Action": "remote-control"`, 1},
 		{`"X-Hub-Action": "sign-out"`, 1},
 		{`"/remote-control"`, 1},
-		{"fetch(", 21}, // the list, the inbox, the request, the session poll, the Details read, sign-out, triage,
+		{`"X-Hub-Action": "share"`, 1},
+		{"= shareRow(s)", 1},
+		{"fetch(", 22}, // a Share link, the list, the inbox, the request, the session poll, the Details read, sign-out, triage,
 		// the knowledge read, a knowledge write, the send, a decision, the machines read, a move, the move poll,
 		// the New session panel's machines read, a start, the start poll, a Tasks read, a Tasks write, a rename,
 		// and an inbox reply (which reuses sendRequest)
