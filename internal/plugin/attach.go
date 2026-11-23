@@ -44,14 +44,14 @@ func drawFrame(prev, frame string) string {
 		old = nil
 	}
 	var b strings.Builder
-	b.WriteString("\x1b[?2026h")
+	b.WriteString("\x1b[?2026h\x1b[?7l") // autowrap off: a line wider than the guest must not scroll it
 	for i, l := range lines {
 		if i < len(old) && old[i] == l && i < len(lines)-1 {
 			continue
 		}
 		fmt.Fprintf(&b, "\x1b[%d;1H%s\x1b[K", i+1, l)
 	}
-	b.WriteString("\x1b[J\x1b[?2026l")
+	b.WriteString("\x1b[J\x1b[?7h\x1b[?2026l")
 	return b.String()
 }
 
@@ -176,6 +176,7 @@ func (m herdrMirror) Run(ctx context.Context, s api.Session, out io.Writer, in i
 		}
 		return err == nil && resume.Runs(p, s.ID), err
 	}
+	var scr screen
 	// The input goroutine ends when in does: the caller closes it after Run.
 	go func() {
 		buf := make([]byte, 4096)
@@ -183,9 +184,9 @@ func (m herdrMirror) Run(ctx context.Context, s api.Session, out io.Writer, in i
 			n, err := in.Read(buf)
 			// shortcut: a UTF-8 rune split across two reads turns into
 			// U+FFFD in the JSON text; buffer the tail if guests see it.
-			if n > 0 {
+			if b := scr.input(dropNUL(buf[:n])); len(b) > 0 {
 				if ok, _ := alive(); ok {
-					m.h.SendText(pane, string(dropNUL(buf[:n]))) // a failure shows as pane gone on the next read
+					m.h.SendText(pane, string(b)) // a failure shows as pane gone on the next read
 				}
 			}
 			if err != nil {
@@ -195,7 +196,6 @@ func (m herdrMirror) Run(ctx context.Context, s api.Session, out io.Writer, in i
 	}()
 	t := time.NewTicker(m.every)
 	defer t.Stop()
-	var last string
 	for {
 		ok, err := alive()
 		if err != nil {
@@ -211,9 +211,8 @@ func (m herdrMirror) Run(ctx context.Context, s api.Session, out io.Writer, in i
 			return nil
 		case err != nil:
 			return fmt.Errorf("read pane %s: %w", pane, err)
-		case frame != last:
-			draw := drawFrame(last, frame)
-			last = frame
+		}
+		if draw, changed := scr.draw(frame); changed {
 			if _, err := io.WriteString(out, draw); err != nil {
 				return err
 			}
