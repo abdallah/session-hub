@@ -225,6 +225,17 @@ func scanWebSession(sc interface{ Scan(...any) error }) (api.WebSession, error) 
 	return ws, err
 }
 
+// WebSessionMachineID returns the ID of the machine whose link signed in
+// browser session id, or ErrNotFound.
+func (s *Store) WebSessionMachineID(ctx context.Context, id string) (int64, error) {
+	var m int64
+	err := s.db.QueryRowContext(ctx, `SELECT machine_id FROM web_sessions WHERE id = ?`, id).Scan(&m)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return m, err
+}
+
 // WebSessionByToken returns the live browser session for token, or
 // ErrNotFound for an unknown or expired one. It looks the session up by the
 // token's SHA-256 hash; timing on a hash lookup reveals nothing usable about

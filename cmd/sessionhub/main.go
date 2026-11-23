@@ -51,6 +51,7 @@ commands:
   login --name <device>         sign a browser in to the dashboard
   login ls | rm <name|id>       list or sign out browsers
   attach [<login-url>|<id>]     mirror a session's terminal here (Ctrl-] detaches)
+  share [<id>]                  a one-time link to attach to one session
   inbox [--json|--watch]        list the sessions that need you
   inbox dismiss|snooze <id>     dismiss or snooze an inbox item
   task add|ls|review|<verb> <id> manage tasks (accept, reject, start, done, drop, reopen, merge)
@@ -103,6 +104,7 @@ var routes = map[string]handler{
 	"status":             cli.RunStatus,
 	"login":              cli.RunLogin,
 	"attach":             cli.RunAttach,
+	"share":              cli.RunShare,
 	"inbox":              cli.RunInbox,
 	"task":               cli.RunTask,
 	"note":               cli.RunNote,

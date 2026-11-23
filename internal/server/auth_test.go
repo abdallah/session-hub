@@ -378,6 +378,7 @@ func TestAuthMatrix(t *testing.T) {
 		{"cookie+tasks", "", newSession, api.HeaderActionTasks},
 		{"cookie+knowledge", "", newSession, api.HeaderActionKnowledge},
 		{"cookie+attach", "", newSession, api.HeaderActionAttach},
+		{"cookie+share", "", newSession, api.HeaderActionShare},
 		{"cookie+wrong action", "", newSession, "title"},
 		{"badcookie", "", "hub_s_wrong", ""},
 		{"guest", "", newGuest, ""},
@@ -402,6 +403,7 @@ func TestAuthMatrix(t *testing.T) {
 		accessKnowledge:    api.HeaderActionKnowledge,
 		accessKnowledgeWeb: api.HeaderActionKnowledge,
 		accessAttach:       api.HeaderActionAttach,
+		accessShare:        api.HeaderActionShare,
 	}
 	expect := func(rt route, c authCase, tk string) []int {
 		guest := strings.HasPrefix(tk, "guest")
@@ -420,6 +422,8 @@ func TestAuthMatrix(t *testing.T) {
 			return []int{http.StatusForbidden} // a guest sign-in reaches only its routes
 		case actionFor[rt.access] != "" && isCookie && action != actionFor[rt.access]:
 			return []int{http.StatusForbidden} // the cookie only with the route's own X-Hub-Action
+		case rt.access == accessShare && isCookie:
+			return []int{http.StatusForbidden} // the case's body has no session: a full sign-in needs a machine
 		case rt.access == accessKnowledgeWeb && strings.HasPrefix(tk, "machine"):
 			return []int{http.StatusForbidden} // only the dashboard decides and retires
 		case rt.access == accessSignOut && !(isCookie && action == api.HeaderActionSignOut):

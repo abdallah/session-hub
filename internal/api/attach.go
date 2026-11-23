@@ -19,6 +19,9 @@ const (
 	// HeaderActionAttach is the X-Hub-Action value a cookie sign-in sends
 	// with the attach routes.
 	HeaderActionAttach = "attach"
+	// HeaderActionShare is the X-Hub-Action value the dashboard sends with
+	// POST /v1/logins, which it may only call for a one-session guest link.
+	HeaderActionShare = "share"
 )
 
 // Attach is the response of POST /v1/sessions/{id}/attach.

@@ -88,6 +88,19 @@ func (s *Server) createLogin(w http.ResponseWriter, r *http.Request, p principal
 	if !decode(w, r, &in) {
 		return
 	}
+	machineID := p.machine.ID
+	if p.web != nil {
+		// A browser may only share one session; a full sign-in needs a machine.
+		if in.Session == "" {
+			writeError(w, http.StatusForbidden, "the dashboard can only create a link to one session; sign in a browser with `sessionhub login`")
+			return
+		}
+		var err error
+		if machineID, err = s.store.WebSessionMachineID(r.Context(), p.web.ID); err != nil {
+			s.storeError(w, err)
+			return
+		}
+	}
 	if in.Session != "" {
 		// Resolve here too, so the answer carries the full ID.
 		var err error
@@ -96,7 +109,7 @@ func (s *Server) createLogin(w http.ResponseWriter, r *http.Request, p principal
 			return
 		}
 	}
-	code, exp, err := s.store.CreateLoginCode(r.Context(), p.machine.ID, in.Name, in.Session)
+	code, exp, err := s.store.CreateLoginCode(r.Context(), machineID, in.Name, in.Session)
 	if err != nil {
 		s.storeError(w, err)
 		return

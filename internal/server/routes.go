@@ -31,6 +31,7 @@ const (
 	accessKnowledge    = "knowledge"     // machine token, or the session cookie with X-Hub-Action: knowledge
 	accessKnowledgeWeb = "knowledge-web" // the session cookie with X-Hub-Action: knowledge only
 	accessAttach       = "attach"        // machine token, or the session cookie with X-Hub-Action: attach
+	accessShare        = "share"         // machine token, or the session cookie with X-Hub-Action: share (guest links only)
 )
 
 // route is one method and path pattern of the API. guest marks the routes a
@@ -117,7 +118,7 @@ func (s *Server) routes() []route {
 		{"GET", "/v1/messages/{id}", accessRead, s.reader(s.getMessage), false},
 		{"GET", "/v1/moves/{id}", accessRead, s.reader(s.getMove), false},
 		{"GET", "/v1/starts/{id}", accessRead, s.reader(s.getStart), false},
-		{"POST", "/v1/logins", accessMachine, s.writer(s.createLogin), false},
+		{"POST", "/v1/logins", accessShare, s.actor(api.HeaderActionShare, s.createLogin), false},
 		{"GET", "/v1/web-sessions", accessMachine, s.writer(s.listWebSessions), false},
 		{"DELETE", "/v1/web-sessions/{id}", accessMachine, s.writer(s.revokeWebSession), false},
 	}
